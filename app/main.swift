@@ -22,8 +22,6 @@ final class ContainerView: NSView {
         wantsLayer = true
         layer?.backgroundColor = NSColor(srgbRed: 0.945, green: 0.953, blue: 0.957, alpha: 1).cgColor
         canvas.wantsLayer = true
-        canvas.layer?.cornerRadius = 6
-        canvas.layer?.masksToBounds = true
         addSubview(canvas)
         addSubview(toolbar)
         addSubview(toolbar.panel)
@@ -37,26 +35,31 @@ final class ContainerView: NSView {
         banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
         banner.layer?.cornerRadius = 10
         hint.textColor = NSColor(white: 0.45, alpha: 1)
+        hint.wantsLayer = true
+        hint.layer?.backgroundColor = NSColor(white: 1, alpha: 0.85).cgColor
+        hint.layer?.cornerRadius = 9
     }
     required init?(coder: NSCoder) { fatalError() }
 
     override func layout() {
         super.layout()
-        let top: CGFloat = 30, bottom = ToolbarView.height + 8
-        let avail = CGRect(x: 16, y: bottom, width: bounds.width - 32, height: bounds.height - bottom - top)
-        let aspect = CanvasView.pageUnits.width / CanvasView.pageUnits.height
-        var w = avail.width, h = w / aspect
-        if h > avail.height { h = avail.height; w = h * aspect }
-        canvas.frame = CGRect(x: avail.midX - w / 2, y: avail.minY + (avail.height - h) / 2, width: w, height: h).integral
-        toolbar.frame = CGRect(x: 0, y: 0, width: bounds.width, height: ToolbarView.height)
+        // The writing area is the whole window (or the whole screen in full screen): the trackpad maps onto
+        // exactly this rectangle, so there are no margins. The toolbar and labels float on top; the toolbar
+        // hides in draw mode (keys work there; the pointer is frozen so it couldn't be clicked anyway).
+        canvas.frame = bounds
+        toolbar.frame = CGRect(x: 0, y: 6, width: bounds.width, height: ToolbarView.height)
+        toolbar.isHidden = canvas.drawMode
+        if canvas.drawMode { toolbar.hidePanel() }
         banner.sizeToFit()
-        banner.frame = CGRect(x: bounds.midX - (banner.frame.width + 28) / 2, y: bounds.height - top + 5, width: banner.frame.width + 28, height: 20)
-        hint.frame = CGRect(x: 0, y: bounds.height - top + 7, width: bounds.width, height: 16)
+        banner.frame = CGRect(x: bounds.midX - (banner.frame.width + 28) / 2, y: bounds.height - 28, width: banner.frame.width + 28, height: 20)
+        hint.sizeToFit()
+        hint.frame = CGRect(x: bounds.midX - (hint.frame.width + 24) / 2, y: bounds.height - 27, width: hint.frame.width + 24, height: 18)
         canvas.setNeedsRender()
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    static let padAspect = CanvasView.pageUnits.width / CanvasView.pageUnits.height
     var window: NSWindow!
     var container: ContainerView!
     var canvas: CanvasView { container.canvas }
@@ -64,6 +67,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var mtError: String?
     var notebookStatus = ""
     var previousCrash = false
+    private var lastBannerText = ""
+    private var bannerFade: DispatchWorkItem?
     var migrationNotes: [String] = []
     var infoWindow: InfoWindow?
     var inputStatus: InputStatus { InputStatus(mtError: mtError, stalled: canvas.inputStalled, summary: Multitouch.summary) }
@@ -89,17 +94,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         if AppPaths.override == nil && !Launch.testing { migrationNotes = Migration.run() }
+        UserDefaults.standard.set(false, forKey: "NSFullScreenMenuItemEverywhere")   // our View menu has it
         AppPaths.ensure()
         previousCrash = CrashNote.checkAndMark()
         Watchdog.spawn()
         Signals.install { [weak self] in self?.exitDrawMode("SIGTERM/SIGINT/SIGHUP"); NSApp.terminate(nil) }
 
         let screen = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        let size = CGSize(width: min(1400, screen.width * 0.85), height: min(940, screen.height * 0.85))
+        var size = CGSize(width: min(1400, screen.width * 0.85), height: 0)
+        size.height = size.width / Self.padAspect
+        if size.height > screen.height * 0.85 { size.height = screen.height * 0.85; size.width = size.height * Self.padAspect }
         window = NSWindow(contentRect: CGRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = AppInfo.name
-        window.minSize = CGSize(width: 640, height: 480)
+        window.minSize = CGSize(width: 640, height: 640 / Self.padAspect)
+        // Windowed: the content keeps the trackpad's shape, so the pad maps 1:1 without stretching.
+        // Full screen (green button, ⌃⌘F): the screen's shape wins and the map stretches per axis.
+        window.contentAspectRatio = CanvasView.pageUnits
+        window.collectionBehavior.insert(.fullScreenPrimary)
         window.delegate = self
         let cv = CanvasView(frame: .zero, device: nil)
         container = ContainerView(frame: window.contentView!.bounds, canvas: cv)
@@ -251,6 +263,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
         }
         container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
+        // In draw mode the banner sits on the writing area: show it when it changes, then fade it out
+        // (the page-full hint stays until answered).
+        if container.banner.stringValue != lastBannerText || container.banner.isHidden {
+            lastBannerText = container.banner.stringValue
+            bannerFade?.cancel(); container.banner.alphaValue = 1
+            if canvas.drawMode && !canvas.showPageHint {
+                let w = DispatchWorkItem { [weak self] in
+                    NSAnimationContext.runAnimationGroup { $0.duration = 0.4; self?.container.banner.animator().alphaValue = 0 }
+                }
+                bannerFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: w)
+            }
+        }
         container.hint.stringValue = previousCrash && notebookStatus.hasPrefix("loaded")
             ? "\(AppInfo.name) closed unexpectedly last time. Your pages were restored from the last autosave."
             : "\(pageText)  ·  ⌃⌥D to draw with the trackpad\(input)"
@@ -322,6 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-mapping") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMapping.run(app: self) } }
         if a.contains("--test-about") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestAbout.run(app: self) } }
         if let i = a.firstIndex(of: "--test-input"), i + 1 < a.count {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestInput.run(a[i + 1], app: self) }

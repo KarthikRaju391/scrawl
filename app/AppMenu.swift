@@ -45,6 +45,7 @@ extension AppDelegate {
             item("Draw Mode  (⌃⌥D, Esc to leave)", #selector(toggleDrawModeAction)),   // the global hotkey owns ⌃⌥D
             item("Writing Mode", #selector(toggleWritingAction)),
             .separator(),
+            item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.control, .command], target: window),
             item("Zoom to Whole Page", #selector(resetZoom), "0"),
             item("Previous Page", #selector(prevPageAction), "["),
             item("Next Page", #selector(nextPageAction), "]"),

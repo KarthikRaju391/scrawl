@@ -404,6 +404,8 @@ final class CanvasView: MTKView {
     }
     private var activity: NSObjectProtocol?
     var usingMT = false
+    /// Edge guard: fraction of the pad along each edge where new touches are ignored (0 = off).
+    var edgeGuardFraction: Double { 0 }
     let logger = StrokeLog()
     let input = InputQueue()
     lazy var recorder: SessionRecorder = {
