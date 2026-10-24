@@ -21,5 +21,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 codesign --force -s - "$APP" 2>/dev/null || true
-swiftc -O -swift-version 5 -o build/bench app/Ink.swift app/Renderer.swift bench/main.swift -framework Metal -framework MetalKit
+swiftc -O -swift-version 5 -o build/bench $(ls app/*.swift | grep -v main.swift) bench/*.swift \
+  -framework AppKit -framework Metal -framework MetalKit -framework QuartzCore -framework Carbon
 echo "built: $APP"

@@ -178,4 +178,6 @@ do {
     check(p(gpu, 0.95) < 6, String(format: "  GPU: p50 %.2f ms, p95 %.2f ms (budget 6 ms of an 8.3 ms frame)", p(gpu, 0.5), p(gpu, 0.95)))
 }
 
+gestureChecks(check)
+
 exit(failures == 0 ? 0 : 1)
