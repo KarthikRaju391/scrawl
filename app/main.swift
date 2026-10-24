@@ -75,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         container = ContainerView(frame: window.contentView!.bounds, canvas: cv)
         container.autoresizingMask = [.width, .height]
         window.contentView = container
-        window.makeKeyAndOrderFront(nil)
+        if !CommandLine.arguments.contains("--no-activate") { window.makeKeyAndOrderFront(nil) }
 
         let tb = container.toolbar
         tb.state = cv.tools
@@ -95,7 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.exitDrawMode() }
         buildMenu()
         updateBanner()
-        NSApp.activate(ignoringOtherApps: true)
+        // --no-activate: open in the background (used by the smoke test so it doesn't take focus).
+        if !CommandLine.arguments.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true) } else { window.orderBack(nil) }
     }
 
     // MARK: draw mode

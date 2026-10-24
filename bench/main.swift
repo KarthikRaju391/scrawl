@@ -180,4 +180,8 @@ do {
 
 gestureChecks(check)
 
+// Default window: canvas ~1368 pt wide for a 124.8 mm pad = ~10.96 pt/mm.
+let st = Settings()
+jitterModel(ptPerMM: 10.96, backing: 2, minCutoff: st.minCutoff, beta: st.beta, writeLog: ProcessInfo.processInfo.environment["JITTER_LOG"])
+
 exit(failures == 0 ? 0 : 1)

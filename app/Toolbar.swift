@@ -65,7 +65,7 @@ final class ToolbarView: NSView {
             case .background: selected = !panel.isHidden && panel.mode == .background
             default: selected = false
             }
-            if tint.brightnessComponent > 0.92 { tint = NSColor(white: 0.6, alpha: 1) }  // white pen: keep icon visible
+            if tint.brightnessComponent > 0.92 && tint.saturationComponent < 0.1 { tint = NSColor(white: 0.6, alpha: 1) }  // white pen: keep icon visible
             if selected {
                 NSColor(srgbRed: 0.91, green: 0.94, blue: 0.99, alpha: 1).setFill()
                 NSBezierPath(ovalIn: r.insetBy(dx: 4, dy: (r.height - (r.width - 8)) / 2)).fill()
