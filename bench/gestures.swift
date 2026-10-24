@@ -7,8 +7,9 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
     final class Rec {
         var begins = 0, moves = 0, commits = 0, discards = 0, navs: [Double] = [], centroids: [(CGPoint, CGPoint)] = []
     }
-    func run(_ frames: [[Contact]], length: Double = 10) -> Rec {
+    func run(_ frames: [[Contact]], length: Double = 10, threshold: Double = 0) -> Rec {
         let g = GestureEngine(), r = Rec()
+        g.inkThreshold = threshold
         g.onBegin = { _, _ in r.begins += 1 }
         g.onMove = { _, _ in r.moves += 1 }
         g.onEnd = { c in if c { r.commits += 1 } else { r.discards += 1 } }
@@ -17,8 +18,8 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
         for (i, f) in frames.enumerated() { g.frame(f, t: Double(i) * 0.008) }
         return r
     }
-    func finger(_ id: Int32, _ x: Double, _ y: Double, major: Double = 7.4, size: Double = 0.48, state: Int32 = 4) -> Contact {
-        Contact(id: id, state: state, norm: CGPoint(x: x, y: y), mm: CGPoint(x: x * 124.8, y: y * 76.8), pressure: 17, size: size, major: major)
+    func finger(_ id: Int32, _ x: Double, _ y: Double, major: Double = 7.4, size: Double = 0.48, state: Int32 = 4, pressure: Double = 17) -> Contact {
+        Contact(id: id, state: state, norm: CGPoint(x: x, y: y), mm: CGPoint(x: x * 124.8, y: y * 76.8), pressure: pressure, size: size, major: major)
     }
 
     // 1. One finger drags, lifts: one committed stroke.
@@ -56,4 +57,14 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
     f.append([])
     r = run(f, length: 20)
     check(r.begins == 1 && r.commits == 1, "late second finger is ignored mid-stroke; leftover finger doesn't draw (begins \(r.begins), commits \(r.commits))")
+
+    // 6. Hover threshold (Inklet-style): light touch moves without ink, pressing harder inks.
+    f = (0..<20).map { i in [finger(1, 0.3 + Double(i) * 0.005, 0.5, pressure: 10)] }
+    f += (0..<20).map { i in [finger(1, 0.4 + Double(i) * 0.005, 0.5, pressure: 30)] }
+    f.append([])
+    r = run(f, threshold: 25)
+    check(r.begins == 1 && r.commits == 1 && r.moves == 19, "hover threshold 25: 20 light frames leave no ink, ink starts at the first hard frame (begins \(r.begins), moves \(r.moves))")
+    f = (0..<20).map { i in [finger(1, 0.3 + Double(i) * 0.005, 0.5, pressure: 10)] } + [[]]
+    r = run(f, threshold: 25)
+    check(r.begins == 0 && r.commits == 0, "hover only: no stroke at all (begins \(r.begins))")
 }

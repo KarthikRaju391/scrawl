@@ -17,6 +17,9 @@ struct Settings {
     var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
     var palmSize: Double { d.object(forKey: "palmTotal") as? Double ?? 1.4 }
     var predictMs: Double { d.object(forKey: "predictMs") as? Double ?? 16 }
+    /// Inklet-style hover: a lighter touch shows the finger ring without inking; ink starts once
+    /// MT pressure reaches this (raw units). 0 = off. Only meaningful with MultitouchSupport.
+    var inkThreshold: Double { d.object(forKey: "inkThreshold") as? Double ?? 0 }
 }
 
 // MARK: - Model
@@ -128,11 +131,12 @@ struct ToolState {
 // MARK: - Gesture engine: contact frames in, strokes / navigation out
 
 final class GestureEngine {
-    enum Mode { case idle, drawing(Int32, Double), navigating, waitLift }
+    enum Mode { case idle, hover(Int32), drawing(Int32, Double), navigating, waitLift }
     private(set) var mode = Mode.idle
     private var palm = Set<Int32>()
     private var navPrev: (ids: [Int32], centroid: CGPoint, dist: Double)?
     var settings = Settings()
+    lazy var inkThreshold = settings.inkThreshold
 
     var onBegin: ((Contact, Double) -> Void)?
     var onMove: ((Contact, Double) -> Void)?
@@ -154,8 +158,13 @@ final class GestureEngine {
 
         switch mode {
         case .idle:
-            if fingers.count == 1 { mode = .drawing(fingers[0].id, t); onBegin?(fingers[0], t) }
+            if fingers.count == 1 { mode = .hover(fingers[0].id); frame(contacts, t: t) }
             else if fingers.count >= 2 { mode = .navigating; navigate(fingers) }
+        case let .hover(id):
+            if fingers.count >= 2 { mode = .navigating; navigate(fingers) }
+            else if let f = fingers.first(where: { $0.id == id }) {
+                if f.pressure >= inkThreshold { mode = .drawing(id, t); onBegin?(f, t) }
+            } else { mode = fingers.isEmpty ? .idle : .waitLift }
         case let .drawing(id, started):
             let f = fingers.first { $0.id == id }
             if fingers.count >= 2 && (t - started < 0.15 || strokeLengthMM() < 3) {
