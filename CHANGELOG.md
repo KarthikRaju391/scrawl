@@ -13,6 +13,13 @@ old pages and settings over.
 - Keep-style tools: pen, marker, highlighter, eraser, and none / square / dot / ruled backgrounds.
 - Smoothing and Prediction sliders. Every stroke ends exactly where the finger lifts.
 - Aim first (A): touch lightly to aim, press to ink.
+- The trackpad covers the whole window, or the whole screen in full screen (green button or ⌃⌘F). There
+  are no margins. Windowed, the window keeps the trackpad's shape, so nothing is stretched.
+- Edge guard: touches that start within 5% of the trackpad's edges are ignored, so a resting palm or
+  thumb no longer draws, pans or zooms. The inner 90% covers the whole writing area. You can change it
+  under ⚙︎ › Edge guard, and 0 turns it off.
+- Every mode key toggles: D, W, A, L/Z on and off; M/H/E pressed again return to the pen; P on the pen
+  goes back to the last other tool.
 
 ### Pages and writing
 - Pages are infinite downwards, and each keeps its own view.
@@ -31,3 +38,6 @@ old pages and settings over.
 - First-run welcome, Help with every shortcut, About box, Check for Updates (GitHub releases).
 - No network use except Check for Updates. Logs stay on this Mac.
 - Universal app with the hardened runtime and no entitlements. Requires macOS 14 or later.
+
+### Fixes
+- The aim-first checkbox label was invisible in dark mode.

@@ -63,11 +63,40 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
   - No network at launch (lsof, from the DMG build).
   - Crash notes and diagnostics stay in `~/Library/Logs/Scrawl`.
 - [x] **Performance.** 2,000 and 3,000 strokes render under the 8.3 ms frame budget (release build).
+- [x] **The trackpad covers the whole writing area.** Windowed, the window keeps the pad's shape (1.625:1, no stretch). In full screen (green button, ⌃⌘F) it stretches per axis: 2.1% on the built-in display, 9.4% on 16:9. `mapping.sh` checks zero gap and the corners at zoom 1 and zoom 3 (panned), in the window and at three full-screen sizes. A 16 pt-margin mutation fails it.
+- [x] **Edge guard** (5% default, ⚙︎ slider, 0 = off).
+  - Touches that start in the band never draw, pan or pinch, and don't count as a second finger. The inner 90% maps to the whole writing area.
+  - `edge.sh` covers:
+    - band starts;
+    - a palm on the side before and during a stroke;
+    - a thumb on the bottom during a pinch;
+    - two fingers with one in the band;
+    - a stroke into the band;
+    - corners in the window and full screen;
+    - a guard-off control.
+  - A guard-disabled mutation fails 5 checks.
+  - Replaying Karthik's 6 sessions (`edge_cf.sh`):
+    - 45 edge-caused two-finger gestures removed (805 → 760);
+    - 41 strokes now drawn that a resting edge touch had turned into a gesture;
+    - 11 strokes removed: 5 of them he had undone, and 6 real strokes (0.4% of 1,464) are lost.
+- [x] **Mode keys toggle** (D, W, A, L/Z; M/H/E back to the pen; P back to the last other tool). `keys.sh` presses each twice, and the toolbar stays in sync.
 - [x] **Renamed to Scrawl.** App, DMG, zip, window, menus, About, welcome and docs. Pages, logs and settings move over on first launch, tested in the bench.
 - [x] **Dark mode.** The aim-first checkbox label was white on the light panel; the window content now always uses the light appearance.
 - [x] README (install, Gatekeeper, privacy, uninstall), DEVELOPMENT.md, CHANGELOG.md, LICENSE.
 
 ## Not verified (needs a person or other hardware)
+
+- **Hand-test in 0.1.0:**
+  - **Full-area map:** touch each trackpad corner just inside the edge band (about 6 mm in from the sides, 4 mm from top and bottom). Ink should start at the window's corner. Try the same in full screen (⌃⌘F).
+  - **Edge guard:**
+    - rest your palm or thumb on the edge while writing: no pans or zooms;
+    - start a stroke right at the edge: no ink;
+    - start inside and run off the edge: the ink follows;
+    - pinch with a thumb resting on the bottom edge;
+    - try the ⚙︎ slider at 0% and 10%.
+  - **Toggles:** D twice, W twice, M/H/E twice, P on the pen.
+  - **Full screen:** enter and leave it with the green button and ⌃⌘F, in and out of draw mode. The toolbar hides in draw mode, and the banner fades after 3 s.
+  - **Writing at zoom 3** in full screen: line width, the 0.4 s pause and new lines.
 
 - **Real touches through the public-touch fallback.** The conversion and the drawing were tested with synthetic touch samples. Real NSTouch delivery while the pointer is frozen wasn't, because that needs fingers on the pad.
 - **The real pointer after kill -9.** The tests use a dry-run lock so they never take your pointer. An older real-lock test showed the pointer visible again. Whether the trackpad moves it again needs `checks/kill_test.sh` with you.
