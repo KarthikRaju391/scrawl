@@ -84,6 +84,8 @@ final class Document {
         return strokes.count != n
     }
     func clear() { guard !strokes.isEmpty else { return }; snapshot(); strokes.removeAll() }
+    /// Swap the last stroke (no new undo step: it's a correction of the stroke just added).
+    func replaceLast(_ s: Stroke) { guard !strokes.isEmpty else { return }; strokes[strokes.count - 1] = s }
     func undo() { guard let s = undoStack.popLast() else { return }; redoStack.append(strokes); strokes = s }
     func redo() { guard let s = redoStack.popLast() else { return }; undoStack.append(strokes); strokes = s }
     func dropEmptyUndo() { if let last = undoStack.last, last.count == strokes.count, zip(last, strokes).allSatisfy({ $0 === $1 }) { undoStack.removeLast() } }
@@ -106,7 +108,10 @@ struct Camera {
     mutating func clamp() {
         zoom = min(max(zoom, 1), Self.maxZoom)
         let v = visible
-        center.x = min(max(center.x, v.width / 2), page.width - v.width / 2)
+        // When zoomed in, the view may go up to 40% of its width past the page's sides, so writing
+        // mode can put the start of a line exactly under the finger (otherwise lines got indented).
+        let over = v.width * 0.4 * min(1, zoom - 1)
+        center.x = min(max(center.x, v.width / 2 - over), page.width - v.width / 2 + over)
         center.y = min(center.y, page.height - v.height / 2)
     }
     /// Top-left of the page at the current zoom.
@@ -290,9 +295,14 @@ final class CanvasView: MTKView {
     private var lastPresented = 0.0
 
     // MARK: writing mode (see Writing.swift)
-    var writingMode = false { didSet { lineInk = nil; lineLeft = nil; needsRender = true } }
+    var writingMode = false { didSet { endWritingLine(); needsRender = true } }
     private var lineInk: CGRect?
     private var lineLeft: Double?
+    private var lastLiftPad: CGPoint?        // where the finger lifted last, pad 0...1
+    private var newLinePending = false       // the line reached its width: next return starts a new line
+    /// Shift applied at this stroke's touch-down (undone if the stroke turns out to be a dot).
+    private var reanchor: (shift: CGPoint, consumedNewLine: Bool, lineBefore: CGRect?)?
+    private(set) var reanchorCount = 0
     private var camAnim: (from: CGPoint, to: CGPoint, start: Double)?
     private(set) var panCount = 0
     private(set) var newLineCount = 0
@@ -336,7 +346,28 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineLeft = nil }
+    private func endWritingLine() { lineInk = nil; lineLeft = nil; lastLiftPad = nil; newLinePending = false }
+
+    /// Touch-down in writing mode: if it's a return (well left of the last lift), shift the page so
+    /// the finger is just after the line's end (or at the next line's start).
+    private func reanchorIfReturning(_ c: Contact) {
+        reanchor = nil
+        guard writingMode, let lift = lastLiftPad, let line = lineInk, let left = lineLeft else { return }
+        var r = Reanchor(); r.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
+        guard r.isReturn(down: c.norm, lastLift: lift) else { return }
+        let gap = 3 * camera.page.width / camera.zoom / Multitouch.padMM.width  // 3 mm on the pad, in canvas units
+        let target = r.continuation(line: line, lineLeft: left, newLine: newLinePending, gap: gap)
+        let p = camera.canvas(fromPad: c.norm)
+        let before = camera.center
+        camera.center.x += target.x - p.x
+        if newLinePending { camera.center.y += target.y - p.y }
+        camera.clamp()
+        let shift = CGPoint(x: camera.center.x - before.x, y: camera.center.y - before.y)
+        reanchor = (shift, newLinePending, lineInk)
+        if newLinePending { lineInk = nil; newLinePending = false }
+        reanchorCount += 1
+        needsRender = true
+    }
 
     /// Test hook: where a canvas point currently is on the pad (0...1).
     func padPoint(_ p: CGPoint) -> CGPoint {
@@ -552,6 +583,7 @@ final class CanvasView: MTKView {
 
     private func beginStroke(_ c: Contact, _ t: Double) {
         finishSlide()
+        reanchorIfReturning(c)
         let cam = camera, pad = Multitouch.padMM
         let model = makeWidthModel(usingMT ? settings.widthModel : "speed")
         builder = StrokeBuilder(model: model, minCutoff: settings.minCutoff, beta: settings.beta) { mm in
@@ -582,24 +614,38 @@ final class CanvasView: MTKView {
         guard var b = builder else { return }
         b.finish()
         logger.end(committed: commit)
+        if !commit, let r = reanchor {  // a "return" that became a pinch: undo the page shift
+            camera.center.x -= r.shift.x; camera.center.y -= r.shift.y
+            if r.consumedNewLine { newLinePending = true; lineInk = r.lineBefore }
+            reanchor = nil; reanchorCount -= 1
+        }
         if liveTool == .eraser { doc.dropEmptyUndo(); return }
         guard commit, !b.points.isEmpty else { return }
         let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
         doc.add(s)
         updateScreensFilled()
-        // Writing mode, now that the finger is up: pan along the line, or start the next line.
+        // Writing mode, now that the finger is up.
         if writingMode {
-            if lineLeft == nil { lineLeft = s.bounds.minX }
-            let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
-            lineInk = line
-            var layout = WritingLayout()
-            layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
-            switch layout.after(stroke: s.bounds, line: line, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
-            case .none: break
-            case .pan(let c): panCount += 1; slideCamera(to: c)
-            case .newLine(let c): newLineCount += 1; lineInk = nil; slideCamera(to: c)
+            if let r = reanchor, b.lengthMM < 3 {
+                // A dot after a "return": it was a dot/tick near earlier writing, not a return.
+                // Put it where the finger really was and undo the page shift.
+                camera.center.x -= r.shift.x; camera.center.y -= r.shift.y
+                doc.replaceLast(Stroke(tool: s.tool, color: s.color, size: s.size,
+                                       points: s.points.map { StrokePoint(p: CGPoint(x: $0.p.x - r.shift.x, y: $0.p.y - r.shift.y), pressure: $0.pressure) }, maxStep: 0))
+                if r.consumedNewLine { newLinePending = true; lineInk = r.lineBefore }
+                reanchorCount -= 1
+                reanchor = nil
+                lastLiftPad = b.lastRaw.map { CGPoint(x: $0.x / Multitouch.padMM.width, y: $0.y / Multitouch.padMM.height) }
+                needsRender = true
+                return
             }
+            reanchor = nil
+            if lineLeft == nil { lineLeft = s.bounds.minX }   // kept across new lines: lines align left
+            lineInk = lineInk.map { $0.union(s.bounds) } ?? s.bounds
+            var r = Reanchor(); r.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
+            if !newLinePending, r.lineFull(line: lineInk!, lineLeft: lineLeft!, pageWidth: camera.page.width) { newLinePending = true; newLineCount += 1 }
+            lastLiftPad = b.lastRaw.map { CGPoint(x: $0.x / Multitouch.padMM.width, y: $0.y / Multitouch.padMM.height) }
         }
     }
 

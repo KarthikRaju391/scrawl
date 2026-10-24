@@ -204,7 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             let n = a.firstIndex(of: "--count").flatMap { Int(a[$0 + 1]) } ?? 400
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-                NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+                if !a.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
                 if !a.contains("--zoomed") { canvas.resetZoom() }
@@ -245,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if a.contains("--test-autopan") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-                NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+                if !a.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
                 var t = canvas.tools; t.lineWidthIndex = 0; canvas.tools = t   // ½ page

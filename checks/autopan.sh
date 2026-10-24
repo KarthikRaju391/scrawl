@@ -3,18 +3,16 @@
 # letters left to right, continuing just right of its last ink as it appears on screen.
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d /tmp/td-autopan.XXXX)
-TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw" --test-autopan "$@" >/dev/null 2>&1 &
+TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw" --test-autopan --no-activate "$@" >/dev/null 2>&1 &
 PID=$!; sleep 1.2; WID=$(build/winid $PID); i=0
 while [ ! -f "$OUT/ui-step.txt" ] && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); [ $i = 6 ] && screencapture -x -o -l"$WID" "$OUT/mid.png"; done
 screencapture -x -o -l"$WID" "$OUT/final.png"; kill -TERM $PID
 python3 -I - "$OUT/test-autopan.json" <<'PY'
 import json, sys
-r = json.load(open(sys.argv[1])); ev = r["events"]
-print("writing mode:", r["writing"], " strokes:", r["strokes"], " pans:", r["pans"], " new lines:", r["newLines"])
-print("last-ink pad x after each letter:", " ".join(f"{e['lastInkPadX']:.2f}" for e in ev))
-stuck = sum(1 for e in ev if e["lastInkPadX"] > 0.93)
-print("letters written at the pad's right edge (no room left):", stuck)
-print("hint: before", r["hintBefore"], "after a stroke 1.1 screens down", r["hintAfterDeepStroke"])
-print("new page:", r["afterNewPage"], " back to page 1:", r["backToFirst"])
+r = json.load(open(sys.argv[1]))
+print("writing mode:", r["writing"], " strokes:", r["strokes"], " letters:", r["letters"], " returns re-anchored:", r["returns"], " new lines:", r["newLines"])
+print("letters overlapping the previous letter:", r["overlapsWithPreviousLetter"], " letters left of the previous (same row):", r["lettersLeftOfPrevious"], " rows:", r["lineRows"])
+print("touch-down x on the pad: min %.2f max %.2f" % (min(r["touchX"]), max(r["touchX"])))
+print("hint: before", r["hintBefore"], "after a stroke 1.1 screens down", r["hintAfterDeepStroke"], "| new page:", r["afterNewPage"], "back:", r["backToFirst"])
 PY
 echo "$OUT"

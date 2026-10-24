@@ -30,11 +30,15 @@ MultitouchSupport framework.
   in memory only: quitting loses them.
 - **Pan and zoom** work everywhere: in draw mode with two fingers (pan) and pinch (zoom); outside
   draw mode with the normal two-finger scroll and pinch.
-- **Writing mode** (W in draw mode, or the cursor button in the toolbar; tap it again for line width
-  ½ / ¾ / full page, or Off): at any zoom, when a stroke you just finished reaches the right 15%
-  of the view, the view pans so that stroke ends mid-screen, so you keep writing from the middle of
-  the pad. When the line reaches the chosen width, the view returns to the line's left edge, one
-  line down, with the new line in the middle of the screen. Nothing moves while a finger is down.
+- **Writing mode** (W in draw mode, or the cursor button; tap it again for line width ½ / ¾ /
+  full page, or Off): the page follows your finger. Carry on from where you lifted and nothing
+  moves (plain absolute mapping, which suits dots and crossbars). When you come back well to the left
+  (≥ 15% of the pad width, your "carriage return"), the page shifts at that moment so the spot
+  under your finger is just after the end of your line, wherever you chose to land. Once a line
+  reaches the chosen width, the next return starts the next line at the line's left edge, under
+  your finger. A "return" that turns out to be a dot is put back where you touched. Based on
+  Karthik's sessions: ~80% of touch-downs land next to the previous lift and ~12% are returns;
+  strokes after a return are almost never dots.
 - **Feel (⚙︎ in the toolbar)**: *Smoothing* (← follows the finger exactly · steadier →) and
   *Prediction* (← never overshoots · keeps up →). They apply to the next stroke and are remembered;
   Defaults resets them (50%, 12 ms). Measured on Karthik's strokes: prediction makes the tip keep
