@@ -121,7 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let tb = container.toolbar
         tb.state = cv.tools
-        tb.onChange = { [weak self] s in self?.canvas.changing("toolbar") { self?.canvas.tools = s }; self?.updateBanner() }
+        noteTool(cv.tools.tool)
+        tb.onChange = { [weak self] s in self?.noteTool(s.tool); self?.canvas.changing("toolbar") { self?.canvas.tools = s }; self?.updateBanner() }
         tb.onUndo = { [weak self] in self?.canvas.undo() }
         tb.onRedo = { [weak self] in self?.canvas.redo() }
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
@@ -285,15 +286,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Returns true if the key was handled.
     func key(_ e: NSEvent) -> Bool {
         if e.keyCode == 53 { if canvas.drawMode { exitDrawMode(); return true }; container.toolbar.hidePanel(); return true }  // Esc
-        // Single-letter shortcuts work in and out of draw mode. D enters draw mode.
+        // Single-letter shortcuts work in and out of draw mode. Every mode key toggles: pressing it again
+        // turns the mode off (D leaves draw mode, M/H/E go back to the pen, P on the pen goes back to the
+        // last other tool).
         guard e.modifierFlags.intersection([.command, .control, .option]).isEmpty, let ch = e.charactersIgnoringModifiers?.lowercased() else { return false }
         var s = canvas.tools
         switch ch {
-        case "d": if !canvas.drawMode { enterDrawMode(lock: !canvas.testMode) }; return true   // tests never freeze the cursor
-        case "p": s.tool = .pen
-        case "m": s.tool = .marker
-        case "h": s.tool = .highlighter
-        case "e": s.tool = .eraser
+        case "d": if canvas.drawMode { exitDrawMode("D") } else { enterDrawMode(lock: !canvas.testMode) }; return true   // tests never freeze the cursor
+        case "p": s.tool = s.tool == .pen ? (lastOtherTool ?? .pen) : .pen
+        case "m": s.tool = s.tool == .marker ? .pen : .marker
+        case "h": s.tool = s.tool == .highlighter ? .pen : .highlighter
+        case "e": s.tool = s.tool == .eraser ? .pen : .eraser
         case "w": toggleWriting(); return true
         case "n": page(0); return true
         case "l", "z": s.zoomLocked.toggle()   // L (or Z) locks / unlocks the zoom
@@ -302,11 +305,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false
         }
+        noteTool(s.tool)
         canvas.changing("key") { canvas.tools = s }
         container.toolbar.state = s
         updateBanner()
         return true
     }
+
+    /// The last tool other than the pen (marker, highlighter or eraser), for P on the pen.
+    private(set) var lastOtherTool: ToolKind?
+    func noteTool(_ t: ToolKind) { if t != .pen { lastOtherTool = t } }
 
     // MARK: test mode (see TestReplay.swift)
 
@@ -346,6 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-keys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestKeys.run(app: self) } }
         if a.contains("--test-edge") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestEdge.run(app: self) } }
         if a.contains("--test-mapping") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMapping.run(app: self) } }
         if a.contains("--test-about") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestAbout.run(app: self) } }

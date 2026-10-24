@@ -32,13 +32,20 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 
 ## Using it
 
-- **⌃⌥D** (or **D** when the app is in front) starts drawing. The pointer freezes and hides, and the
+- **⌃⌥D** (or **D** when the app is in front) starts drawing, and pressing it again stops.
+  The whole trackpad covers the whole window, or the whole screen in full screen (green button or ⌃⌘F),
+  apart from a thin edge band (below). The pointer freezes and hides, and the
   whole trackpad becomes the visible part of the page. **Esc** gives the pointer back. So do ⌃⌥D,
   switching apps, the display sleeping, and quitting.
 - **One finger** draws. **Two fingers** pan, and pinching zooms. Blue rings show where your fingers
   are, since there's no pointer.
-- **Tools:** P pen, M marker, H highlighter, E eraser, 1–5 size. Tap the selected tool in the
-  toolbar for sizes and colours.
+- **Tools:** M marker, H highlighter, E eraser; press the same key again to go back to the pen.
+  P picks the pen, and on the pen it goes back to the last other tool. 1–5 set the size. Tap the
+  selected tool in the toolbar for sizes and colours.
+- **Every mode key toggles:** D, W, A and L (or Z) turn their mode on, and pressing them again turns it off.
+- **Edge guard:** touches that start within 5% of the trackpad's edges are ignored, so a resting palm
+  or thumb doesn't draw, pan or zoom. A stroke that starts inside can still run to the edge. Change
+  it under ⚙︎ › Edge guard (0 turns it off).
 - **Writing mode (W):** pans along the line as you write, and goes to the start of the next line
   when the line is full. The page waits until your finger has been up for 0.4 s, so it never moves
   in the middle of a word. Choose the line width (½, ¾, full) and how it pans in the panel.

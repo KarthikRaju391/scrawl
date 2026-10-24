@@ -35,19 +35,21 @@ enum InputStatus: Equatable {
 
 enum HelpText {
     static let shortcuts: [(String, String)] = [
-        ("⌃⌥D  or  D", "Draw mode: the pointer freezes and hides, the trackpad maps to the page"),
+        ("⌃⌥D  or  D", "Draw mode on / off: the pointer freezes and hides, the trackpad is the page"),
         ("Esc", "Leave draw mode (the pointer comes back)"),
         ("One finger", "Draw"),
         ("Two fingers", "Pan; pinch to zoom"),
-        ("P  M  H  E", "Pen, marker, highlighter, eraser"),
+        ("M  H  E", "Marker, highlighter, eraser; press again for the pen"),
+        ("P", "Pen; on the pen, back to the last other tool"),
         ("1 – 5", "Pen size"),
-        ("W", "Writing mode (pans along the line, then to the next line)"),
-        ("A", "Aim first: touch lightly to aim, press to ink"),
+        ("W", "Writing mode on / off (pans along the line, then to the next line)"),
+        ("A", "Aim first on / off: touch lightly to aim, press to ink"),
         ("L", "Lock / unlock zoom"),
         ("N", "New page (K keeps writing on this one)"),
         ("⌘[  ⌘]", "Previous / next page"),
         ("⌘Z  ⇧⌘Z", "Undo / redo"),
         ("⌘0", "Zoom to the whole page"),
+        ("⌃⌘F", "Full screen"),
         ("⌘E  ⇧⌘E", "Export all pages as PDF / this page as PNG"),
     ]
     static var privacy: String {
