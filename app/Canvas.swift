@@ -109,7 +109,11 @@ final class Document {
     private var undoStack: [[Stroke]] = []
     private var redoStack: [[Stroke]] = []
 
-    func snapshot() { undoStack.append(strokes); redoStack.removeAll() }
+    static let maxUndo = 100
+    func snapshot() { undoStack.append(strokes); if undoStack.count > Self.maxUndo { undoStack.removeFirst() }; redoStack.removeAll() }
+    var undoStackForSave: [[Stroke]] { undoStack }
+    var redoStackForSave: [[Stroke]] { redoStack }
+    func restore(strokes: [Stroke], undo: [[Stroke]], redo: [[Stroke]]) { self.strokes = strokes; undoStack = undo; redoStack = redo }
     func add(_ s: Stroke) { snapshot(); strokes.append(s) }
     /// Eraser: removes without a new undo step (one step per eraser gesture, taken at its start).
     func remove(where pred: (Stroke) -> Bool) -> Bool {
@@ -326,6 +330,18 @@ final class InputQueue: @unchecked Sendable {
 final class CanvasView: MTKView {
     private(set) var pages: [Document] = [Document()]
     private var pageCameras: [Camera] = []
+    var pageCamerasForSave: [Camera] { pageCameras }
+    lazy var autosaver = Autosaver(canvas: self)
+    /// Something in the notebook changed: save it shortly.
+    func markDirty() { if AppPaths.persists { autosaver.changed() } }
+
+    func restorePages(_ docs: [Document], cameras: [Camera], index: Int, nextStrokeId: Int) {
+        pages = docs; pageCameras = cameras; pageIndex = index
+        if index < cameras.count { camera = cameras[index] }
+        nextStrokeIdValue = nextStrokeId
+        endWritingLine(); screensFilled = 0; hintDismissedAt = 0; updateScreensFilled()
+        needsRender = true; onStatus?()
+    }
     private(set) var pageIndex = 0
     var doc: Document { pages[pageIndex] }
     /// Called when page, hint or mode status changes (the window updates its labels).
@@ -342,10 +358,11 @@ final class CanvasView: MTKView {
         }
     }
     /// Test modes don't touch the saved settings.
-    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock", "--test-hand", "--test-aim", "--test-session"].contains { CommandLine.arguments.contains($0) }
+    let testMode = Launch.testing
     private(set) var camera: Camera {
         didSet {  // every zoom change is logged with its cause, to track down "the lock unlocked"
             if camera.center != oldValue.center || camera.zoom != oldValue.zoom {
+                markDirty()   // the view of each page is saved too
                 let v = camera.visible
                 recorder.record(["k": "view", "x": v.minX, "y": v.minY, "w": v.width, "h": v.height, "z": camera.zoom, "src": source], sensorT: frameSensorT)
             }
@@ -366,6 +383,7 @@ final class CanvasView: MTKView {
     private var renderer: Renderer!
     private let gestures = GestureEngine()
     private var builder: StrokeBuilder?
+    var liveStrokePointCountForTest: Int { builder?.points.count ?? 0 }
     private var liveTool: ToolKind = .pen
     private var liveColor = SIMD4<Float>(0, 0, 0, 1)
     private var liveSize = 1.0
@@ -443,6 +461,7 @@ final class CanvasView: MTKView {
         changing("newPage") { camera.home() }
         pageCameras.append(camera)
         screensFilled = 0; hintDismissedAt = 0
+        markDirty()
         needsRender = true; onStatus?()
     }
 
@@ -459,6 +478,7 @@ final class CanvasView: MTKView {
             camera = c
         }
         screensFilled = 0; hintDismissedAt = 0; updateScreensFilled(); hintDismissedAt = screensFilled
+        markDirty()
         needsRender = true; onStatus?()
     }
 
@@ -697,7 +717,8 @@ final class CanvasView: MTKView {
     /// Offset applied to every sample of the current stroke (pad mm): non-zero when snapped.
     private var strokeOffset = CGPoint.zero
     private(set) var rejoinCount = 0
-    private var nextStrokeId = 1
+    private var nextStrokeIdValue = 1
+    var nextStrokeIdForSave: Int { nextStrokeIdValue }
 
     private func beginStroke(_ c: Contact, _ t: Double) {
         finishSlide()
@@ -761,7 +782,7 @@ final class CanvasView: MTKView {
         if liveTool == .eraser, let p = builder!.points.last {
             let r = liveSize / 2
             let hit = doc.strokes.filter { $0.hit(p.p, r: r) }.map(\.id)
-            if !hit.isEmpty, doc.remove(where: { $0.hit(p.p, r: r) }) { act("erase", ["ids": hit]); needsRender = true }
+            if !hit.isEmpty, doc.remove(where: { $0.hit(p.p, r: r) }) { act("erase", ["ids": hit]); markDirty(); needsRender = true }
         }
     }
 
@@ -784,9 +805,10 @@ final class CanvasView: MTKView {
         }
         let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
-        s.id = nextStrokeId; nextStrokeId += 1
+        s.id = nextStrokeIdValue; nextStrokeIdValue += 1
         doc.add(s)
         act("commit", ["id": s.id, "page": pageIndex])
+        markDirty()
         updateScreensFilled()
         // Writing mode, now that the finger is up (see Writing.swift).
         if writingMode {
@@ -942,17 +964,17 @@ final class CanvasView: MTKView {
     func undo() {
         logger.event(["what": "undo", "strokesBefore": doc.strokes.count])   // the "that landed wrong" signal
         act("undo", ["strokes": doc.strokes.count])
-        doc.undo(); endWritingLine(); updateScreensFilled(); needsRender = true
+        doc.undo(); endWritingLine(); updateScreensFilled(); markDirty(); needsRender = true
     }
-    func redo() { act("redo", ["strokes": doc.strokes.count]); doc.redo(); needsRender = true }
+    func redo() { act("redo", ["strokes": doc.strokes.count]); doc.redo(); markDirty(); needsRender = true }
     func clearPage() {
-        act("clear", ["strokes": doc.strokes.count]); doc.clear(); endWritingLine(); updateScreensFilled(); needsRender = true }
+        act("clear", ["strokes": doc.strokes.count]); doc.clear(); markDirty(); endWritingLine(); updateScreensFilled(); needsRender = true }
     /// Dismiss the "new page?" hint until another screen fills up.
     func dismissPageHint() { hintDismissedAt = screensFilled; onStatus?() }
     /// Test: add a finished stroke as if drawn at the current zoom.
     func testAddStroke(_ pts: [StrokePoint], tool: ToolKind = .pen) {
         let s = Stroke(tool: tool, color: SIMD4(0, 0, 0, 1), size: tools.sizePt / (ptPerUnit * camera.zoom), points: pts, maxStep: smoothStep)
-        s.id = nextStrokeId; nextStrokeId += 1
+        s.id = nextStrokeIdValue; nextStrokeIdValue += 1
         doc.add(s)
         updateScreensFilled()
     }
@@ -1017,6 +1039,7 @@ final class SessionRecorder {
     }
     var clock: () -> Double = { CACurrentMediaTime() }   // the canvas clock (virtual in replays)
     func record(_ d: [String: Any], sensorT: Double) {
+        guard Diagnostics.enabled else { return }
         var d = d; d["m"] = clock(); d["t"] = sensorT
         if let data = try? JSONSerialization.data(withJSONObject: d) { buffer.append(data) }
         if CACurrentMediaTime() - lastFlush > 0.5 { flush() }
@@ -1040,7 +1063,7 @@ final class StrokeLog {
     let path: String
 
     init() {
-        let dir = (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw/data")
+        let dir = Diagnostics.logsDir
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
         path = "\(dir)/strokes-\(f.string(from: Date())).jsonl"
@@ -1066,6 +1089,7 @@ final class StrokeLog {
         write(d)
     }
     private func write(_ d: [String: Any]) {
+        guard Diagnostics.enabled else { return }
         if fh == nil {
             FileManager.default.createFile(atPath: path, contents: nil)
             fh = FileHandle(forWritingAtPath: path)

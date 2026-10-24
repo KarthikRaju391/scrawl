@@ -7,14 +7,6 @@ if let i = CommandLine.arguments.firstIndex(of: "--watchdog"), i + 1 < CommandLi
     Watchdog.run(parent: pid)
 }
 
-/// How this process was launched. Test modes run in the background (never take focus) unless a test
-/// explicitly asks for the foreground with --test-front.
-enum Launch {
-    static let args = CommandLine.arguments
-    static let testing = args.contains { $0.hasPrefix("--test-") && $0 != "--test-front" && $0 != "--test-lock" }
-    static let background = args.contains("--no-activate") || (testing && !args.contains("--test-front"))
-}
-
 final class ContainerView: NSView {
     let canvas: CanvasView
     let toolbar = ToolbarView(frame: .zero)
@@ -67,8 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var canvas: CanvasView { container.canvas }
     var keyMonitor: Any?
     var mtError: String?
+    var notebookStatus = ""
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        AppPaths.ensure()
         Watchdog.spawn()
         Signals.install { [weak self] in self?.exitDrawMode(); NSApp.terminate(nil) }
 
@@ -95,8 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onPage = { [weak self] d in self?.page(d) }
         cv.onStatus = { [weak self] in self?.updateBanner() }
 
-        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock", "--test-hand", "--test-aim", "--test-session"].contains { CommandLine.arguments.contains($0) }
-        if testing {
+        if canvas.testMode {
             // Test input only: real touches on the trackpad would interleave with the replay.
             mtError = nil
         } else if Settings().inputSource == "mt" { mtError = Multitouch.start() } else { mtError = "disabled by inputSource=nstouch" }
@@ -111,8 +104,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         HotKey.action = { [weak self] in self?.toggleDrawMode() }
         if !canvas.testMode { HotKey.register() }   // tests never take ⌃⌥D from the app in use
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in self?.key(e) == true ? nil : e }
-        NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.exitDrawMode() }
+        NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.exitDrawMode(); self?.canvas.autosaver.saveNow(sync: false)
+        }
         buildMenu()
+        notebookStatus = canvas.loadNotebookFromDisk()
         updateBanner()
         startTestReplayIfAsked()
         if UserDefaults.standard.string(forKey: "rejoinMode") == "ab" {   // record the hidden condition
@@ -248,6 +244,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
                 }
             }
+        }
+        if let i = a.firstIndex(of: "--test-persist"), i + 1 < a.count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPersist.run(a[i + 1], canvas: canvas, app: self) }
         }
         if a.contains("--test-aim") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
@@ -389,7 +388,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func windowWillClose(_ n: Notification) { exitDrawMode(); NSApp.terminate(nil) }
-    func applicationWillTerminate(_ n: Notification) { exitDrawMode(); canvas.recorder.flush() }
+    func applicationWillTerminate(_ n: Notification) { exitDrawMode(); canvas.autosaver.saveNow(sync: true); canvas.recorder.flush() }
 }
 
 let app = NSApplication.shared

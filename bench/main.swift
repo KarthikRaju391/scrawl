@@ -4,6 +4,7 @@ import CoreGraphics
 import Foundation
 import Metal
 
+Diagnostics.off = true
 var failures = 0
 func check(_ ok: Bool, _ msg: String) { print(ok ? "PASS" : "FAIL", msg); if !ok { failures += 1 } }
 
@@ -183,6 +184,7 @@ smoothingTable(check)
 meshEquivalence(check, strokesPath: ProcessInfo.processInfo.environment["STROKES"])
 writingLayoutChecks(check)
 settingsChecks(check)
+notebookChecks(check)
 
 // Prediction must point ahead along the motion: sine path like the UI test, at several phases.
 do {
