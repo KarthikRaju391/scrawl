@@ -233,8 +233,11 @@ final class GestureEngine {
 final class InputQueue: @unchecked Sendable {
     private let lock = NSLock()
     private var items: [(contacts: [Contact], arrival: Double, sensorT: Double)] = []
-    func push(_ c: [Contact], arrival: Double, sensorT: Double) {
-        lock.lock(); items.append((c, arrival, sensorT)); lock.unlock()
+    /// Returns true if the queue was empty (the caller may schedule a fallback drain).
+    @discardableResult
+    func push(_ c: [Contact], arrival: Double, sensorT: Double) -> Bool {
+        lock.lock(); let wasEmpty = items.isEmpty; items.append((c, arrival, sensorT)); lock.unlock()
+        return wasEmpty
     }
     func drain() -> [(contacts: [Contact], arrival: Double, sensorT: Double)] {
         lock.lock(); defer { lock.unlock() }
@@ -403,7 +406,7 @@ final class CanvasView: MTKView {
         perf.ticks += 1
         if perf.lastTick > 0 { perf.tickMaxGap = max(perf.tickMaxGap, (now - perf.lastTick) * 1000) }
         perf.lastTick = now
-        for f in input.drain() { handle(f.contacts, arrival: f.arrival, sensorT: f.sensorT) }
+        drainInput()
         if !needsRender && camAnim == nil { perf.ticksIdle += 1 }
         perf.inputsPerTick.append(perf.inputsSinceTick); perf.inputsSinceTick = 0
         if camAnim != nil { stepSlide(); needsRender = true }
@@ -419,6 +422,20 @@ final class CanvasView: MTKView {
     override func draw(_ dirtyRect: NSRect) { render(predictAhead: predictAhead) }
 
     func setNeedsRender() { needsRender = true }
+
+    private var lastDrain = 0.0
+    private func drainInput() {
+        lastDrain = CACurrentMediaTime()
+        for f in input.drain() { handle(f.contacts, arrival: f.arrival, sensorT: f.sensorT) }
+    }
+    /// Fallback when display ticks stop (window covered, display link paused): process queued
+    /// input anyway, so gestures and strokes never wait on the screen.
+    /// Tests: process everything queued before reading counts.
+    func flushInputForTest() { drainInput() }
+
+    func drainIfStale() {
+        if CACurrentMediaTime() - lastDrain > 0.04 { drainInput() }
+    }
 
     // MARK: input
 

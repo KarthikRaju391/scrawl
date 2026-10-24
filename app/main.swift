@@ -94,8 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else if Settings().inputSource == "mt" { mtError = Multitouch.start() } else { mtError = "disabled by inputSource=nstouch" }
         cv.usingMT = mtError == nil
         let queue = cv.input
-        Multitouch.onFrame = { contacts, arrival, sensorT in
-            queue.push(contacts, arrival: arrival, sensorT: sensorT)  // drained on each display tick
+        Multitouch.onFrame = { [weak cv] contacts, arrival, sensorT in
+            // Drained on each display tick; if ticks stall, a fallback drains after 50 ms.
+            if queue.push(contacts, arrival: arrival, sensorT: sensorT) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { cv?.drainIfStale() }
+            }
         }
         HotKey.action = { [weak self] in self?.toggleDrawMode() }
         HotKey.register()
@@ -283,10 +286,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if a.contains("--test-front") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
             enterDrawMode(lock: lock)
             TestReplay.run(path: a[i + 1], onFrame: { cs, t, st in Multitouch.onFrame?(cs, t, st) }) { [self] n, wall, planned in
+                canvas.flushInputForTest()
                 let dir = (canvas.logger.path as NSString).deletingLastPathComponent
                 let report: [String: Any] = ["frames": n, "strokes": canvas.doc.strokes.count, "zoom": canvas.camera.zoom,
                                              "presented": canvas.presentedCount, "rendered": canvas.renderCount, "locked": lock,
-                                             "replayWallSec": wall, "replayPlannedSec": planned]
+                                             "replayWallSec": wall, "replayPlannedSec": planned,
+                                             "windowVisible": window.occlusionState.contains(.visible)]
                 try? JSONSerialization.data(withJSONObject: report).write(to: URL(fileURLWithPath: dir + "/test-replay-done.json"))
             }
         }
