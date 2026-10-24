@@ -35,6 +35,9 @@ enum Multitouch {
     static var padMM = CGSize(width: 124.8, height: 76.8)
     /// Called on the framework's thread with all contacts of a frame and the arrival time
     /// (CACurrentMediaTime; the framework's own timestamp is on a different clock).
+    /// Pad y assumed to grow upward (bottom-left origin). If strokes come out upside down:
+    /// `defaults write local.trackpad-draw padFlipY -bool true`.
+    nonisolated(unsafe) static var flipY = UserDefaults.standard.bool(forKey: "padFlipY")
     nonisolated(unsafe) static var onFrame: (([Contact], Double) -> Void)?
 
     static let callback: MTFrameCB = { _, raw, n, _, _ in
@@ -45,7 +48,8 @@ enum Multitouch {
             out.reserveCapacity(Int(n))
             for i in 0..<Int(n) {
                 let t = touches[i]
-                let nx = CGFloat(t.normalized.position.x), ny = CGFloat(t.normalized.position.y)
+                let nx = CGFloat(t.normalized.position.x)
+                let ny = Multitouch.flipY ? 1 - CGFloat(t.normalized.position.y) : CGFloat(t.normalized.position.y)
                 out.append(Contact(id: t.identifier, state: t.state, norm: CGPoint(x: nx, y: ny),
                                    mm: CGPoint(x: nx * Multitouch.padMM.width, y: ny * Multitouch.padMM.height),
                                    pressure: Double(t.pressure), size: Double(t.total), major: Double(t.majorAxis)))

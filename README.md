@@ -32,6 +32,7 @@ MultitouchSupport framework.
 | `oneEuroMinCutoff` / `oneEuroBeta` | 1.0 / 0.05 | jitter vs lag |
 | `inkThreshold` | 0 (off) | Inklet-style hover: ink only starts once MT pressure reaches this |
 | `palmMajorAxis` / `palmTotal` | 11 / 1.4 | contacts above either value are ignored as palms |
+| `padFlipY` | false | set true if strokes come out upside down (unverified pad y direction) |
 | `predictMs` | 16 | how far ahead the predicted tip point is drawn |
 
 The pressure range in `MTPressureModel` (`lo` 4, `hi` 70) is a guess from passive data. Retune
