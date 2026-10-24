@@ -246,3 +246,49 @@ enum TestAutoPan {
         t.start()
     }
 }
+
+/// --test-draw <strokes.json>: draws a list of {tool, color, size, points (pad mm)} through the
+/// input path at ~70 mm/s with a pressure swell, switching tools between strokes like the toolbar.
+enum TestDraw {
+    static func run(canvas: CanvasView, path: String, done: @escaping () -> Void) {
+        guard let data = FileManager.default.contents(atPath: path),
+              let strokes = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { done(); return }
+        let pad = Multitouch.padMM
+        let t = Thread {
+            var deadline = CACurrentMediaTime(), sensorT = 0.0, id: Int32 = 9000
+            func emit(_ c: [Contact]) {
+                deadline += 0.008; sensorT += 0.008
+                preciseWait(until: deadline)
+                Multitouch.onFrame?(c, CACurrentMediaTime(), sensorT)
+            }
+            for s in strokes {
+                let pts = (s["points"] as? [[Double]] ?? []).map { CGPoint(x: $0[0], y: $0[1]) }
+                guard pts.count > 1 else { continue }
+                DispatchQueue.main.sync {
+                    var ts = canvas.tools
+                    ts.tool = ToolKind(rawValue: s["tool"] as? String ?? "pen") ?? .pen
+                    ts.colorIndex[ts.tool] = s["color"] as? Int ?? 0
+                    ts.sizeIndex[ts.tool] = s["size"] as? Int ?? 1
+                    canvas.tools = ts
+                }
+                var path: [CGPoint] = []
+                for (a, b) in zip(pts, pts.dropFirst()) {
+                    let n = max(1, Int(hypot(b.x - a.x, b.y - a.y) / (70 * 0.008)))
+                    for k in 0..<n { let u = Double(k) / Double(n); path.append(CGPoint(x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u)) }
+                }
+                path.append(pts.last!)
+                id += 1
+                for (k, p) in path.enumerated() {
+                    let pr = 10 + 30 * sin(Double.pi * Double(k + 1) / Double(path.count + 1))
+                    emit([Contact(id: id, state: 4, norm: CGPoint(x: p.x / pad.width, y: p.y / pad.height), mm: p, pressure: pr, size: 0.5, major: 7.5)])
+                }
+                emit([])
+                for _ in 0..<20 { emit([]) }
+            }
+            for _ in 0..<40 { emit([]) }
+            DispatchQueue.main.async { done() }
+        }
+        t.qualityOfService = .userInteractive
+        t.start()
+    }
+}

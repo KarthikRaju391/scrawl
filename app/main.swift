@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onPage = { [weak self] d in self?.page(d) }
         cv.onStatus = { [weak self] in self?.updateBanner() }
 
-        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll"].contains { CommandLine.arguments.contains($0) }
+        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw"].contains { CommandLine.arguments.contains($0) }
         if testing {
             // Test input only: real touches on the trackpad would interleave with the replay.
             mtError = nil
@@ -206,6 +206,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 canvas.setZoomForTest(settingsWritingZoom: true)
                 if !a.contains("--zoomed") { canvas.resetZoom() }
                 TestStress.run(canvas: canvas, path: a[i + 1], count: n, dir: dir) {
+                    try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+                }
+            }
+        }
+        if let i = a.firstIndex(of: "--test-draw"), i + 1 < a.count {
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+                enterDrawMode(lock: false)
+                TestDraw.run(canvas: canvas, path: a[i + 1]) { [self] in
+                    exitDrawMode()
+                    try? canvas.exportPNG(to: URL(fileURLWithPath: dir + "/page.png"), pxPerUnit: 3)
                     try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
                 }
             }
