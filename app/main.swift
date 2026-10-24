@@ -85,14 +85,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
         tb.onWriting = { [weak self] in self?.toggleWriting() }
 
-        let testing = ["--test-replay", "--test-ui", "--test-writing"].contains { CommandLine.arguments.contains($0) }
+        let testing = ["--test-replay", "--test-ui", "--test-writing", "--test-stress"].contains { CommandLine.arguments.contains($0) }
         if testing {
             // Test input only: real touches on the trackpad would interleave with the replay.
             mtError = nil
         } else if Settings().inputSource == "mt" { mtError = Multitouch.start() } else { mtError = "disabled by inputSource=nstouch" }
         cv.usingMT = mtError == nil
-        Multitouch.onFrame = { [weak cv] contacts, arrival, sensorT in
-            DispatchQueue.main.async { cv?.handle(contacts, arrival: arrival, sensorT: sensorT) }
+        let queue = cv.input
+        Multitouch.onFrame = { contacts, arrival, sensorT in
+            queue.push(contacts, arrival: arrival, sensorT: sensorT)  // drained on each display tick
         }
         HotKey.action = { [weak self] in self?.toggleDrawMode() }
         HotKey.register()
@@ -180,6 +181,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func startTestReplayIfAsked() {
         let a = CommandLine.arguments
+        if let i = a.firstIndex(of: "--test-stress"), i + 1 < a.count {
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            let n = a.firstIndex(of: "--count").flatMap { Int(a[$0 + 1]) } ?? 400
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+                enterDrawMode(lock: false)
+                canvas.setZoomForTest(settingsWritingZoom: true)
+                if !a.contains("--zoomed") { canvas.resetZoom() }
+                TestStress.run(canvas: canvas, path: a[i + 1], count: n, dir: dir) {
+                    try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+                }
+            }
+        }
         if a.contains("--test-writing") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             let on = !a.contains("--writing-off")

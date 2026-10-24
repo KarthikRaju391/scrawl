@@ -46,8 +46,9 @@ struct Mesh {
     var count = 0
 }
 
-/// Triangles for a stroke: one fan per point (circle) + two triangles per segment.
-func strokeMesh(_ pts: [StrokePoint], radii: [Double], segments: Int = 20) -> [SIMD2<Float>] {
+/// Reference tessellation (a full circle at every point + a quad per segment). Exact union shape,
+/// but ~66 vertices per point; kept for the bench's pixel comparison.
+func strokeMeshCircles(_ pts: [StrokePoint], radii: [Double], segments: Int = 20) -> [SIMD2<Float>] {
     var v: [SIMD2<Float>] = []
     guard !pts.isEmpty else { return v }
     v.reserveCapacity(pts.count * (segments * 3 + 6))
@@ -70,6 +71,59 @@ func strokeMesh(_ pts: [StrokePoint], radii: [Double], segments: Int = 20) -> [S
             }
         }
     }
+    return v
+}
+
+/// Triangles for a stroke, same filled shape as strokeMeshCircles at a fraction of the vertices:
+/// a quad per segment; at gentle bends two bevel triangles close the joint (the only difference
+/// from a round join is a sliver of r(1-cos(theta/2)), kept under 0.25 px on screen); full
+/// circles at the ends and wherever that sliver would show, with segments sized to the on-screen radius
+/// (`pxPerUnit` = device pixels per canvas unit, with headroom for zooming in).
+func strokeMesh(_ pts: [StrokePoint], radii: [Double], pxPerUnit: Double = 8) -> [SIMD2<Float>] {
+    var v: [SIMD2<Float>] = []
+    guard !pts.isEmpty else { return v }
+    v.reserveCapacity(pts.count * 14 + 120)
+    func P(_ i: Int) -> SIMD2<Float> { SIMD2(Float(pts[i].p.x), Float(pts[i].p.y)) }
+    func circle(_ c: SIMD2<Float>, _ r: Float) {
+        let segs = min(max(Int((Double(r) * pxPerUnit * 1.2).rounded(.up)), 8), 32)
+        var prev = c + SIMD2(r, 0)
+        for k in 1...segs {
+            let a = Float(k) / Float(segs) * 2 * .pi
+            let q = c + SIMD2(cos(a), sin(a)) * r
+            v.append(c); v.append(prev); v.append(q)
+            prev = q
+        }
+    }
+    // Segment normals (nil for zero-length segments).
+    var normals: [SIMD2<Float>?] = [nil]
+    for i in 1..<pts.count {
+        let d = P(i) - P(i - 1), len = simd_length(d)
+        normals.append(len > 1e-6 ? SIMD2(-d.y, d.x) / len : nil)
+    }
+    circle(P(0), Float(radii[0]))
+    var lastN: SIMD2<Float>?  // normal of the previous non-degenerate segment
+    for i in 1..<pts.count {
+        let a = P(i - 1), b = P(i), ra = Float(radii[i - 1]), rb = Float(radii[i])
+        guard let n = normals[i] else { continue }
+        // Joint at point i-1 between the previous segment and this one.
+        if let pn = lastN {
+            // A bevel misses a sliver of r(1 - cos(theta/2)) on the outside of the turn; round the
+            // joint when that would exceed a quarter pixel on screen.
+            // Also round it where the radius changes fast (pressure rising into a slow corner):
+            // the circle at the wider end bulges past the tapering quads.
+            let cosHalf = sqrt(max(0, (1 + Double(simd_dot(pn, n))) / 2))
+            let dr = max(abs(radii[i - 1] - radii[max(i - 2, 0)]), abs(radii[i] - radii[i - 1]))
+            if Double(ra) * pxPerUnit * (1 - cosHalf) > 0.25 || dr * pxPerUnit > 0.25 {
+                circle(a, ra)
+            } else {                      // gentle bend: bevel both sides
+                v += [a, a + pn * ra, a + n * ra, a, a - pn * ra, a - n * ra]
+            }
+        }
+        let a0 = a - n * ra, a1 = a + n * ra, b0 = b - n * rb, b1 = b + n * rb
+        v += [a0, b0, b1, a0, b1, a1]
+        lastN = n
+    }
+    if pts.count > 1 { circle(P(pts.count - 1), Float(radii[pts.count - 1])) }
     return v
 }
 
@@ -137,11 +191,12 @@ final class Renderer {
 
     /// `items` in paint order. `verts` (instead of a mesh) is for small per-frame geometry.
     func render(in view: MTKView, visible: CGRect, background: Int, spacing: Double, pxPerUnit: Double,
-                items: [DrawItem], presented: ((Double) -> Void)?) {
+                items: [DrawItem], presented: ((Double) -> Void)?, gpuMs: ((Double) -> Void)? = nil) {
         guard let rpd = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let cb = queue.makeCommandBuffer() else { return }
         encode(cb, rpd, visible: visible, background: background, spacing: spacing, pxPerUnit: pxPerUnit, items: items)
         if let presented { drawable.addPresentedHandler { d in presented(d.presentedTime) } }
+        if let gpuMs { cb.addCompletedHandler { cb in gpuMs((cb.gpuEndTime - cb.gpuStartTime) * 1000) } }
         cb.present(drawable)
         cb.commit()
     }

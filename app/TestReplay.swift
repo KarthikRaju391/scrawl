@@ -7,6 +7,14 @@
 import AppKit
 import QuartzCore
 
+/// Wait until `deadline` (CACurrentMediaTime) with sub-ms accuracy, like the driver's 8 ms clock.
+/// Spins: on this Mac a 6.5 ms Thread.sleep wakes a median 6.5 ms late (max 24 ms, timer
+/// coalescing), which made test input bursty, unlike the real driver thread (real sessions: 8.08 ms
+/// median spacing, p5-p95 7.96-8.21 ms). Costs one core while a test feeds input.
+func preciseWait(until deadline: Double) {
+    while CACurrentMediaTime() < deadline {}
+}
+
 enum TestReplay {
     struct Frame { var dt: Double; var contacts: [Contact] }
 
@@ -62,8 +70,7 @@ enum TestReplay {
             for f in fs {
                 deadline += f.dt
                 sensorT += f.dt
-                let wait = deadline - CACurrentMediaTime()
-                if wait > 0 { Thread.sleep(forTimeInterval: wait) }
+                preciseWait(until: deadline)
                 onFrame(f.contacts, CACurrentMediaTime(), sensorT)
             }
             let wall = CACurrentMediaTime() - start, planned = fs.reduce(0) { $0 + $1.dt }
@@ -161,5 +168,68 @@ enum TestWriting {
             done()
         }
         writeWord()
+    }
+}
+
+/// --test-stress <strokes.jsonl>: fills the page with N strokes of real handwriting shape (the
+/// recorded strokes, scaled down and tiled like lines of text), then draws one 4-second live stroke
+/// through the input path while recording per-frame CPU/GPU time and gaps between presented frames.
+enum TestStress {
+    static func run(canvas: CanvasView, path: String, count: Int, dir: String, done: @escaping () -> Void) {
+        var shapes: [[CGPoint]] = []
+        if let text = try? String(contentsOfFile: path, encoding: .utf8) {
+            for line in text.split(separator: "\n") {
+                guard let s = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                      s["committed"] as? Bool == true, let sm = s["samples"] as? [[Double]], sm.count > 2 else { continue }
+                let pts = sm.map { CGPoint(x: $0[1], y: $0[2]) }
+                let minX = pts.map(\.x).min()!, minY = pts.map(\.y).min()!
+                let w = max(pts.map(\.x).max()! - minX, pts.map(\.y).max()! - minY, 1)
+                shapes.append(pts.map { CGPoint(x: ($0.x - minX) / w, y: ($0.y - minY) / w) })  // unit box
+            }
+        }
+        let page = canvas.camera.page
+        let cell = 26.0, cols = Int(page.width / cell)
+        for i in 0..<count {
+            let sh = shapes[i % shapes.count]
+            let ox = Double(i % cols) * cell + 3, oy = page.height - 30 - Double(i / cols) * 34
+            canvas.testAddStroke(sh.enumerated().map { j, p in StrokePoint(p: CGPoint(x: ox + p.x * 20, y: oy + p.y * 20), pressure: 0.4 + 0.2 * sin(Double(j) / 5)) })
+        }
+        canvas.setNeedsRender()
+        let pad = Multitouch.padMM
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            canvas.resetPerf()
+            // Feed like the real driver: a dedicated thread on an 8 ms clock, through Multitouch.onFrame.
+            let t = Thread {
+                let n = 500
+                var deadline = CACurrentMediaTime()
+                for j in 0...n {
+                    deadline += 0.008
+                    preciseWait(until: deadline)
+                    let a = Double(j) / 40, r = 5 + Double(j) / 20
+                    let x = pad.width / 2 + cos(a) * r, y = pad.height / 2 + sin(a) * r * 0.6
+                    let c = j < n ? [Contact(id: 77, state: 4, norm: CGPoint(x: x / pad.width, y: y / pad.height), mm: CGPoint(x: x, y: y), pressure: 25, size: 0.5, major: 7.5)] : []
+                    Multitouch.onFrame?(c, CACurrentMediaTime(), Double(j) * 0.008)
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { report() }
+            }
+            t.qualityOfService = .userInteractive
+            t.start()
+        }
+        func report() {
+            func q(_ v: [Double], _ p: Double) -> Double { let s = v.sorted(); return s.isEmpty ? 0 : s[min(s.count - 1, Int(p * Double(s.count - 1)))] }
+            let pf = canvas.perf
+            let r: [String: Any] = [
+                "strokes": canvas.doc.strokes.count,
+                "vertsP50": q(pf.verts.map(Double.init), 0.5), "vertsMax": pf.verts.max() ?? 0,
+                "cpuP50": q(pf.cpu, 0.5), "cpuP95": q(pf.cpu, 0.95), "cpuMax": pf.cpu.max() ?? 0,
+                "gpuP50": q(pf.gpu, 0.5), "gpuP95": q(pf.gpu, 0.95), "gpuMax": pf.gpu.max() ?? 0,
+                "frames": pf.gaps.count + 1, "gapP50": q(pf.gaps, 0.5), "gapP95": q(pf.gaps, 0.95), "gapMax": pf.gaps.max() ?? 0,
+                "gapsOver12_5ms": pf.gaps.filter { $0 > 12.5 }.count,
+                "inputsPerTickHistogram": Dictionary(grouping: pf.inputsPerTick, by: { $0 }).mapValues(\.count).map { "\($0.key):\($0.value)" }.sorted(),
+                "ticks": pf.ticks, "ticksIdle": pf.ticksIdle, "tickMaxGapMs": pf.tickMaxGap,
+            ]
+            try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-stress.json"))
+            done()
+        }
     }
 }

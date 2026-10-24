@@ -179,6 +179,7 @@ do {
 }
 
 gestureChecks(check)
+meshEquivalence(check, strokesPath: ProcessInfo.processInfo.environment["STROKES"])
 writingChecks(check)
 
 // Prediction must point ahead along the motion: sine path like the UI test, at several phases.

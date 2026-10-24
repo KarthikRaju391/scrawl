@@ -216,6 +216,23 @@ final class GestureEngine {
     }
 }
 
+// MARK: - Input queue
+
+/// Trackpad frames from the driver's thread, drained once per display tick. Delivering them with
+/// DispatchQueue.main.async arrived in bursts of 2-4 per tick with most ticks getting none, so the
+/// ink advanced in jumps (judder) even on an empty page.
+final class InputQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [(contacts: [Contact], arrival: Double, sensorT: Double)] = []
+    func push(_ c: [Contact], arrival: Double, sensorT: Double) {
+        lock.lock(); items.append((c, arrival, sensorT)); lock.unlock()
+    }
+    func drain() -> [(contacts: [Contact], arrival: Double, sensorT: Double)] {
+        lock.lock(); defer { lock.unlock() }
+        let out = items; items.removeAll(keepingCapacity: true); return out
+    }
+}
+
 // MARK: - Canvas view
 
 final class CanvasView: MTKView {
@@ -245,9 +262,15 @@ final class CanvasView: MTKView {
     private var activity: NSObjectProtocol?
     var usingMT = false
     let logger = StrokeLog()
+    let input = InputQueue()
 
     /// Frames encoded / frames the display actually showed (test mode reports both).
     private(set) var renderCount = 0
+
+    /// Frame timing for tests: CPU ms in render(), GPU ms, gaps between presented frames (ms), vertices.
+    struct Perf { var cpu: [Double] = []; var gpu: [Double] = []; var gaps: [Double] = []; var verts: [Int] = []; var ticks = 0; var ticksIdle = 0; var tickMaxGap = 0.0; var lastTick = 0.0; var inputsPerTick: [Int] = []; var inputsSinceTick = 0 }
+    var perf = Perf()
+    private var lastPresented = 0.0
 
     // MARK: writing mode (see Writing.swift)
     var writingMode = false {
@@ -362,6 +385,13 @@ final class CanvasView: MTKView {
     private var predictAhead = 0.0
 
     @objc private func tick(_ l: CADisplayLink) {
+        let now = CACurrentMediaTime()
+        perf.ticks += 1
+        if perf.lastTick > 0 { perf.tickMaxGap = max(perf.tickMaxGap, (now - perf.lastTick) * 1000) }
+        perf.lastTick = now
+        for f in input.drain() { handle(f.contacts, arrival: f.arrival, sensorT: f.sensorT) }
+        if !needsRender && camAnim == nil { perf.ticksIdle += 1 }
+        perf.inputsPerTick.append(perf.inputsSinceTick); perf.inputsSinceTick = 0
         if camAnim != nil { stepSlide(); needsRender = true }
         guard needsRender else { return }
         needsRender = false
@@ -386,6 +416,7 @@ final class CanvasView: MTKView {
         guard drawMode else { return }
         frameArrival = arrival
         frameSensorT = sensorT
+        perf.inputsSinceTick += 1
         contacts = cs.filter(\.isDown)
         if !contacts.isEmpty { cancelAdvance(); finishSlide() }
         gestures.frame(cs, t: arrival)
@@ -503,7 +534,7 @@ final class CanvasView: MTKView {
         if liveTool == .eraser { doc.dropEmptyUndo(); return }
         guard commit, !b.points.isEmpty else { return }
         let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
-        s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii))
+        s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
         doc.add(s)
         if writingMode {
             lineInk = lineInk.map { $0.union(s.bounds) } ?? s.bounds
@@ -513,14 +544,20 @@ final class CanvasView: MTKView {
 
     // MARK: drawing
 
+    /// Device pixels per canvas unit now, x2 headroom so circles stay round when zooming in later.
+    private var meshPxPerUnit: Double { ptPerUnit * camera.zoom * Double(window?.backingScaleFactor ?? 2) * 2 }
+
     /// Interpolation step: 1.5 screen points at the zoom the stroke is drawn at.
     private var smoothStep: Double { 1.5 / (ptPerUnit * camera.zoom) }
 
     private func premul(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x * c.w, c.y * c.w, c.z * c.w, c.w) }
 
     private func render(predictAhead: Double) {
-        var items: [Renderer.DrawItem] = doc.strokes.map { s in
-            if s.mesh.buffer == nil { s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii)) }
+        let cpu0 = CACurrentMediaTime()
+        let vis = camera.visible
+        var items: [Renderer.DrawItem] = doc.strokes.compactMap { s in
+            guard s.bounds.intersects(vis) else { return nil }  // off-screen (most of the page when zoomed in)
+            if s.mesh.buffer == nil { s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit)) }
             return .init(mesh: s.mesh, verts: nil, color: premul(s.color))
         }
         if let b = builder, liveTool != .eraser, !b.points.isEmpty {
@@ -528,7 +565,7 @@ final class CanvasView: MTKView {
             if let p = b.predicted(ahead: predictAhead) { pts.append(p) }
             pts = catmullRom(pts, maxStep: smoothStep)
             let radii = strokeRadii(pts, size: liveSize, brush: Brush.of(liveTool), live: true)
-            items.append(.init(mesh: Mesh(), verts: strokeMesh(pts, radii: radii), color: premul(liveColor)))
+            items.append(.init(mesh: Mesh(), verts: strokeMesh(pts, radii: radii, pxPerUnit: meshPxPerUnit), color: premul(liveColor)))
         }
         if drawMode {  // finger markers: where each finger is on the page (there is no cursor)
             let ringR = 5 / (ptPerUnit * camera.zoom)
@@ -565,10 +602,15 @@ final class CanvasView: MTKView {
                         items: items, presented: { [weak self] t in
                             guard t > 0 else { return }  // 0 = dropped frame
                             DispatchQueue.main.async {
-                                self?.presentedCount += 1
-                                if let a = arrival { self?.logger.latency((t - a) * 1000) }
+                                guard let self else { return }
+                                self.presentedCount += 1
+                                if let a = arrival { self.logger.latency((t - a) * 1000) }
+                                if self.lastPresented > 0 { self.perf.gaps.append((t - self.lastPresented) * 1000) }
+                                self.lastPresented = t
                             }
-                        })
+                        }, gpuMs: { [weak self] ms in DispatchQueue.main.async { self?.perf.gpu.append(ms) } })
+        perf.cpu.append((CACurrentMediaTime() - cpu0) * 1000)
+        perf.verts.append(items.reduce(0) { $0 + $1.mesh.count + ($1.verts?.count ?? 0) })
     }
 
     // MARK: commands
@@ -576,6 +618,13 @@ final class CanvasView: MTKView {
     func undo() { doc.undo(); lineInk = nil; needsRender = true }
     func redo() { doc.redo(); needsRender = true }
     func clearPage() { doc.clear(); needsRender = true }
+    /// Test: add a finished stroke as if drawn at the current zoom.
+    func testAddStroke(_ pts: [StrokePoint], tool: ToolKind = .pen) {
+        let s = Stroke(tool: tool, color: SIMD4(0, 0, 0, 1), size: tools.sizePt / (ptPerUnit * camera.zoom), points: pts, maxStep: smoothStep)
+        doc.add(s)
+    }
+    func resetPerf() { perf = Perf(); lastPresented = 0 }
+
     /// Test baseline: same zoom and starting place as writing mode, without writing mode.
     func setZoomForTest(settingsWritingZoom: Bool) {
         camera.zoom = settings.writingZoom
