@@ -33,4 +33,7 @@ Full list: [CHANGELOG.md](https://github.com/KarthikRaju391/trackpad-draw/blob/m
 
 ## Checksums (SHA-256)
 
-SHA256SUMS_PLACEHOLDER
+```
+4ed440696a30df5fe9277939adc8ceaab5f7e42624040e0fe96133ba6429ef8a  Scrawl-0.1.0.dmg
+7ed10222cfa91abad4cf6477733b6f9f1009d6f403ce18335c32b014ddee3421  Scrawl-0.1.0.zip
+```
