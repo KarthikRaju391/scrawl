@@ -1001,23 +1001,6 @@ final class CanvasView: MTKView {
     }
 
     /// Full page to PNG at `scale` px per canvas unit (CPU, same union fill as the GPU path).
-    func exportPNG(to url: URL, pxPerUnit: Double = 4) throws {
-        let lowest = min(doc.strokes.map(\.bounds.minY).min() ?? 0, 0) - 20
-        let w = Int(camera.page.width * pxPerUnit), h = Int((camera.page.height - lowest) * pxPerUnit)
-        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
-                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
-        ctx.setFillColor(.white)
-        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-        ctx.scaleBy(x: pxPerUnit, y: pxPerUnit)
-        ctx.translateBy(x: 0, y: -lowest)
-        for s in doc.strokes {
-            ctx.setFillColor(CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: CGFloat(s.color.w)))
-            ctx.addPath(strokePath(s.points, size: s.size, brush: Brush.of(s.tool)))
-            ctx.fillPath(using: .winding)
-        }
-        let rep = NSBitmapImageRep(cgImage: ctx.makeImage()!)
-        try rep.representation(using: .png, properties: [:])!.write(to: url)
-    }
 }
 
 // MARK: - Session recorder (test build): everything needed to replay a drawing session exactly

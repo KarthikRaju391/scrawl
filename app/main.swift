@@ -396,6 +396,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "Quit Trackpad Draw", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
+        let fileItem = NSMenuItem(); main.addItem(fileItem)
+        let file = NSMenu(title: "File")
+        let png = file.addItem(withTitle: "Export Page as PNG…", action: #selector(exportPNG), keyEquivalent: "e"); png.keyEquivalentModifierMask = [.command, .shift]; png.target = self
+        file.addItem(withTitle: "Export All Pages as PDF…", action: #selector(exportPDF), keyEquivalent: "e").target = self
+        fileItem.submenu = file
         let editItem = NSMenuItem(); main.addItem(editItem)
         let edit = NSMenu(title: "Edit")
         edit.addItem(withTitle: "Undo", action: #selector(undo), keyEquivalent: "z").target = self
@@ -409,7 +414,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         view.addItem(withTitle: "New Page", action: #selector(newPageAction), keyEquivalent: "n").target = self
         view.addItem(withTitle: "Previous Page", action: #selector(prevPageAction), keyEquivalent: "[").target = self
         view.addItem(withTitle: "Next Page", action: #selector(nextPageAction), keyEquivalent: "]").target = self
-        let exp = view.addItem(withTitle: "Export Page PNG (for OCR check)", action: #selector(exportPNG), keyEquivalent: "e"); exp.keyEquivalentModifierMask = [.command, .shift]; exp.target = self
         viewItem.submenu = view
         NSApp.mainMenu = main
     }
@@ -422,12 +426,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func prevPageAction() { page(-1) }
     @objc func nextPageAction() { page(1) }
     @objc func toggleDrawModeAction() { toggleDrawMode() }
-    @objc func exportPNG() {
-        let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
-        let dir = (canvas.logger.path as NSString).deletingLastPathComponent
-        let url = URL(fileURLWithPath: "\(dir)/page-\(f.string(from: Date())).png")
-        do { try canvas.exportPNG(to: url); NSWorkspace.shared.activateFileViewerSelecting([url]) }
-        catch { NSAlert(error: error).runModal() }
+    @objc func exportPNG() { export("png") { try self.canvas.exportPNG(to: $0) } }
+    @objc func exportPDF() { export("pdf") { try self.canvas.exportPDF(to: $0) } }
+    private func export(_ ext: String, _ write: @escaping (URL) throws -> Void) {
+        exitDrawMode("export")
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [ext == "pdf" ? .pdf : .png]
+        panel.nameFieldStringValue = ext == "pdf" ? "Trackpad Draw \(f.string(from: Date())).pdf" : "Page \(canvas.pageIndex + 1) \(f.string(from: Date())).png"
+        panel.beginSheetModal(for: window) { r in
+            guard r == .OK, let url = panel.url else { return }
+            do { try write(url) } catch { NSAlert(error: error).runModal() }
+        }
     }
 
     func windowWillClose(_ n: Notification) { exitDrawMode("window closed"); NSApp.terminate(nil) }
