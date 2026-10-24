@@ -1,7 +1,7 @@
 #!/bin/bash
 # Touch input without MultitouchSupport, MT going quiet mid-use, and the welcome window (background).
 cd "$(dirname "$0")/.."
-APP="build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw"
+APP="build/Scrawl.app/Contents/MacOS/TrackpadDraw"
 run() {  # run <dir> <args...>
     local D=$1; shift
     TRACKPAD_DRAW_DATA=$D "$APP" "$@" >/dev/null 2>&1 &
@@ -31,7 +31,7 @@ iw = " ".join(s.get("infoWindow", []))
 chk(not s["infoWindowWhileDrawing"], "no window pops up mid-drawing")
 chk("Touches weren't arriving" in iw and "[Open Input Monitoring Settings]" in iw, "on leaving draw mode, the help window explains it, with an Input Monitoring button")
 full = " ".join(w["full"])
-chk("Welcome to Trackpad Draw" in full and "⌃⌥D" in full and "Esc" in full and "Full touch input" in full and "[Start Drawing]" in full,
+chk("Welcome to Scrawl" in full and "Trackpad Draw" not in full and "⌃⌥D" in full and "Esc" in full and "Full touch input" in full and "[Start Drawing]" in full,
     "welcome: what it does, ⌃⌥D / Esc, which input is live, Start button")
 chk("Nothing is uploaded" in full and "Check for Updates" in full, "welcome: privacy note (pages stay local, only network use is Check for Updates)")
 chk("No trackpad found" in " ".join(w["none"]) and "Basic touch input" in " ".join(w["basic"]), "no-trackpad and basic-input messages")

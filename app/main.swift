@@ -1,4 +1,4 @@
-// Trackpad Draw: finger drawing on the MacBook trackpad, Keep-style tools.
+// Scrawl (formerly Trackpad Draw): finger drawing on the MacBook trackpad, Keep-style tools.
 // ⌃⌥D enters draw mode (cursor frozen + hidden, trackpad maps to the visible page);
 // Esc always exits. One finger draws, two fingers pan/pinch, palms are ignored.
 import AppKit
@@ -64,6 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var mtError: String?
     var notebookStatus = ""
     var previousCrash = false
+    var migrationNotes: [String] = []
     var infoWindow: InfoWindow?
     var inputStatus: InputStatus { InputStatus(mtError: mtError, stalled: canvas.inputStalled, summary: Multitouch.summary) }
 
@@ -87,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        if AppPaths.override == nil && !Launch.testing { migrationNotes = Migration.run() }
         AppPaths.ensure()
         previousCrash = CrashNote.checkAndMark()
         Watchdog.spawn()
@@ -96,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let size = CGSize(width: min(1400, screen.width * 0.85), height: min(940, screen.height * 0.85))
         window = NSWindow(contentRect: CGRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Trackpad Draw"
+        window.title = AppInfo.name
         window.minSize = CGSize(width: 640, height: 480)
         window.delegate = self
         let cv = CanvasView(frame: .zero, device: nil)
@@ -441,7 +443,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
         let panel = NSSavePanel()
         panel.allowedContentTypes = [ext == "pdf" ? .pdf : .png]
-        panel.nameFieldStringValue = ext == "pdf" ? "Trackpad Draw \(f.string(from: Date())).pdf" : "Page \(canvas.pageIndex + 1) \(f.string(from: Date())).png"
+        panel.nameFieldStringValue = ext == "pdf" ? "\(AppInfo.name) \(f.string(from: Date())).pdf" : "Page \(canvas.pageIndex + 1) \(f.string(from: Date())).png"
         panel.beginSheetModal(for: window) { r in
             guard r == .OK, let url = panel.url else { return }
             do { try write(url) } catch { NSAlert(error: error).runModal() }

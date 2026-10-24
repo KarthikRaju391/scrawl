@@ -1,17 +1,17 @@
-# Developing Trackpad Draw
+# Developing Scrawl
 
 ## Build
 
-    ./build.sh                      # dev build: build/Trackpad Draw.app (bundle id local.trackpad-draw), plus build/bench
-    open "build/Trackpad Draw.app"
-    CONFIG=release ./build.sh       # release build: build/release/Trackpad Draw.app, universal, hardened runtime
+    ./build.sh                      # dev build: build/Scrawl.app (bundle id local.trackpad-draw), plus build/bench
+    open "build/Scrawl.app"
+    CONFIG=release ./build.sh       # release build: build/release/Scrawl.app, universal, hardened runtime
     scripts/release.sh              # release build + DMG + zip + SHA256SUMS.txt in dist/<version>/
 
 Only the Command Line Tools are needed. The name, bundle ID, version, minimum macOS and update URL
 live in `release.conf`. The build number is the git commit count.
 
 Development builds write touch diagnostics to `data/` in this repo. Release builds write nothing
-there unless Help › Record Touch Diagnostics is on, and then they write to `~/Library/Logs/Trackpad Draw`.
+there unless Help › Record Touch Diagnostics is on, and then they write to `~/Library/Logs/Scrawl`.
 
 ### Signing and notarization
 

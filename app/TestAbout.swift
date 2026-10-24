@@ -8,7 +8,9 @@ enum TestAbout {
         let dir = AppPaths.dataDir
         var r: [String: Any] = ["version": AppInfo.version, "build": AppInfo.build, "bundleId": Bundle.main.bundleIdentifier ?? "",
                                 "config": AppInfo.info("TDBuildConfig"), "diagnosticsEnabled": Diagnostics.enabled,
-                                "updateURL": UpdateChecker.url?.absoluteString ?? ""]
+                                "updateURL": UpdateChecker.url?.absoluteString ?? "",
+                                "welcomeWouldShow": !UserDefaults.standard.bool(forKey: "welcomed"),
+                                "migrationRanInTest": UserDefaults.standard.object(forKey: Migration.doneKey) != nil || !app.migrationNotes.isEmpty]
         var menus: [[String: Any]] = []
         for top in NSApp.mainMenu?.items ?? [] {
             for i in top.submenu?.items ?? [] where !i.isSeparatorItem {

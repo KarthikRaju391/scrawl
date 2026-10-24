@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pages survive crashes, kill -9 and quitting (background, scratch data folders). PASS/FAIL per case.
 cd "$(dirname "$0")/.."
-APP="build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw"
+APP="build/Scrawl.app/Contents/MacOS/TrackpadDraw"
 BAD=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; BAD=$((BAD + 1)); }

@@ -38,7 +38,7 @@ extension CanvasView {
     func exportPDF(to url: URL) throws {
         let k = Self.pdfPointsPerUnit
         var box = CGRect(x: 0, y: 0, width: camera.page.width * k, height: camera.page.height * k)
-        let info = [kCGPDFContextCreator: "Trackpad Draw", kCGPDFContextTitle: url.deletingPathExtension().lastPathComponent] as CFDictionary
+        let info = [kCGPDFContextCreator: AppInfo.name, kCGPDFContextTitle: url.deletingPathExtension().lastPathComponent] as CFDictionary
         guard let ctx = CGContext(url as CFURL, mediaBox: &box, info) else { throw CocoaError(.fileWriteUnknown) }
         for d in pages {
             let r = exportRect(d)

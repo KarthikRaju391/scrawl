@@ -2,7 +2,7 @@
 # The cursor always comes back (background; dry-run lock: every step runs except the CG cursor calls,
 # so the Mac's real cursor is never taken). Reads the watchdog log for each way draw mode can end.
 cd "$(dirname "$0")/.."
-APP="build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw"
+APP="build/Scrawl.app/Contents/MacOS/TrackpadDraw"
 BAD=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; BAD=$((BAD + 1)); }

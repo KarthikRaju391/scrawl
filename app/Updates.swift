@@ -4,7 +4,7 @@ import AppKit
 
 enum AppInfo {
     static func info(_ k: String) -> String { Bundle.main.object(forInfoDictionaryKey: k) as? String ?? "" }
-    static var name: String { info("CFBundleName").isEmpty ? "Trackpad Draw" : info("CFBundleName") }
+    static var name: String { info("CFBundleName").isEmpty ? "Scrawl" : info("CFBundleName") }
     static var version: String { info("CFBundleShortVersionString").isEmpty ? "dev" : info("CFBundleShortVersionString") }
     static var build: String { info("CFBundleVersion") }
 }

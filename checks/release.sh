@@ -49,7 +49,7 @@ kill -TERM $P; wait $P 2>/dev/null
 FX=$(mktemp -d /tmp/td-fx.XXXX); mkdir -p "$FX/repos/o/r/releases"
 # Shape from docs.github.com/rest/releases/releases#get-the-latest-release (fields the app reads, plus some it ignores).
 cat > "$FX/repos/o/r/releases/latest" <<JSON
-{"url":"https://api.github.com/repos/o/r/releases/2","html_url":"https://github.com/o/r/releases/tag/v9.9.0","id":2,"tag_name":"v9.9.0","name":"Trackpad Draw 9.9.0","draft":false,"prerelease":false,"published_at":"2026-11-01T10:00:00Z","body":"notes","assets":[]}
+{"url":"https://api.github.com/repos/o/r/releases/2","html_url":"https://github.com/o/r/releases/tag/v9.9.0","id":2,"tag_name":"v9.9.0","name":"Scrawl 9.9.0","draft":false,"prerelease":false,"published_at":"2026-11-01T10:00:00Z","body":"notes","assets":[]}
 JSON
 PORT=$((20000 + RANDOM % 20000))
 python3 -m http.server $PORT --bind 127.0.0.1 --directory "$FX" >/dev/null 2>&1 &
@@ -70,15 +70,18 @@ def chk(ok, msg):
 chk(a["config"] == "release" and a["version"] == ver,
     f"release build reports {a['version']} build {a['build']} ({a['config']})")
 m = {(x["menu"], x["title"]): x for x in a["menus"]}
-need = [("Trackpad Draw", "About Trackpad Draw"), ("Trackpad Draw", "Check for Updates…"), ("Trackpad Draw", "Quit Trackpad Draw"),
+need = [("Scrawl", "About Scrawl"), ("Scrawl", "Check for Updates…"), ("Scrawl", "Quit Scrawl"),
         ("File", "Export All Pages as PDF…"), ("File", "Export Page as PNG…"), ("Edit", "Undo"), ("Edit", "Redo"),
-        ("Help", "Trackpad Draw Help"), ("Help", "Keyboard Shortcuts"), ("Help", "Record Touch Diagnostics"), ("Help", "Show Logs in Finder")]
+        ("Help", "Scrawl Help"), ("Help", "Keyboard Shortcuts"), ("Help", "Record Touch Diagnostics"), ("Help", "Show Logs in Finder")]
 missing = [n for n in need if n not in m]
 unwired = [f"{k[0]} > {k[1]}" for k, x in m.items() if not x["wired"]]
 chk(not missing and not unwired, f"menu bar: {len(a['menus'])} items, all wired (missing {missing}, unwired {unwired})")
-chk(m[("Help", "Trackpad Draw Help")]["key"] == "?" and m[("Trackpad Draw", "Quit Trackpad Draw")]["key"] == "q", "Help is ⌘?, Quit is ⌘Q")
+chk(m[("Help", "Scrawl Help")]["key"] == "?" and m[("Scrawl", "Quit Scrawl")]["key"] == "q", "Help is ⌘?, Quit is ⌘Q")
+old = [f"{x['menu']} > {x['title']}" for x in a["menus"] if "Trackpad Draw" in x["menu"] + x["title"]] + [v for v in a["about"].values() if "Trackpad Draw" in v]
+chk(not old and a["about"].get("ApplicationName") == "Scrawl", f"no old name left in menus or About ({old})")
 ab = a["about"]
 chk(ab.get("ApplicationVersion") == ver and "build" in ab.get("Version", "") and "MultitouchSupport" in ab.get("Credits", ""), f"About box: {ab.get('ApplicationName')} {ab.get('ApplicationVersion')} ({ab.get('Version')})")
+chk(a["welcomeWouldShow"] and not a["migrationRanInTest"], "fresh install of this bundle ID: the welcome window would show; tests never run the folder/settings migration")
 chk(a.get("mtStart") == "ok", f"MultitouchSupport loads under the hardened runtime: {a.get('mtStart')} ({a.get('mtSummary')})")
 u = a["update"]; chk(u["result"] == "available" and u["version"] == "9.9.0" and u["page"].endswith("v9.9.0"), f"update check: newer release found ({u})")
 chk(b["update"]["result"] == "failed" and "No published release" in b["update"]["why"], f"update check, 404: {b['update']['why']}")

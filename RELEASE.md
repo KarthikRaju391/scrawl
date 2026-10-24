@@ -1,15 +1,17 @@
-# Release checklist: Trackpad Draw 1.0.0
+# Release checklist: Scrawl 1.0.0
 
 Distribution: a GitHub release with an ad-hoc-signed DMG (Karthik, 2026-10-24). No Developer ID and no
 notarization, so first-open needs the Gatekeeper steps in the README and the release notes.
 
 ## Karthik decides before publishing
 
+The name and bundle ID are settled. Still open: the license, `data/`, publishing, and later a Developer ID.
+
 | decision | current setting | where to change |
 |---|---|---|
 | License | MIT, copyright Karthik Raju (the default unless you say otherwise) | `LICENSE` |
-| App name | "Trackpad Draw" | `release.conf` `APP_NAME`. The data folder name is set separately in `app/Notebook.swift`, so renaming the app doesn't move anyone's pages. |
-| Bundle ID | `io.github.karthikraju391.trackpad-draw` | `release.conf` `BUNDLE_ID`. Settings are stored per bundle ID, so changing it after release resets users' tool settings, though not their pages. |
+| App name | **Decided: "Scrawl"** (2026-10-25). The repo and source keep "trackpad-draw". | `release.conf` `APP_NAME` |
+| Bundle ID | **Decided: `com.karthikraju.scrawl`** | `release.conf` `BUNDLE_ID`. On first launch, Scrawl moves any "Trackpad Draw" pages and logs folders to the new names and copies settings from the old bundle ID. The welcome window shows once. |
 | Recorded handwriting in `data/` | 59 MB of your strokes and sessions are in the repo; the replay tests need them | Before making the repo public: keep them, or have them removed from the history first (removing them later doesn't erase them from a public history). |
 | Publish | The repo is **private**, and the release is a **draft** | GitHub: make the repo public, then publish the draft. Check for Updates only works once both are public: until then it says "No published release found." |
 | Developer ID + notarization (later) | Not done: needs the Apple Developer Program ($99/year) | Then run `SIGN_ID=… NOTARY_PROFILE=… scripts/release.sh`. The Gatekeeper prompt goes away. |
@@ -53,8 +55,10 @@ notarization, so first-open needs the Gatekeeper steps in the README and the rel
 - [x] **Minimum macOS 14.** The app uses the view's display link, which is new in 14; it doesn't compile for 13.
 - [x] **Privacy.**
   - No network at launch (lsof, from the DMG build).
-  - Crash notes and diagnostics stay in `~/Library/Logs/Trackpad Draw`.
+  - Crash notes and diagnostics stay in `~/Library/Logs/Scrawl`.
 - [x] **Performance.** 2,000 and 3,000 strokes render under the 8.3 ms frame budget (release build).
+- [x] **Renamed to Scrawl.** App, DMG, zip, window, menus, About, welcome and docs. Pages, logs and settings move over on first launch, tested in the bench.
+- [x] **Dark mode.** The aim-first checkbox label was white on the light panel; the window content now always uses the light appearance.
 - [x] README (install, Gatekeeper, privacy, uninstall), DEVELOPMENT.md, CHANGELOG.md, LICENSE.
 
 ## Not verified (needs a person or other hardware)

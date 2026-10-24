@@ -2,7 +2,8 @@
 
 ## 1.0.0 (unreleased, 2026-10-25)
 
-First public release.
+First public release. Scrawl was called Trackpad Draw during development. On first launch it moves the
+old pages and settings over.
 
 ### Drawing
 - Finger drawing on the trackpad with pressure, from MultitouchSupport. The public macOS touch API is

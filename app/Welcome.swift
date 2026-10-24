@@ -27,8 +27,8 @@ enum InputStatus: Equatable {
         switch self {
         case .full(let s): return "Using \(s). Pressure sets the line width and aim-first mode is available."
         case .basic(let why): return "MultitouchSupport is \(why). Drawing works; line width follows speed instead of pressure, and aim-first mode is off."
-        case .stalled: return "The trackpad's full touch data stopped reaching Trackpad Draw, so it now uses the standard touch events. If you want pressure back, check System Settings › Privacy & Security › Input Monitoring, then reopen the app."
-        case .noTrackpad: return "Trackpad Draw draws with a finger on a trackpad (built-in or Magic Trackpad). Connect one and reopen the app; your pages can still be viewed and exported."
+        case .stalled: return "The trackpad's full touch data stopped reaching \(AppInfo.name), so it now uses the standard touch events. If you want pressure back, check System Settings › Privacy & Security › Input Monitoring, then reopen the app."
+        case .noTrackpad: return "\(AppInfo.name) draws with a finger on a trackpad (built-in or Magic Trackpad). Connect one and reopen the app; your pages can still be viewed and exported."
         }
     }
 }
@@ -66,7 +66,7 @@ final class InfoWindow: NSWindowController {
 
     convenience init(status: InputStatus, firstRun: Bool) {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        w.title = firstRun ? "Welcome to Trackpad Draw" : "Trackpad Draw Help"
+        w.title = firstRun ? "Welcome to \(AppInfo.name)" : "\(AppInfo.name) Help"
         self.init(window: w)
         let stack = NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
         stack.edgeInsets = NSEdgeInsets(top: 22, left: 26, bottom: 22, right: 26)
@@ -75,7 +75,7 @@ final class InfoWindow: NSWindowController {
             l.preferredMaxLayoutWidth = 508; l.setAccessibilityIdentifier(s); return l
         }
         if firstRun {
-            stack.addArrangedSubview(label("Welcome to Trackpad Draw", .systemFont(ofSize: 20, weight: .semibold)))
+            stack.addArrangedSubview(label("Welcome to \(AppInfo.name)", .systemFont(ofSize: 20, weight: .semibold)))
             stack.addArrangedSubview(label("Write and sketch with a finger on your trackpad. Press ⌃⌥D (or D) to start: the pointer freezes and hides, and the trackpad becomes the page. Press Esc to get the pointer back.", .systemFont(ofSize: 13)))
         }
         stack.addArrangedSubview(label(status.headline, .systemFont(ofSize: 13, weight: .semibold),

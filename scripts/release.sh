@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds a release into dist/<version>/: universal Trackpad Draw.app (hardened runtime), a DMG and a zip,
+# Builds a release into dist/<version>/: universal Scrawl.app (hardened runtime), a DMG and a zip,
 # and SHA256SUMS.txt.
 #   scripts/release.sh
 #       ad-hoc signed: what the GitHub release ships (no Apple Developer ID; macOS warns on first open,

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds build/Trackpad Draw.app with the Command Line Tools toolchain (no Xcode), plus the offline bench.
+# Builds build/Scrawl.app with the Command Line Tools toolchain (no Xcode), plus the offline bench.
 #   ./build.sh                 development build: this Mac's architecture, bundle id local.trackpad-draw,
 #                              ad-hoc signed, diagnostics on (Karthik's own copy keeps its settings)
 #   CONFIG=release ./build.sh  release build: universal (arm64 + x86_64), -D RELEASE, identity from

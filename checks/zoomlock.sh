@@ -2,7 +2,7 @@
 # Zoom lock end to end (runs in the background): every path with the lock on; prints each step.
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d /tmp/td-zoomlock.XXXX)
-TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw" --test-zoomlock --no-activate >/dev/null 2>&1 &
+TRACKPAD_DRAW_DATA=$OUT "build/Scrawl.app/Contents/MacOS/TrackpadDraw" --test-zoomlock --no-activate >/dev/null 2>&1 &
 PID=$!
 for i in $(seq 1 120); do [ -f "$OUT/ui-step.txt" ] && break; sleep 0.5; done
 kill -TERM $PID 2>/dev/null

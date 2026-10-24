@@ -18,16 +18,20 @@ enum AppPaths {
     /// Tests and development point everything at one folder with TRACKPAD_DRAW_DATA.
     static let override = ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"]
 
-    /// ~/Library/Application Support/Trackpad Draw: the notebook.
+    /// The folder name under Application Support and Logs. Fixed here, not taken from the bundle, so a
+    /// rename never strands anyone's pages (Migration moves the old "Trackpad Draw" folders).
+    static let folderName = "Scrawl"
+
+    /// ~/Library/Application Support/Scrawl: the notebook.
     static var dataDir: String {
         if let o = override { return o }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.path
-        return base + "/Trackpad Draw"
+        return base + "/" + folderName
     }
-    /// ~/Library/Logs/Trackpad Draw: watchdog log, crash notes, optional touch diagnostics. Local only.
+    /// ~/Library/Logs/Scrawl: watchdog log, crash notes, optional touch diagnostics. Local only.
     static var logsDir: String {
         if let o = override { return o }
-        return NSHomeDirectory() + "/Library/Logs/Trackpad Draw"
+        return NSHomeDirectory() + "/Library/Logs/" + folderName
     }
     static var notebookPath: String { dataDir + "/Notebook.tdnb" }
 
@@ -168,7 +172,7 @@ extension CanvasView {
             let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
             let aside = AppPaths.dataDir + "/Notebook-unreadable-\(f.string(from: Date())).tdnb"
             try? FileManager.default.moveItem(atPath: path, toPath: aside)
-            NSLog("Trackpad Draw: notebook unreadable (\(error)); kept as \(aside)")
+            NSLog("Scrawl: notebook unreadable (\(error)); kept as \(aside)")
             return "unreadable, kept as \(aside)"
         }
     }
@@ -205,8 +209,47 @@ final class Autosaver {
                 try data.write(to: URL(fileURLWithPath: path), options: .atomic)
                 DispatchQueue.main.async { self?.saves += 1; self?.savedThrough = max(self?.savedThrough ?? 0, through) }
             }
-            catch { NSLog("Trackpad Draw: autosave failed: \(error)") }
+            catch { NSLog("Scrawl: autosave failed: \(error)") }
         }
         if sync { queue.sync(execute: write) } else { queue.async(execute: write) }
+    }
+}
+
+/// The app was called Trackpad Draw. On the first launch as Scrawl: move the old pages and logs folders to
+/// the new names (only if the new ones don't exist yet; never merged or overwritten) and copy the old
+/// settings into this app's defaults. "welcomed" is not copied, so the welcome window introduces the new
+/// name once. Real app only: tests never call it (they'd move Karthik's pages).
+enum Migration {
+    static let oldFolder = "Trackpad Draw"
+    static let oldDomains = ["local.trackpad-draw", "io.github.karthikraju391.trackpad-draw"]
+    static let doneKey = "migratedFromTrackpadDraw"
+
+    @discardableResult
+    static func run(supportBase: String = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.path,
+                    logsBase: String = NSHomeDirectory() + "/Library/Logs",
+                    newFolder: String = AppPaths.folderName,
+                    defaults: UserDefaults = .standard, ownDomain: String? = Bundle.main.bundleIdentifier,
+                    readDomain: (String) -> [String: Any]? = { UserDefaults.standard.persistentDomain(forName: $0) }) -> [String] {
+        var notes: [String] = []
+        let fm = FileManager.default
+        for base in [supportBase, logsBase] {
+            let old = base + "/" + oldFolder, new = base + "/" + newFolder
+            guard fm.fileExists(atPath: old), !fm.fileExists(atPath: new) else { continue }
+            do { try fm.moveItem(atPath: old, toPath: new); notes.append("moved \(old) -> \(new)") }
+            catch { notes.append("could not move \(old): \(error.localizedDescription)") }
+        }
+        if !defaults.bool(forKey: doneKey) {
+            for d in oldDomains where d != ownDomain {
+                guard let old = readDomain(d), !old.isEmpty else { continue }
+                var n = 0
+                for (k, v) in old where k != "welcomed" && !k.hasPrefix("NS") && !k.hasPrefix("Apple") && defaults.object(forKey: k) == nil {
+                    defaults.set(v, forKey: k); n += 1
+                }
+                notes.append("copied \(n) settings from \(d)")
+                break   // the first old domain found wins
+            }
+            defaults.set(true, forKey: doneKey)
+        }
+        return notes
     }
 }
