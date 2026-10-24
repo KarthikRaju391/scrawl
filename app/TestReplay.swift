@@ -74,3 +74,37 @@ enum TestReplay {
         t.start()
     }
 }
+
+/// --test-ui: clicks through the toolbar with real NSEvents (window.sendEvent, so AppKit hit-tests
+/// as for a real click), writing <data>/ui-step.txt before each pause so a script can screenshot.
+enum TestUI {
+    static func run(window: NSWindow, toolbar: ToolbarView, dir: String, draw: @escaping () -> Void) {
+        func click(_ p: CGPoint?) {
+            guard let p else { return }
+            for t in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                if let e = NSEvent.mouseEvent(with: t, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                    window.sendEvent(e)
+                }
+            }
+        }
+        let steps: [(String, () -> Void)] = [
+            ("1-background-panel", { click(toolbar.center(of: .background)) }),
+            ("2-dot-background", { click(toolbar.panel.centerOfBackground(2)) }),
+            ("3-pen-panel", { click(toolbar.center(of: .tool(.pen))) }),
+            ("4-red-size5", { click(toolbar.panel.centerOfColor(2)); click(toolbar.panel.centerOfSize(4)) }),
+            ("5-drawn", { toolbar.hidePanel(); draw() }),
+            ("6-ruled", { click(toolbar.center(of: .background)); click(toolbar.panel.centerOfBackground(3)); toolbar.hidePanel() }),
+            ("7-square", { click(toolbar.center(of: .background)); click(toolbar.panel.centerOfBackground(1)); toolbar.hidePanel() }),
+        ]
+        var i = 0
+        func next() {
+            guard i < steps.count else { try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8); return }
+            steps[i].1()
+            try? steps[i].0.write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+            i += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + (steps[i - 1].0 == "5-drawn" ? 3.5 : 1.5)) { next() }
+        }
+        next()
+    }
+}

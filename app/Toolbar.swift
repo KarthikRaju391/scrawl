@@ -23,6 +23,8 @@ final class ToolbarView: NSView {
         panel.onPick = { [weak self] st in self?.state = st; self?.onChange?(st) }
     }
     required init?(coder: NSCoder) { fatalError() }
+    // A click on an unfocused window should still pick the tool, not just focus the window.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     private var pillRect: CGRect {
         let w = CGFloat(items.count) * cell + 2 * 14 + 2 * 12  // + two separators
@@ -110,6 +112,13 @@ final class ToolbarView: NSView {
     }
 
     func hidePanel() { panel.isHidden = true; needsDisplay = true }
+
+    /// Window coordinates of an item's centre (test mode).
+    func center(of item: Item) -> CGPoint? {
+        guard let i = items.firstIndex(of: item) else { return nil }
+        let r = rect(of: i)
+        return convert(CGPoint(x: r.midX, y: r.midY), to: nil)
+    }
 }
 
 /// The pop-up above the toolbar: size dots + color swatches for a tool, or background choices.
@@ -119,6 +128,7 @@ final class PanelView: NSView {
     var state = ToolState()
     var onPick: ((ToolState) -> Void)?
     private let pad: CGFloat = 14, sw: CGFloat = 30
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     var preferredSize: CGSize {
         switch mode {
@@ -181,6 +191,11 @@ final class PanelView: NSView {
             }
         }
     }
+
+    /// Window coordinates of a size dot / color swatch / background tile (test mode).
+    func centerOfSize(_ i: Int) -> CGPoint { let r = sizeRect(i); return convert(CGPoint(x: r.midX, y: r.midY), to: nil) }
+    func centerOfColor(_ i: Int) -> CGPoint { let r = colorRect(i); return convert(CGPoint(x: r.midX, y: r.midY), to: nil) }
+    func centerOfBackground(_ i: Int) -> CGPoint { let r = bgRect(i); return convert(CGPoint(x: r.midX, y: r.midY), to: nil) }
 
     override func mouseDown(with e: NSEvent) {
         let p = convert(e.locationInWindow, from: nil)

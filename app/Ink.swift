@@ -225,6 +225,8 @@ struct StrokeBuilder {
     private(set) var lastT = 0.0
     private(set) var lengthMM = 0.0
     private var lastPressure = 0.5
+    /// Recent filtered positions (mm) with times, for the prediction velocity.
+    private var recent: [(t: Double, p: CGPoint)] = []
 
     init(model: WidthModel, minCutoff: Double, beta: Double, toCanvas: @escaping (CGPoint) -> CGPoint) {
         self.model = model
@@ -244,6 +246,8 @@ struct StrokeBuilder {
         lastPressure = model.pressure(s, speedMMPerSec: hypot(v.x, v.y))
         lastFiltered = f
         lastT = s.t
+        recent.append((s.t, f))
+        if recent.count > 3 { recent.removeFirst() }
         let c = toCanvas(f)
         // Same point again (finger still): update its pressure instead of stacking duplicates.
         if let lp = points.last, hypot(c.x - lp.p.x, c.y - lp.p.y) < 1e-9 {
@@ -255,8 +259,11 @@ struct StrokeBuilder {
 
     /// Point extrapolated `ahead` seconds along the filtered velocity, to hide a frame of lag.
     func predicted(ahead: Double) -> StrokePoint? {
-        guard let l = lastFiltered, points.count > 2 else { return nil }
-        let v = filter.velocity
+        // Velocity from the last ~2 frames of filtered output. (The One Euro derivative is
+        // smoothed at 1 Hz and lags badly on curves: it pointed >60 degrees off in a third of frames.)
+        guard let l = lastFiltered, points.count > 2, recent.count == 3, recent[2].t > recent[0].t else { return nil }
+        let dt = recent[2].t - recent[0].t
+        let v = CGPoint(x: (recent[2].p.x - recent[0].p.x) / dt, y: (recent[2].p.y - recent[0].p.y) / dt)
         let speed = hypot(v.x, v.y)
         guard speed > 20 else { return nil }  // mm/s; don't predict slow or still fingers
         let cap = min(ahead, 0.025)

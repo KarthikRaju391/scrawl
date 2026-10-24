@@ -180,6 +180,22 @@ do {
 
 gestureChecks(check)
 
+// Prediction must point ahead along the motion: sine path like the UI test, at several phases.
+do {
+    var bad = 0, n = 0
+    var b = StrokeBuilder(model: MTPressureModel(), minCutoff: 1.0, beta: 0.05, toCanvas: { $0 })
+    for k in 0...150 {
+        let x = 20 + Double(k) * 0.55, y = 38 + sin(Double(k) / 12) * 14
+        b.add(InputSample(mm: CGPoint(x: x, y: y), t: Double(k) * 0.008, pressure: 30, size: 0.5))
+        guard k > 10, let p = b.predicted(ahead: 0.02), let last = b.points.last else { continue }
+        let vx = 0.55, vy = cos(Double(k) / 12) * 14 / 12   // true direction per frame
+        let dx = p.p.x - last.p.x, dy = p.p.y - last.p.y
+        n += 1
+        if (dx * vx + dy * vy) / max(hypot(dx, dy) * hypot(vx, vy), 1e-9) < 0.5 { bad += 1 }  // > 60 degrees off
+    }
+    check(bad == 0, "predicted tip points along the motion (\(bad) of \(n) frames > 60 degrees off)")
+}
+
 // Interpolation: 12 samples on a circle of radius 50 (fast stroke). Polyline vs Catmull-Rom
 // worst deviation from the true circle.
 do {
