@@ -60,6 +60,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var keyMonitor: Any?
     var mtError: String?
     var notebookStatus = ""
+    var infoWindow: InfoWindow?
+    var inputStatus: InputStatus { InputStatus(mtError: mtError, stalled: canvas.inputStalled, summary: Multitouch.summary) }
+
+    /// Welcome (first run) or Help. Never shown by tests (they'd take focus); --test-welcome reads it instead.
+    func showInfo(firstRun: Bool) {
+        let w = InfoWindow(status: inputStatus, firstRun: firstRun)
+        w.onClose = { [weak self] in self?.infoWindow = nil }
+        infoWindow = w
+        if firstRun { UserDefaults.standard.set(true, forKey: "welcomed") }
+        guard !Launch.background else { return }
+        w.showWindow(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+    @objc func showHelp() { exitDrawMode("help"); showInfo(firstRun: false) }
+
+    /// MultitouchSupport went quiet while a finger was down: drawing already switched to NSTouch and
+    /// carries on; the explanation waits until the user leaves draw mode (no window mid-stroke).
+    var stallNoticePending = false
+    func inputStalled() {
+        stallNoticePending = true
+        updateBanner()
+    }
 
     func applicationDidFinishLaunching(_ n: Notification) {
         AppPaths.ensure()
@@ -89,11 +110,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onPage = { [weak self] d in self?.page(d) }
         cv.onStatus = { [weak self] in self?.updateBanner() }
 
-        if canvas.testMode {
-            // Test input only: real touches on the trackpad would interleave with the replay.
-            mtError = nil
-        } else if Settings().inputSource == "mt" { mtError = Multitouch.start() } else { mtError = "disabled by inputSource=nstouch" }
+        // Input: MultitouchSupport (pressure) unless turned off (Help menu, or --input-nstouch), else the
+        // public NSTouch path. Tests never start MT: real touches would interleave with the test input.
+        let source = Launch.args.contains("--input-nstouch") ? "nstouch" : Settings().inputSource
+        if source != "mt" { mtError = "turned off (basic touch input chosen)" }
+        else if canvas.testMode { mtError = nil }
+        else { mtError = Multitouch.start() }
         cv.usingMT = mtError == nil
+        cv.onInputStalled = { [weak self] in self?.inputStalled() }
         let queue = cv.input
         Multitouch.onFrame = { [weak cv] contacts, arrival, sensorT in
             // Drained on each display tick; if ticks stall, a fallback drains after 50 ms.
@@ -121,6 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         notebookStatus = canvas.loadNotebookFromDisk()
         updateBanner()
         startTestReplayIfAsked()
+        if !canvas.testMode && !UserDefaults.standard.bool(forKey: "welcomed") { showInfo(firstRun: true) }
         if UserDefaults.standard.string(forKey: "rejoinMode") == "ab" {   // record the hidden condition
             canvas.logger.event(["what": "abCondition", "rejoin": Settings.abCondition])
         }
@@ -192,6 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         canvas.drawMode = false
         container.toolbar.drawMode = false
         updateBanner()
+        if stallNoticePending { stallNoticePending = false; showInfo(firstRun: false) }
     }
 
     /// -1 previous, +1 next, 0 new page.
@@ -207,7 +233,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func updateBanner() {
-        let model = canvas.usingMT ? Settings().widthModel : "speed (MultitouchSupport off: \(mtError ?? ""))"
+        let input = canvas.usingMT ? "" : "  ·  basic touch input (no pressure)"
         let pageText = "Page \(canvas.pageIndex + 1) of \(canvas.pages.count)"
         if canvas.showPageHint {
             container.banner.stringValue = "\(pageText): you've filled a screen. N = new page, or K to keep writing here."
@@ -219,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
         }
         container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
-        container.hint.stringValue = "\(pageText)  ·  ⌃⌥D to draw with the trackpad  ·  width: \(model)"
+        container.hint.stringValue = "\(pageText)  ·  ⌃⌥D to draw with the trackpad\(input)"
         container.hint.isHidden = !container.banner.isHidden
         container.needsLayout = true
     }
@@ -288,6 +314,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if let i = a.firstIndex(of: "--test-input"), i + 1 < a.count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestInput.run(a[i + 1], app: self) }
+        }
         if let i = a.firstIndex(of: "--test-persist"), i + 1 < a.count {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPersist.run(a[i + 1], canvas: canvas, app: self) }
         }

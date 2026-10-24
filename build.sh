@@ -21,7 +21,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 codesign --force -s - "$APP" 2>/dev/null || true
-swiftc -O -swift-version 5 -o build/bench $(ls app/*.swift | grep -v -e main.swift -e TestZoomLock.swift -e TestPersist.swift) bench/*.swift \
+swiftc -O -swift-version 5 -o build/bench $(ls app/*.swift | grep -v -e main.swift -e TestZoomLock.swift -e TestPersist.swift -e TestInput.swift) bench/*.swift \
   -framework AppKit -framework Metal -framework MetalKit -framework QuartzCore -framework Carbon -framework PDFKit
 echo "built: $APP"
 swiftc -O -o build/crashdialogs tools/crashdialogs.swift   # used by the crash checks

@@ -575,7 +575,10 @@ final class CanvasView: MTKView {
     private var lastDrain = 0.0
     private func drainInput() {
         lastDrain = CACurrentMediaTime()
-        for f in input.drain() { handle(f.contacts, arrival: f.arrival, sensorT: f.sensorT) }
+        let frames = input.drain()
+        if !frames.isEmpty { lastMTFrameAt = lastDrain }
+        guard !inputStalled else { return }   // switched to NSTouch: late MT frames would double the input
+        for f in frames { handle(f.contacts, arrival: f.arrival, sensorT: f.sensorT) }
     }
     /// Fallback when display ticks stop (window covered, display link paused): process queued
     /// input anyway, so gestures and strokes never wait on the screen.
@@ -614,31 +617,64 @@ final class CanvasView: MTKView {
         needsRender = true
     }
 
-    // NSTouch fallback (public API, no pressure): used when MultitouchSupport is unavailable.
+    // NSTouch fallback (public API, no pressure): used when MultitouchSupport is unavailable, turned
+    // off (inputSource=nstouch), or silently not delivering (see the stall check below).
     private var nsIds: [Int: Int32] = [:]
     /// macOS's resting-touch classification (palm/thumb), pad-normalized, from NSTouch events.
     private var restingNorm: [CGPoint] = []
     private var restingAt = 0.0
+    /// When MultitouchSupport last delivered a frame, and since when NSTouch has seen a finger down without one.
+    var lastMTFrameAt = 0.0
+    private var nsSinceMT: (first: Double, samples: Int)?   // NSTouch finger-down samples since MT's last frame
+    /// MultitouchSupport started but its frames don't arrive (e.g. blocked by a future macOS): called once,
+    /// after switching to the public touch path so drawing keeps working.
+    var onInputStalled: (() -> Void)?
+    private(set) var inputStalled = false
+
+    struct NSTouchSample { var key: Int; var norm: CGPoint; var deviceSize: CGSize; var resting: Bool }
 
     private func nsTouchFrame(_ e: NSEvent) {
+        let ts = e.touches(matching: .touching, in: self).map {
+            NSTouchSample(key: $0.identity.hash, norm: $0.normalizedPosition, deviceSize: $0.deviceSize, resting: $0.isResting)
+        }
+        touchSamples(ts, timestamp: e.timestamp)
+    }
+
+    /// Touches from NSTouch (or a test). Device size is in points (1/72 in).
+    func touchSamples(_ ts: [NSTouchSample], timestamp: Double, now: Double = CACurrentMediaTime()) {
         guard drawMode else { return }
         if usingMT {  // MT draws; NSTouch only contributes Apple's resting flags for palm rejection
-            restingNorm = e.touches(matching: .touching, in: self).filter(\.isResting).map(\.normalizedPosition)
-            restingAt = CACurrentMediaTime()
-            return
+            restingNorm = ts.filter(\.resting).map(\.norm)
+            restingAt = now
+            // NSTouch has seen a finger down in 30+ events over 0.5 s+ (one stroke or several short ones),
+            // and MT has sent nothing since the first of them: MT is stalled.
+            if ts.contains(where: { !$0.resting }) {
+                if let n = nsSinceMT, lastMTFrameAt < n.first { nsSinceMT = (n.first, n.samples + 1) } else { nsSinceMT = (now, 1) }
+                if let n = nsSinceMT, n.samples >= 30, now - n.first > 0.5 {
+                    usingMT = false; inputStalled = true; nsSinceMT = nil
+                    logger.event(["what": "inputStalled", "fallback": "nstouch"])
+                    onInputStalled?()
+                }
+            }
+            if usingMT { return }
         }
-        let arrival = CACurrentMediaTime()
         var out: [Contact] = []
-        for t in e.touches(matching: .touching, in: self) where !t.isResting {
-            let key = t.identity.hash
-            let id = nsIds[key] ?? { let n = Int32(nsIds.count + 1); nsIds[key] = n; return n }()
-            let mmPerPt = 25.4 / 72
-            out.append(Contact(id: id, state: 4, norm: t.normalizedPosition,
-                               mm: CGPoint(x: t.normalizedPosition.x * t.deviceSize.width * mmPerPt, y: t.normalizedPosition.y * t.deviceSize.height * mmPerPt),
-                               pressure: 0, size: 0.5, major: 8))
+        if let d = ts.first?.deviceSize, d.width > 0 {   // this trackpad's size (the gesture thresholds are in mm)
+            Multitouch.padMM = CGSize(width: d.width * 25.4 / 72, height: d.height * 25.4 / 72)
+        }
+        for t in ts where !t.resting {
+            let id = nsIds[t.key] ?? { let n = Int32(nsIds.count + 1); nsIds[t.key] = n; return n }()
+            out.append(Self.contact(fromTouch: t, id: id))
         }
         if out.isEmpty { nsIds.removeAll() }
-        handle(out, arrival: arrival, sensorT: e.timestamp)
+        handle(out, arrival: now, sensorT: timestamp)
+    }
+
+    /// NSTouch -> the same Contact MultitouchSupport produces (no pressure; size from the device).
+    static func contact(fromTouch t: NSTouchSample, id: Int32) -> Contact {
+        let mmPerPt = 25.4 / 72
+        return Contact(id: id, state: 4, norm: t.norm, mm: CGPoint(x: t.norm.x * t.deviceSize.width * mmPerPt, y: t.norm.y * t.deviceSize.height * mmPerPt),
+                       pressure: 0, size: 0.5, major: 8)
     }
     override func touchesBegan(with e: NSEvent) { nsTouchFrame(e) }
     override func touchesMoved(with e: NSEvent) { nsTouchFrame(e) }

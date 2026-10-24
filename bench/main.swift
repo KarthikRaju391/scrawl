@@ -186,6 +186,7 @@ writingLayoutChecks(check)
 settingsChecks(check)
 notebookChecks(check)
 exportChecks(check)
+inputChecks(check)
 
 // Prediction must point ahead along the motion: sine path like the UI test, at several phases.
 do {
