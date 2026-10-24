@@ -7,6 +7,14 @@ if let i = CommandLine.arguments.firstIndex(of: "--watchdog"), i + 1 < CommandLi
     Watchdog.run(parent: pid)
 }
 
+/// How this process was launched. Test modes run in the background (never take focus) unless a test
+/// explicitly asks for the foreground with --test-front.
+enum Launch {
+    static let args = CommandLine.arguments
+    static let testing = args.contains { $0.hasPrefix("--test-") && $0 != "--test-front" && $0 != "--test-lock" }
+    static let background = args.contains("--no-activate") || (testing && !args.contains("--test-front"))
+}
+
 final class ContainerView: NSView {
     let canvas: CanvasView
     let toolbar = ToolbarView(frame: .zero)
@@ -75,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         container = ContainerView(frame: window.contentView!.bounds, canvas: cv)
         container.autoresizingMask = [.width, .height]
         window.contentView = container
-        if !CommandLine.arguments.contains("--no-activate") { window.makeKeyAndOrderFront(nil) }
+        if !Launch.background { window.makeKeyAndOrderFront(nil) }
 
         let tb = container.toolbar
         tb.state = cv.tools
@@ -111,7 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             canvas.logger.event(["what": "abCondition", "rejoin": Settings.abCondition])
         }
         // --no-activate: open in the background (used by the smoke test so it doesn't take focus).
-        if !CommandLine.arguments.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true) } else { window.orderBack(nil) }
+        if !Launch.background { NSApp.activate(ignoringOtherApps: true) } else { window.orderBack(nil) }
     }
 
     // MARK: draw mode
@@ -212,7 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             let n = a.firstIndex(of: "--count").flatMap { Int(a[$0 + 1]) } ?? 400
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-                if !a.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
+                if !Launch.background { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
                 if !a.contains("--zoomed") { canvas.resetZoom() }
@@ -255,7 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let i = a.firstIndex(of: "--test-draw"), i + 1 < a.count {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-                NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+                if !Launch.background { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
                 enterDrawMode(lock: false)
                 TestDraw.run(canvas: canvas, path: a[i + 1]) { [self] in
                     exitDrawMode()
@@ -284,7 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if a.contains("--test-autopan") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-                if !a.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
+                if !Launch.background { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
                 var t = canvas.tools; t.lineWidthIndex = 0   // ½ page
@@ -300,7 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if a.contains("--test-ui") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-                if !a.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
+                if !Launch.background { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
                 TestUI.run(window: window, toolbar: container.toolbar, dir: dir) { [self] in
                     // One wavy stroke through the real input path, without locking the cursor.
                     enterDrawMode(lock: false)
