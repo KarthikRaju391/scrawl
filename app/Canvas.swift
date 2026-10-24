@@ -35,6 +35,12 @@ struct Settings {
     /// Blind A/B: with rejoinMode "ab", each launch secretly picks on or off (logged, never shown).
     static let abCondition = Bool.random() ? "on" : "off"
     var rejoinSnap: Bool { rejoinMode != "off" }
+    /// Writing mode moves the page only after the finger has been up this long (0 = immediately).
+    var pauseBeforeMoveMs: Double {
+        let a = CommandLine.arguments
+        if let i = a.firstIndex(of: "--pause-ms"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
+        return d.object(forKey: "pauseBeforeMoveMs") as? Double ?? 400
+    }
     var rejoinRadiusMM: Double { d.object(forKey: "rejoinRadiusMM") as? Double ?? 3.5 }
     var rejoinWindowMs: Double { d.object(forKey: "rejoinWindowMs") as? Double ?? 250 }
     var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
@@ -440,7 +446,7 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineLeft = nil; lineStrokes = [] }
+    private func endWritingLine() { lineInk = nil; lineLeft = nil; lineStrokes = []; pendingMove = nil }
 
 
 
@@ -515,6 +521,7 @@ final class CanvasView: MTKView {
         drainInput()
         if !needsRender && camAnim == nil { perf.ticksIdle += 1 }
         perf.inputsPerTick.append(perf.inputsSinceTick); perf.inputsSinceTick = 0
+        advanceClock()
         if camAnim != nil { stepSlide(); needsRender = true }
         guard needsRender else { return }
         needsRender = false
@@ -557,7 +564,7 @@ final class CanvasView: MTKView {
         recorder.record(["k": "touch", "c": cs.map { [Int($0.id), Int($0.state), ($0.norm.x * 10000).rounded() / 10000, ($0.norm.y * 10000).rounded() / 10000, ($0.pressure * 10).rounded() / 10] }], sensorT: sensorT)
         perf.inputsSinceTick += 1
         contacts = cs.filter(\.isDown)
-        if !contacts.isEmpty { finishSlide() }
+        if !contacts.isEmpty { finishSlide(); cancelPendingMove() }
         gestures.frame(cs, t: arrival)
         needsRender = true
     }
@@ -756,16 +763,47 @@ final class CanvasView: MTKView {
             var layout = WritingLayout()
             layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
             layout.autoPan = tools.autoPan
-            switch layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
-            case .none: break
-            case .pan(let c):
-                act("autoPan", ["toX": c.x, "toY": c.y, "mode": tools.autoPan.rawValue])
-                panCount += 1
-                lastPanWordStart = WritingLayout.lastWordStart(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01))
-                slideCamera(to: c)
-            case .newLine(let c): act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; slideCamera(to: c, src: "newLine")
-            }
+            let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width)
+            if move == .none { pendingMove = nil }
+            else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
+            else { pendingMove = (move, now()); act("movePending", ["kind": move.kind]) }
         }
+    }
+
+    // MARK: page moves wait for a pause
+
+    /// The writing-mode move waiting for the finger to stay up `pauseBeforeMoveMs`.
+    private var pendingMove: (move: WritingLayout.Move, liftAt: Double)?
+    /// The clock for that wait (replaced by a virtual clock when replaying recorded sessions).
+    var now: () -> Double = { CACurrentMediaTime() }
+    private(set) var movesCancelled = 0
+
+    /// A finger touched down before the pause was up: no move now; it's re-decided at the next lift.
+    private func cancelPendingMove() {
+        guard pendingMove != nil else { return }
+        pendingMove = nil; movesCancelled += 1; act("moveCancelled")
+    }
+
+    /// Called every display tick (and by the replay driver): run the pending move once the pause is up.
+    func advanceClock() {
+        guard let p = pendingMove, contacts.isEmpty, now() - p.liftAt >= settings.pauseBeforeMoveMs / 1000 else { return }
+        pendingMove = nil
+        applyMove(p.move)
+    }
+
+    private func applyMove(_ move: WritingLayout.Move) {
+        switch move {
+        case .none: break
+        case .pan(let c):
+            act("autoPan", ["toX": c.x, "toY": c.y, "mode": tools.autoPan.rawValue])
+            panCount += 1
+            if let line = lineInk { lastPanWordStart = WritingLayout.lastWordStart(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01)) }
+            slideCamera(to: c)
+        case .newLine(let c):
+            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []
+            slideCamera(to: c, src: "newLine")
+        }
+        needsRender = true
     }
 
     // MARK: drawing

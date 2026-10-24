@@ -202,7 +202,8 @@ enum TestAutoPan {
             func contact(_ i: Int32, _ p: CGPoint) -> Contact {
                 Contact(id: i, state: 4, norm: CGPoint(x: p.x / pad.width, y: p.y / pad.height), mm: p, pressure: 25, size: 0.5, major: 7.5)
             }
-            func stroke(_ pts: [CGPoint]) { id += 1; for p in pts { emit([contact(id, p)]) }; emit([]); for _ in 0..<25 { emit([]) } }
+            // Karthik's rhythm: ~120 ms between letters of a word, ~700 ms between words.
+            func stroke(_ pts: [CGPoint], gap: Double = 0.12) { id += 1; for p in pts { emit([contact(id, p)]) }; emit([]); for _ in 0..<Int(gap / 0.008) { emit([]) } }
             func manualPan(_ dx: Double) {   // two fingers sliding left by dx mm
                 id += 2
                 for k in 0...40 { let o = -dx * Double(k) / 40
@@ -216,7 +217,7 @@ enum TestAutoPan {
             for k in 0..<90 {
                 touches.append(x / pad.width)
                 stroke((0...24).map { j in let a = Double(j) / 24 * 2 * .pi
-                    return CGPoint(x: x + 2.5 - 2.5 * cos(a) + Double(j) / 24 * 2.5, y: y + 2.5 * sin(a)) })
+                    return CGPoint(x: x + 2.5 - 2.5 * cos(a) + Double(j) / 24 * 2.5, y: y + 2.5 * sin(a)) }, gap: k % 3 == 2 ? 0.7 : 0.12)
                 x += 8.5                   // each loop letter is 7.5 mm wide (5 mm circle + drift); 1 mm apart
                 if k % 3 == 2 { x += 6 }   // space between words
                 let (pans, lines, end, first) = DispatchQueue.main.sync { () -> (Int, Int, CGPoint, Double) in
