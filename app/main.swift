@@ -89,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Watchdog.spawn()
         Signals.install { [weak self] in self?.exitDrawMode("SIGTERM/SIGINT/SIGHUP"); NSApp.terminate(nil) }
 
-        let screen = NSScreen.main!.visibleFrame
+        let screen = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let size = CGSize(width: min(1400, screen.width * 0.85), height: min(940, screen.height * 0.85))
         window = NSWindow(contentRect: CGRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
@@ -199,8 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             // Park the frozen cursor in the middle of the canvas so stray clicks land on it.
             let r = window.convertToScreen(canvas.convert(canvas.bounds, to: nil))
-            let primaryH = NSScreen.screens.first!.frame.height
-            CursorLock.lock(at: CGPoint(x: r.midX, y: primaryH - r.midY))
+            CursorLock.lock(at: CursorLock.parkPoint(canvasOnScreen: r, primaryScreenHeight: NSScreen.screens.first?.frame.height ?? r.maxY))
         }
         canvas.drawMode = true
         container.toolbar.drawMode = true

@@ -15,6 +15,13 @@ enum CursorLock {
     /// real cursor (the Mac may be in use). The CG calls are the only thing skipped.
     static let dry = ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DRYLOCK"] != nil
 
+    /// Where the frozen pointer parks: the canvas centre, converted from AppKit's global coordinates
+    /// (origin bottom-left of the primary display, y up) to CoreGraphics' (origin top-left of the primary
+    /// display, y down). Holds for any display arrangement, including displays left of or above the primary.
+    static func parkPoint(canvasOnScreen r: CGRect, primaryScreenHeight: CGFloat) -> CGPoint {
+        CGPoint(x: r.midX, y: primaryScreenHeight - r.midY)
+    }
+
     /// Freeze and hide the cursor at `at` (global display coordinates, top-left origin).
     static func lock(at: CGPoint) {
         guard !locked else { return }
