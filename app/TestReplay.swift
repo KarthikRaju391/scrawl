@@ -103,6 +103,9 @@ enum TestUI {
             ("5-drawn", { toolbar.hidePanel(); draw() }),
             ("6-ruled", { click(toolbar.center(of: .background)); click(toolbar.panel.centerOfBackground(3)); toolbar.hidePanel() }),
             ("7-square", { click(toolbar.center(of: .background)); click(toolbar.panel.centerOfBackground(1)); toolbar.hidePanel() }),
+            ("8-writing-on", { click(toolbar.center(of: .writing)) }),
+            ("9-writing-panel", { click(toolbar.center(of: .writing)) }),
+            ("10-full-width", { click(toolbar.panel.centerOfBackground(2)) }),
         ]
         var i = 0
         func next() {

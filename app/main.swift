@@ -241,6 +241,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         }
+        if a.contains("--test-ui") {
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+                TestUI.run(window: window, toolbar: container.toolbar, dir: dir) { [self] in
+                    // One wavy stroke through the real input path, without locking the cursor.
+                    enterDrawMode(lock: false)
+                    var frames: [[Contact]] = []
+                    for k in 0...150 {
+                        let x = 20 + Double(k) * 0.55, y = 38 + sin(Double(k) / 12) * 14
+                        frames.append([Contact(id: 1, state: 4, norm: CGPoint(x: x / 124.8, y: y / 76.8), mm: CGPoint(x: x, y: y),
+                                               pressure: 10 + Double(k) / 3, size: 0.5, major: 7.5)])
+                    }
+                    frames.append([])
+                    for (j, f) in frames.enumerated() {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Double(j) * 0.008) {
+                            Multitouch.onFrame?(f, CACurrentMediaTime(), Double(j) * 0.008)
+                            // onFrame hops to main async: exit after the lift frame has been handled.
+                            if j == frames.count - 1 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.exitDrawMode() } }
+                        }
+                    }
+                }
+            }
+        }
         guard let i = a.firstIndex(of: "--test-replay"), i + 1 < a.count else { return }
         let lock = a.contains("--test-lock")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
