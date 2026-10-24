@@ -67,4 +67,31 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
     f = (0..<20).map { i in [finger(1, 0.3 + Double(i) * 0.005, 0.5, pressure: 10)] } + [[]]
     r = run(f, threshold: 25)
     check(r.begins == 0 && r.commits == 0, "hover only: no stroke at all (begins \(r.begins))")
+
+    // 7. macOS resting flag: a finger-sized contact that macOS calls resting never draws.
+    do {
+        let g = GestureEngine(), r = Rec()
+        g.isPalm = { $0.id == 7 }
+        g.onBegin = { _, _ in r.begins += 1 }
+        g.onEnd = { c in if c { r.commits += 1 } }
+        var ended: [(Int32, Bool, Bool)] = []
+        g.onContactEnd = { ended.append(($0, $1, $2)) }
+        let fr: [[Contact]] = (0..<30).map { i in [finger(7, 0.2, 0.2), finger(1, 0.4 + Double(i) * 0.005, 0.6)] } + [[]]
+        for (i, f) in fr.enumerated() { g.frame(f, t: Double(i) * 0.008) }
+        check(r.begins == 1 && r.commits == 1 && ended.contains { $0.0 == 7 && $0.1 && !$0.2 } && ended.contains { $0.0 == 1 && !$0.1 && $0.2 },
+              "macOS-resting contact ignored, finger draws; contact log marks palm/drew (begins \(r.begins), ended \(ended.map { "\($0.0):palm=\($0.1),drew=\($0.2)" }))")
+    }
+    // 8. A palm already down when draw mode starts never draws, even if it moves; the next touch does.
+    do {
+        let g = GestureEngine(), r = Rec()
+        g.onBegin = { _, _ in r.begins += 1 }
+        g.onEnd = { c in if c { r.commits += 1 } }
+        g.ignoreUntilLifted([3])
+        var fr: [[Contact]] = (0..<20).map { i in [finger(3, 0.7 + Double(i) * 0.003, 0.15)] }
+        fr.append([])
+        fr += (0..<20).map { i in [finger(4, 0.3 + Double(i) * 0.005, 0.5)] }
+        fr.append([])
+        for (i, f) in fr.enumerated() { g.frame(f, t: Double(i) * 0.008) }
+        check(r.begins == 1 && r.commits == 1, "contact down at draw-mode start is ignored until lifted; the next touch draws (begins \(r.begins))")
+    }
 }

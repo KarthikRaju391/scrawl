@@ -136,6 +136,12 @@ final class GestureEngine {
     enum Mode { case idle, hover(Int32), drawing(Int32, Double), navigating, waitLift }
     private(set) var mode = Mode.idle
     private var palm = Set<Int32>()
+    /// Extra palm signal (macOS resting-touch classification), checked per contact per frame.
+    var isPalm: (Contact) -> Bool = { _ in false }
+    /// Called once per contact when it lifts: (id, was classified palm, drew a stroke).
+    var onContactEnd: ((Int32, Bool, Bool) -> Void)?
+    private var drewIds = Set<Int32>()
+    private var seen = Set<Int32>()
     private var navPrev: (ids: [Int32], centroid: CGPoint, dist: Double)?
     var settings = Settings()
     lazy var inkThreshold = settings.inkThreshold
@@ -148,25 +154,28 @@ final class GestureEngine {
 
     func reset() {
         if case .drawing = mode { onEnd?(false) }
-        mode = .idle; palm.removeAll(); navPrev = nil
+        mode = .idle; palm.removeAll(); navPrev = nil; drewIds.removeAll(); seen.removeAll()
     }
+
+    /// Contacts already on the pad when draw mode starts (a resting palm) never draw.
+    func ignoreUntilLifted(_ ids: Set<Int32>) { palm.formUnion(ids); seen.formUnion(ids) }
 
     func frame(_ contacts: [Contact], t: Double) {
         let down = contacts.filter(\.isDown)
         let ids = Set(down.map(\.id))
+        for id in seen.subtracting(ids) { onContactEnd?(id, palm.contains(id), drewIds.contains(id)) }
+        seen = ids
+        drewIds = drewIds.intersection(ids)
         palm = palm.intersection(ids)
-        for c in down where c.major > settings.palmMajor || c.size > settings.palmSize { palm.insert(c.id) }
+        for c in down where c.major > settings.palmMajor || c.size > settings.palmSize || isPalm(c) { palm.insert(c.id) }
         let fingers = down.filter { !palm.contains($0.id) }.sorted { $0.id < $1.id }
 
         switch mode {
         case .idle:
-            if fingers.count == 1 { mode = .hover(fingers[0].id); frame(contacts, t: t) }
+            if fingers.count == 1 { mode = .hover(fingers[0].id); hover(fingers, t) }
             else if fingers.count >= 2 { mode = .navigating; navigate(fingers) }
-        case let .hover(id):
-            if fingers.count >= 2 { mode = .navigating; navigate(fingers) }
-            else if let f = fingers.first(where: { $0.id == id }) {
-                if f.pressure >= inkThreshold { mode = .drawing(id, t); onBegin?(f, t) }
-            } else { mode = fingers.isEmpty ? .idle : .waitLift }
+        case .hover:
+            hover(fingers, t)
         case let .drawing(id, started):
             let f = fingers.first { $0.id == id }
             if fingers.count >= 2 && (t - started < 0.15 || strokeLengthMM() < 3) {
@@ -183,6 +192,14 @@ final class GestureEngine {
         case .waitLift:
             if fingers.isEmpty { mode = .idle }
         }
+    }
+
+    private func hover(_ fingers: [Contact], _ t: Double) {
+        guard case let .hover(id) = mode else { return }
+        if fingers.count >= 2 { mode = .navigating; navigate(fingers) }
+        else if let f = fingers.first(where: { $0.id == id }) {
+            if f.pressure >= inkThreshold { mode = .drawing(id, t); drewIds.insert(id); onBegin?(f, t) }
+        } else { mode = fingers.isEmpty ? .idle : .waitLift }
     }
 
     private func navigate(_ fingers: [Contact]) {
@@ -215,6 +232,7 @@ final class CanvasView: MTKView {
     var drawMode = false {
         didSet {
             gestures.reset(); contacts = []; needsRender = true
+            if drawMode { gestures.ignoreUntilLifted(downIds) }
             // No App Nap / timer coalescing while drawing: input and frames must not be throttled.
             if drawMode, activity == nil {
                 activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "drawing")
@@ -281,7 +299,11 @@ final class CanvasView: MTKView {
     // MARK: input
 
     /// MultitouchSupport frames, already on the main thread.
+    /// Contacts down right now, tracked even outside draw mode.
+    private var downIds = Set<Int32>()
+
     func handle(_ cs: [Contact], arrival: Double, sensorT: Double) {
+        downIds = Set(cs.filter(\.isDown).map(\.id))
         guard drawMode else { return }
         frameArrival = arrival
         frameSensorT = sensorT
@@ -292,8 +314,17 @@ final class CanvasView: MTKView {
 
     // NSTouch fallback (public API, no pressure): used when MultitouchSupport is unavailable.
     private var nsIds: [Int: Int32] = [:]
+    /// macOS's resting-touch classification (palm/thumb), pad-normalized, from NSTouch events.
+    private var restingNorm: [CGPoint] = []
+    private var restingAt = 0.0
+
     private func nsTouchFrame(_ e: NSEvent) {
-        guard drawMode, !usingMT else { return }
+        guard drawMode else { return }
+        if usingMT {  // MT draws; NSTouch only contributes Apple's resting flags for palm rejection
+            restingNorm = e.touches(matching: .touching, in: self).filter(\.isResting).map(\.normalizedPosition)
+            restingAt = CACurrentMediaTime()
+            return
+        }
         let arrival = CACurrentMediaTime()
         var out: [Contact] = []
         for t in e.touches(matching: .touching, in: self) where !t.isResting {
@@ -316,7 +347,28 @@ final class CanvasView: MTKView {
     override func scrollWheel(with e: NSEvent) { if !drawMode { super.scrollWheel(with: e) } }
     override func magnify(with e: NSEvent) {}
 
+    /// Is this contact where macOS currently sees a resting touch? (fresh within 0.25 s, 6% of the pad)
+    private func appleResting(_ c: Contact) -> Bool {
+        guard CACurrentMediaTime() - restingAt < 0.25 else { return false }
+        return restingNorm.contains { hypot($0.x - c.norm.x, ($0.y - c.norm.y) * 76.8 / 124.8) < 0.06 }
+    }
+
+    /// Per-contact features for tuning palm rejection: peak size/major, Apple resting seen.
+    private var contactStats: [Int32: (maxSize: Double, maxMajor: Double, resting: Bool, start: Double)] = [:]
+
     private func wireGestures() {
+        gestures.isPalm = { [weak self] c in
+            guard let self else { return false }
+            let r = self.appleResting(c)
+            let old = self.contactStats[c.id]
+            self.contactStats[c.id] = (max(old?.maxSize ?? 0, c.size), max(old?.maxMajor ?? 0, c.major), (old?.resting ?? false) || r, old?.start ?? CACurrentMediaTime())
+            return r
+        }
+        gestures.onContactEnd = { [weak self] id, palm, drew in
+            guard let self, let st = self.contactStats.removeValue(forKey: id) else { return }
+            self.logger.contact(["id": Int(id), "maxSize": st.maxSize, "maxMajor": st.maxMajor, "appleResting": st.resting,
+                                 "palm": palm, "drew": drew, "durationS": CACurrentMediaTime() - st.start])
+        }
         gestures.strokeLengthMM = { [weak self] in self?.builder?.lengthMM ?? 0 }
         gestures.onBegin = { [weak self] c, t in self?.beginStroke(c, t) }
         gestures.onMove = { [weak self] c, t in self?.moveStroke(c, t) }
@@ -472,15 +524,23 @@ final class StrokeLog {
         samples.append([t, mm.x, mm.y, pressure, size, out.p.x, out.p.y, out.pressure])
     }
     func latency(_ ms: Double) { latencies.append(ms) }
+    /// One line per lifted contact (kind "contact"), for tuning palm rejection.
+    func contact(_ d: [String: Any]) {
+        var d = d; d["kind"] = "contact"
+        write(d)
+    }
+    private func write(_ d: [String: Any]) {
+        if fh == nil {
+            FileManager.default.createFile(atPath: path, contents: nil)
+            fh = FileHandle(forWritingAtPath: path)
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: d) { fh?.write(data); fh?.write(Data("\n".utf8)) }
+    }
     func end(committed: Bool) {
         cur["committed"] = committed
         cur["samples"] = samples
         // Presented handlers can arrive after the stroke ends; these are the ones seen so far.
         cur["latencyMs"] = latencies
-        if fh == nil {
-            FileManager.default.createFile(atPath: path, contents: nil)
-            fh = FileHandle(forWritingAtPath: path)
-        }
-        if let d = try? JSONSerialization.data(withJSONObject: cur) { fh?.write(d); fh?.write(Data("\n".utf8)) }
+        write(cur)
     }
 }

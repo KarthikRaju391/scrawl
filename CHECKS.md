@@ -1,8 +1,10 @@
 # Acceptance checks
 
-Status as of 2026-10-24. None of the four checks has been run end to end yet, because each one
-needs a finger on the trackpad. Below is what I measured without one, and how Karthik runs the
-real check.
+Status as of 2026-10-24, after the end-to-end fixes. Without a finger, the app is now tested by
+replaying Karthik's recorded strokes (`data/strokes-20261024-161939.jsonl`, 27 strokes) through
+the same callback the trackpad driver calls, with the window in front and the cursor really locked
+(`checks/e2e.sh`). Not covered: the sensor and driver before that callback, and macOS's resting-touch
+flags, which need real touches.
 
 ## 1. OCR: ≥90% character accuracy on the zoomed-in sentences, using Vision
 
@@ -19,11 +21,12 @@ in the Bradley Hand font scores 100%, and a one-word mismatch scores 93% as expe
 
 ## 2. Latency: finger to ink under ~50 ms on average, from 240 fps video
 
-**Partly measured.** The bench shows the app's own work is small: a full frame with 200 strokes
-plus a live 600-point stroke costs 0.26 ms CPU and 1.4 ms GPU at p95. Input arrives every 8.0 ms
-(125 Hz, Phase 1). End-to-end latency is not measured. While drawing, the app logs the time from
-input arrival to `presentedTime` per frame:
-`python3 -I checks/latency_report.py data/strokes-*.jsonl`.
+**Partly measured.** From input arrival at the app to the frame being presented on the display
+(Metal `presentedTime`), in the replayed sessions: p50 21–26 ms, p95 30–33 ms, max 57 ms. Across
+runs that's 220–907 samples, and 1018 of 1019 frames were presented. Two things aren't counted: the
+trackpad's scan and driver time before the callback (input arrives every 8 ms), and the panel's
+pixel response. Adding those, the total is plausibly near the ~50 ms target, but only the video
+can show it. Per-frame logging: `python3 -I checks/latency_report.py data/strokes-*.jsonl`.
 
 To film it:
 1. Set the phone to slow-mo at 240 fps. Prop it so both the trackpad and the canvas are in frame,
@@ -58,10 +61,11 @@ step also gives the raw sensor noise.
 
 ## 4. Kill mid-stroke: the system cursor keeps working
 
-**Partly measured.** Outside draw mode, `kill -TERM` and `kill -9` both ended the app, and the
-watchdog process logged "re-associated mouse and showed cursor", then exited
-(`data/watchdog.log`). I did not test the case that matters: a kill while the cursor is locked
-mid-stroke. That freezes the real cursor, and confirming recovery takes a person moving it.
+**Mostly measured.** With the cursor really locked mid-stroke, `kill -9`: the cursor reported
+hidden while locked and visible right after the kill (`CGCursorIsVisible`), and the watchdog
+logged `locked=true; re-associated mouse and showed cursor`. Not proven: that physical trackpad
+movement moves the cursor again. Mouse/cursor association can't be read back, so that needs a
+person.
 Run `checks/kill_test.sh`. It launches the app, counts down while you press ⌃⌥D and draw, sends
 SIGKILL, and asks whether the cursor works. The result goes to `data/checks.log`.
 

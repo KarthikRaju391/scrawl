@@ -15,6 +15,8 @@ worst = None
 for path in sys.argv[1:]:
     for line in open(path):
         s = json.loads(line)
+        if s.get("kind") == "contact":
+            continue
         sm = s["samples"]  # t, raw mm x, y, pressure, size, out x, y, out pressure
         if not s.get("committed") or len(sm) < 50:
             continue

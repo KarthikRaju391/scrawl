@@ -84,7 +84,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onRedo = { [weak self] in self?.canvas.redo() }
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
 
-        if Settings().inputSource == "mt" { mtError = Multitouch.start() } else { mtError = "disabled by inputSource=nstouch" }
+        let testing = CommandLine.arguments.contains("--test-replay") || CommandLine.arguments.contains("--test-ui")
+        if testing {
+            // Test input only: real touches on the trackpad would interleave with the replay.
+            mtError = nil
+        } else if Settings().inputSource == "mt" { mtError = Multitouch.start() } else { mtError = "disabled by inputSource=nstouch" }
         cv.usingMT = mtError == nil
         Multitouch.onFrame = { [weak cv] contacts, arrival, sensorT in
             DispatchQueue.main.async { cv?.handle(contacts, arrival: arrival, sensorT: sensorT) }

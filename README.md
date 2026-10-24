@@ -15,8 +15,14 @@ MultitouchSupport framework.
 - **⌃⌥D** enters draw mode. You can use it from any app. The cursor freezes and hides, and the
   whole trackpad maps to the visible part of the page.
 - **Esc** always exits. So do ⌃⌥D, switching apps, and closing the window.
-- One finger draws. Two fingers pan, and pinching zooms (1×–12×). Palms are ignored, judged by
-  contact size. Blue rings show where your fingers are, since there's no cursor.
+- One finger draws. Two fingers pan, and pinching zooms (1×–12×). Blue rings show where your
+  fingers are, since there's no cursor.
+- Palm rejection uses three signals: macOS's own resting-touch flag (matched to the private
+  framework's contacts by position), contact size (`palmMajorAxis` / `palmTotal`), and touches
+  already on the pad when draw mode starts, which are ignored until lifted. Every lifted contact
+  is logged (`"kind": "contact"`) with its peak size and width, whether macOS called it resting,
+  and whether it was treated as a palm. One session with a resting palm is enough to set the
+  thresholds from data.
 - Writing while zoomed in keeps the same on-screen line width, so small handwriting stays crisp.
 - Toolbar: undo, redo, pen, marker, highlighter, eraser (erases whole strokes), background
   (none/square/dot/ruled), draw mode. Tap the selected tool for sizes and colors.
@@ -46,4 +52,8 @@ it after `probe/run-guided.sh` (see PHASE1.md).
 - `app/DrawMode.swift`: cursor lock, watchdog process, signals, global hotkey
 - `app/Toolbar.swift`: Keep-style toolbar and panel
 - `app/Multitouch.swift`: private MultitouchSupport access
+- `checks/e2e.sh <strokes.jsonl> --test-front [--test-lock]`: replays recorded strokes through
+  the input callback in the real app, then screenshots, counts ink, and reports frames presented and
+  latency. `checks/ui.sh`: clicks through the toolbar with real NSEvents and screenshots each step.
+  In test modes the real trackpad feed is off.
 - `bench/`: offline checks. `checks/`: scripts for the four acceptance checks. `probe/`: Phase 1.
