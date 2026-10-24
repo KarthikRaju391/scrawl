@@ -125,6 +125,8 @@ enum TestPersist {
         default:   // read
             var s = summary(canvas)
             s["loadStatus"] = app.notebookStatus
+            s["previousCrash"] = app.previousCrash
+            s["hint"] = app.container.hint.stringValue
             write(s, "actual.json")
             try? canvas.exportPNG(to: URL(fileURLWithPath: dir + "/after.png"), pxPerUnit: 1)
             try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)

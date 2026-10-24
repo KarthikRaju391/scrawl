@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Hardened runtime with no exceptions: no JIT, no unsigned memory, library validation on
+     (MultitouchSupport is an Apple-signed system framework, so it still loads), no sandbox
+     (a sandboxed app can't freeze the pointer or read the private touch framework). -->
+<plist version="1.0"><dict/></plist>

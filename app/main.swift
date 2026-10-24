@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var keyMonitor: Any?
     var mtError: String?
     var notebookStatus = ""
+    var previousCrash = false
     var infoWindow: InfoWindow?
     var inputStatus: InputStatus { InputStatus(mtError: mtError, stalled: canvas.inputStalled, summary: Multitouch.summary) }
 
@@ -84,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ n: Notification) {
         AppPaths.ensure()
+        previousCrash = CrashNote.checkAndMark()
         Watchdog.spawn()
         Signals.install { [weak self] in self?.exitDrawMode("SIGTERM/SIGINT/SIGHUP"); NSApp.terminate(nil) }
 
@@ -245,7 +247,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
         }
         container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
-        container.hint.stringValue = "\(pageText)  ·  ⌃⌥D to draw with the trackpad\(input)"
+        container.hint.stringValue = previousCrash && notebookStatus.hasPrefix("loaded")
+            ? "\(AppInfo.name) closed unexpectedly last time. Your pages were restored from the last autosave."
+            : "\(pageText)  ·  ⌃⌥D to draw with the trackpad\(input)"
         container.hint.isHidden = !container.banner.isHidden
         container.needsLayout = true
     }
@@ -314,6 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-about") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestAbout.run(app: self) } }
         if let i = a.firstIndex(of: "--test-input"), i + 1 < a.count {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestInput.run(a[i + 1], app: self) }
         }
@@ -419,34 +424,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: menu
 
-    func buildMenu() {
-        let main = NSMenu()
-        let appItem = NSMenuItem(); main.addItem(appItem)
-        let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit Trackpad Draw", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        appItem.submenu = appMenu
-        let fileItem = NSMenuItem(); main.addItem(fileItem)
-        let file = NSMenu(title: "File")
-        let png = file.addItem(withTitle: "Export Page as PNG…", action: #selector(exportPNG), keyEquivalent: "e"); png.keyEquivalentModifierMask = [.command, .shift]; png.target = self
-        file.addItem(withTitle: "Export All Pages as PDF…", action: #selector(exportPDF), keyEquivalent: "e").target = self
-        fileItem.submenu = file
-        let editItem = NSMenuItem(); main.addItem(editItem)
-        let edit = NSMenu(title: "Edit")
-        edit.addItem(withTitle: "Undo", action: #selector(undo), keyEquivalent: "z").target = self
-        let redo = edit.addItem(withTitle: "Redo", action: #selector(redoAction), keyEquivalent: "z"); redo.keyEquivalentModifierMask = [.command, .shift]; redo.target = self
-        let clear = edit.addItem(withTitle: "Clear Page", action: #selector(clearPage), keyEquivalent: "\u{8}"); clear.target = self
-        editItem.submenu = edit
-        let viewItem = NSMenuItem(); main.addItem(viewItem)
-        let view = NSMenu(title: "View")
-        view.addItem(withTitle: "Draw Mode (⌃⌥D)", action: #selector(toggleDrawModeAction), keyEquivalent: "").target = self
-        view.addItem(withTitle: "Zoom to Whole Page", action: #selector(resetZoom), keyEquivalent: "0").target = self
-        view.addItem(withTitle: "New Page", action: #selector(newPageAction), keyEquivalent: "n").target = self
-        view.addItem(withTitle: "Previous Page", action: #selector(prevPageAction), keyEquivalent: "[").target = self
-        view.addItem(withTitle: "Next Page", action: #selector(nextPageAction), keyEquivalent: "]").target = self
-        viewItem.submenu = view
-        NSApp.mainMenu = main
-    }
-
     @objc func undo() { canvas.undo() }
     @objc func redoAction() { canvas.redo() }
     @objc func clearPage() { canvas.clearPage() }
@@ -470,7 +447,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func windowWillClose(_ n: Notification) { exitDrawMode("window closed"); NSApp.terminate(nil) }
-    func applicationWillTerminate(_ n: Notification) { exitDrawMode("quit"); canvas.autosaver.saveNow(sync: true); canvas.recorder.flush() }
+    func applicationWillTerminate(_ n: Notification) {
+        exitDrawMode("quit"); canvas.autosaver.saveNow(sync: true); canvas.recorder.flush()
+        CrashNote.clear()
+    }
 }
 
 let app = NSApplication.shared
