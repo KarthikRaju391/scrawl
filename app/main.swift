@@ -166,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             container.banner.stringValue = canvas.writingMode
                 ? "\(pageText) · Writing: pans at the right edge, next line at the line width\(canvas.tools.zoomLocked ? " · zoom locked" : ""). W = off, Esc exits."
-                : "\(pageText) · Drawing: one finger draws, two fingers pan\(canvas.tools.zoomLocked ? " (zoom locked, Z unlocks)" : " and pinch"). W = writing, Esc exits."
+                : "\(pageText) · Drawing: one finger draws, two fingers pan\(canvas.tools.zoomLocked ? " (zoom locked, L unlocks)" : " and pinch"). W = writing, Esc exits."
             container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
         }
         container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
@@ -189,7 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "e": s.tool = .eraser
         case "w": toggleWriting(); return true
         case "n": page(0); return true
-        case "z": s.zoomLocked.toggle()
+        case "l", "z": s.zoomLocked.toggle()   // L (or Z) locks / unlocks the zoom
         case "k" where canvas.showPageHint: canvas.dismissPageHint(); return true
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false

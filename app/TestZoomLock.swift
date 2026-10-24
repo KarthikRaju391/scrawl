@@ -90,6 +90,8 @@ extension AppDelegate {
         add("Esc, then E (outside draw mode)") { key("\u{1b}", code: 53); key("e", code: 14) }
         add("P (outside draw mode)") { key("p", code: 35) }
         add("D enters draw mode") { key("d", code: 2) }
+        add("L locks (in draw mode)") { key("l", code: 37) }
+        add("L unlocks (outside draw mode)") { key("\u{1b}", code: 53); key("l", code: 37) }
 
         var i = 0
         var lockedZoom: Double?

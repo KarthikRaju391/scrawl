@@ -35,7 +35,7 @@ MultitouchSupport framework.
     to the start of the next line (aligned with the line above). This happens with *No pan* too.
     Panning by hand doesn't break the line; writing well above/below it starts a new one there.
   Nothing moves while a finger is down.
-- **Zoom lock** (lock button, or Z in draw mode): nothing changes the zoom: not pinch, not
+- **Zoom lock** (lock button, or L): nothing changes the zoom: not pinch, not
   switching pages (pages used to bring back their own zoom), not ⌘0. Two fingers still pan.
   Every zoom/lock change is logged in `data/strokes-*.jsonl` (`"kind": "event"`) with its cause.
   `checks/zoomlock.sh` runs every path with the lock on.
@@ -50,7 +50,8 @@ MultitouchSupport framework.
   slowing or turning. Every stroke ends exactly where the finger lifted.
 - Toolbar: undo, redo, pen, marker, highlighter, eraser (erases whole strokes), background
   (none/square/dot/ruled), draw mode. Tap the selected tool for sizes and colors.
-- Keys in draw mode: P, M, H, E pick a tool; 1–5 pick a size.
+- Keys (in or out of draw mode): D draw mode, P/M/H/E pen/marker/highlighter/eraser, 1–5 size,
+  L zoom lock, W writing mode, N new page, Esc leaves draw mode.
 - Menu: ⌘Z / ⇧⌘Z, Clear Page (⌘⌫), Zoom to Whole Page (⌘0), Export Page PNG (⇧⌘E, saves to `data/`).
 
 ## Tuning (`defaults write local.trackpad-draw <key> <value>`, then relaunch)
