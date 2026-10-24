@@ -4,7 +4,7 @@
 import AppKit
 
 final class ToolbarView: NSView {
-    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, settings, draw, prevPage, nextPage, newPage }
+    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, zoomLock, settings, draw, prevPage, nextPage, newPage }
     var state = ToolState() { didSet { needsDisplay = true; panel.state = state; panel.needsDisplay = true } }
     var drawMode = false { didSet { needsDisplay = true } }
     var writingMode = false { didSet { needsDisplay = true } }
@@ -16,8 +16,8 @@ final class ToolbarView: NSView {
     var onDrawMode: (() -> Void)?
     let panel = PanelView()
 
-    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .settings, .draw, .prevPage, .nextPage, .newPage]
-    private let separatorsAfter = [1, 5, 9]
+    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .zoomLock, .settings, .draw, .prevPage, .nextPage, .newPage]
+    private let separatorsAfter = [1, 5, 10]
     private let cell: CGFloat = 44
     static let height: CGFloat = 56
 
@@ -53,6 +53,7 @@ final class ToolbarView: NSView {
         case .background: return "square.grid.3x3"
         case .writing: return "character.cursor.ibeam"
         case .settings: return "slider.horizontal.3"
+        case .zoomLock: return state.zoomLocked ? "lock.fill" : "lock.open"
         case .draw: return drawMode ? "hand.draw.fill" : "hand.draw"
         case .prevPage: return "chevron.left"
         case .nextPage: return "chevron.right"
@@ -76,6 +77,7 @@ final class ToolbarView: NSView {
             case .draw: selected = drawMode
             case .writing: selected = writingMode
             case .settings: selected = !panel.isHidden && panel.mode == .settings
+            case .zoomLock: selected = state.zoomLocked
             case .background: selected = !panel.isHidden && panel.mode == .background
             default: selected = false
             }
@@ -104,6 +106,7 @@ final class ToolbarView: NSView {
         case .writing:
             if writingMode { togglePanel(.writing, under: rect(of: i)) } else { onWriting?() }
         case .settings: togglePanel(.settings, under: rect(of: i))
+        case .zoomLock: var s = state; s.zoomLocked.toggle(); state = s; onChange?(s)
         case .prevPage: onPage?(-1)
         case .nextPage: onPage?(1)
         case .newPage: onPage?(0)
@@ -199,7 +202,7 @@ final class PanelView: NSView {
     var preferredSize: CGSize {
         switch mode {
         case .background: return CGSize(width: 4 * 64 + 2 * pad, height: 64 + 2 * pad)
-        case .writing: return CGSize(width: 6 * 64 + 2 * 10 + 2 * pad, height: 64 + 2 * pad)
+        case .writing: return CGSize(width: 4 * 64 + 10 + 2 * pad, height: 64 + 2 * pad)
         case .settings: return CGSize(width: 340, height: 150)
         case .tool: return CGSize(width: 6 * sw + 5 * 8 + 2 * pad, height: state.tool == .eraser ? sw + 2 * pad : 3 * sw + 2 * 8 + 12 + 2 * pad)
         }
@@ -214,9 +217,9 @@ final class PanelView: NSView {
         return CGRect(x: pad + CGFloat(col) * (sw + 8), y: bounds.height - pad - sw - 12 - CGFloat(row + 1) * sw - CGFloat(row) * 8, width: sw, height: sw)
     }
     private func bgRect(_ i: Int) -> CGRect { CGRect(x: pad + CGFloat(i) * 64, y: pad, width: 64, height: 64) }
-    /// Writing panel tiles: 0-2 line width, 3-4 pan style, 5 off (small gaps between the groups).
+    /// Writing panel tiles: 0-2 line width, 3 off (small gap before it).
     private func writingRect(_ i: Int) -> CGRect {
-        CGRect(x: pad + CGFloat(i) * 64 + (i >= 3 ? 10 : 0) + (i >= 5 ? 10 : 0), y: pad, width: 64, height: 64)
+        CGRect(x: pad + CGFloat(i) * 64 + (i >= 3 ? 10 : 0), y: pad, width: 64, height: 64)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -251,9 +254,9 @@ final class PanelView: NSView {
                     let ring = NSBezierPath(ovalIn: r.insetBy(dx: -1, dy: -1)); ring.lineWidth = 2; selBlue.setStroke(); ring.stroke()
                 }
             }
-        case .writing:  // line width ½ / ¾ / full · pan: follow finger / keep centred · off
-            let names = ["½ page", "¾ page", "Full", "Follow finger", "Centred", "Off"]
-            for i in 0..<6 {
+        case .writing:  // line width ½ / ¾ / full · off
+            let names = ["½ page", "¾ page", "Full", "Off"]
+            for i in 0..<4 {
                 let r = writingRect(i), tile = CGRect(x: r.midX - 18, y: r.maxY - 42, width: 36, height: 36)
                 NSColor(white: 0.97, alpha: 1).setFill(); NSBezierPath(roundedRect: tile, xRadius: 6, yRadius: 6).fill()
                 NSColor(white: 0.55, alpha: 1).set()
@@ -261,18 +264,12 @@ final class PanelView: NSView {
                 case 0, 1, 2:
                     let w = (tile.width - 8) * CGFloat(ToolState.lineWidths[i])
                     for k in 0..<3 { NSBezierPath.fill(CGRect(x: tile.minX + 4, y: tile.minY + 9 + CGFloat(k) * 8, width: w, height: 2)) }
-                case 3, 4:
-                    let sym = i == 3 ? "hand.point.up.left" : "arrow.left.and.right.square"
-                    let cfg = NSImage.SymbolConfiguration(pointSize: 17, weight: .regular).applying(.init(paletteColors: [NSColor(white: 0.4, alpha: 1)]))
-                    if let img = NSImage(systemSymbolName: sym, accessibilityDescription: nil)?.withSymbolConfiguration(cfg) {
-                        img.draw(in: CGRect(x: tile.midX - img.size.width / 2, y: tile.midY - img.size.height / 2, width: img.size.width, height: img.size.height))
-                    }
                 default:
                     let x = NSBezierPath(); x.lineWidth = 2
                     x.move(to: CGPoint(x: tile.minX + 11, y: tile.minY + 11)); x.line(to: CGPoint(x: tile.maxX - 11, y: tile.maxY - 11))
                     x.move(to: CGPoint(x: tile.minX + 11, y: tile.maxY - 11)); x.line(to: CGPoint(x: tile.maxX - 11, y: tile.minY + 11)); x.stroke()
                 }
-                let selected = (i < 3 && state.lineWidthIndex == i) || (i == 3 && state.panStyle == .followFinger) || (i == 4 && state.panStyle == .keepCentred)
+                let selected = i < 3 && state.lineWidthIndex == i
                 if selected { let ring = NSBezierPath(roundedRect: tile.insetBy(dx: -2, dy: -2), xRadius: 7, yRadius: 7); ring.lineWidth = 2; selBlue.setStroke(); ring.stroke() }
                 let attr: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor(white: 0.3, alpha: 1)]
                 let str = NSAttributedString(string: names[i], attributes: attr)
@@ -319,13 +316,9 @@ final class PanelView: NSView {
             if resetRect.contains(p) { resetDefaults() }
             return
         case .writing:
-            guard let i = (0..<6).first(where: { writingRect($0).contains(p) }) else { return }
-            switch i {
-            case 0, 1, 2: s.lineWidthIndex = i
-            case 3: s.panStyle = .followFinger
-            case 4: s.panStyle = .keepCentred
-            default: onWritingOff?(); return
-            }
+            guard let i = (0..<4).first(where: { writingRect($0).contains(p) }) else { return }
+            if i == 3 { onWritingOff?(); return }
+            s.lineWidthIndex = i
         }
         state = s
         needsDisplay = true

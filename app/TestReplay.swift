@@ -207,7 +207,7 @@ enum TestAutoPan {
             }
             var x = 0.15 * pad.width
             let y = 0.5 * pad.height
-            let centred = DispatchQueue.main.sync { canvas.tools.panStyle == .keepCentred }
+            let centred = true  // writing mode keeps writing centred; the writer follows the screen
             var seenPans = 0, seenLines = 0
             var lineStart: Double?
             for k in 0..<90 {
@@ -238,7 +238,7 @@ enum TestAutoPan {
                 }
                 let lines = Set(letters.map { Int(($0.midY / 10).rounded()) }).count
                 var r: [String: Any] = ["writing": canvas.writingMode, "strokes": canvas.doc.strokes.count, "letters": letters.count,
-                                        "returns": canvas.reanchorCount, "pans": canvas.panCount, "newLines": canvas.newLineCount, "overlapsWithPreviousLetter": overlaps,
+                                        "returns": 0, "pans": canvas.panCount, "newLines": canvas.newLineCount, "overlapsWithPreviousLetter": overlaps,
                                         "lettersLeftOfPrevious": backwards, "lineRows": lines, "touchX": touches]
                 r["hintBefore"] = canvas.showPageHint
                 let deep = canvas.camera.page.height - canvas.screenUnits * 1.1

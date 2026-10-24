@@ -19,6 +19,9 @@ struct Settings {
     // behind at writing zoom; beta 1 cut it to 7 pt. minCutoff 1 then made the ink creep ~0.6 s
     // after the finger stopped; 4 settles ~4x faster. See tools/filter_sweep.py, bench "settle".
     var beta: Double { d.object(forKey: "oneEuroBeta") as? Double ?? Smoothing.params(smoothing).beta }
+    /// Off by default: macOS's resting flag marked real fingers as palms (47 of 73 "palms" in
+    /// Karthik's 18:34 session were fingertips), which broke two-finger pinch. Kept for later tuning.
+    var palmRejection: Bool { d.bool(forKey: "palmRejection") }
     var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
     var palmSize: Double { d.object(forKey: "palmTotal") as? Double ?? 1.4 }
     /// Prediction slider, 0...24 ms (0 = off). Default 12: middle of the lag/overshoot trade-off.
@@ -108,12 +111,19 @@ struct Camera {
     mutating func clamp() {
         zoom = min(max(zoom, 1), Self.maxZoom)
         let v = visible
-        // When zoomed in, the view may go up to 40% of its width past the page's sides, so writing
-        // mode can put the start of a line exactly under the finger (otherwise lines got indented).
-        let over = v.width * 0.4 * min(1, zoom - 1)
-        center.x = min(max(center.x, v.width / 2 - over), page.width - v.width / 2 + over)
+        center.x = min(max(center.x, v.width / 2), page.width - v.width / 2)
         center.y = min(center.y, page.height - v.height / 2)
     }
+    /// Two-finger gesture: the canvas point under the previous centroid follows the fingers; the
+    /// zoom changes by `ratio` unless the zoom is locked (then it only pans).
+    mutating func navigate(from prev: CGPoint, to now: CGPoint, ratio: Double, zoomLocked: Bool) {
+        let anchor = canvas(fromPad: prev)
+        if !zoomLocked { zoom = min(max(zoom * ratio, 1), Self.maxZoom) }
+        let v = visible
+        center = CGPoint(x: anchor.x - now.x * v.width + v.width / 2, y: anchor.y - now.y * v.height + v.height / 2)
+        clamp()
+    }
+
     /// Top-left of the page at the current zoom.
     mutating func home() { let v = visible; center = CGPoint(x: v.width / 2, y: page.height - v.height / 2) }
     /// Pad position (0...1, y up) -> canvas point. This is the absolute mapping.
@@ -142,7 +152,27 @@ struct ToolState {
     var background = 0  // 0 none, 1 square, 2 dot, 3 ruled
     static let lineWidths = [0.5, 0.75, 1.0]  // writing mode line width, fraction of the page width
     var lineWidthIndex = 1
-    var panStyle = PanStyle.followFinger
+    var zoomLocked = false
+
+    /// Saved in defaults ("toolState") so the app reopens with the same tools, sizes, colours,
+    /// background, line width and zoom lock. (Smoothing/prediction are saved by their sliders.)
+    func save(to defaults: UserDefaults = .standard) {
+        let d: [String: Any] = ["tool": tool.rawValue, "background": background, "lineWidthIndex": lineWidthIndex, "zoomLocked": zoomLocked,
+                                "colorIndex": Dictionary(uniqueKeysWithValues: colorIndex.map { ($0.key.rawValue, $0.value) }),
+                                "sizeIndex": Dictionary(uniqueKeysWithValues: sizeIndex.map { ($0.key.rawValue, $0.value) })]
+        defaults.set(d, forKey: "toolState")
+    }
+    static func load(from defaults: UserDefaults = .standard) -> ToolState {
+        var t = ToolState()
+        guard let d = defaults.dictionary(forKey: "toolState") else { return t }
+        if let v = d["tool"] as? String, let k = ToolKind(rawValue: v) { t.tool = k }
+        if let v = d["background"] as? Int, (0...3).contains(v) { t.background = v }
+        if let v = d["lineWidthIndex"] as? Int, ToolState.lineWidths.indices.contains(v) { t.lineWidthIndex = v }
+        if let v = d["zoomLocked"] as? Bool { t.zoomLocked = v }
+        for (k, v) in d["colorIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), ToolState.colors.indices.contains(v) { t.colorIndex[kind] = v } }
+        for (k, v) in d["sizeIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), (0..<5).contains(v) { t.sizeIndex[kind] = v } }
+        return t
+    }
 
     var sizePt: Double { Self.sizes[tool]![sizeIndex[tool] ?? 2] }
     var color: NSColor { Self.colors[colorIndex[tool] ?? 0] }
@@ -176,7 +206,8 @@ final class GestureEngine {
     }
 
     /// Contacts already on the pad when draw mode starts (a resting palm) never draw.
-    func ignoreUntilLifted(_ ids: Set<Int32>) { palm.formUnion(ids); seen.formUnion(ids) }
+    lazy var palmRejection = settings.palmRejection
+    func ignoreUntilLifted(_ ids: Set<Int32>) { guard palmRejection else { return }; palm.formUnion(ids); seen.formUnion(ids) }
 
     func frame(_ contacts: [Contact], t: Double) {
         let down = contacts.filter(\.isDown)
@@ -185,7 +216,9 @@ final class GestureEngine {
         seen = ids
         drewIds = drewIds.intersection(ids)
         palm = palm.intersection(ids)
-        for c in down where c.major > settings.palmMajor || c.size > settings.palmSize || isPalm(c) { palm.insert(c.id) }
+        if palmRejection {
+            for c in down where c.major > settings.palmMajor || c.size > settings.palmSize || isPalm(c) { palm.insert(c.id) }
+        }
         let fingers = down.filter { !palm.contains($0.id) }.sorted { $0.id < $1.id }
 
         switch mode {
@@ -196,7 +229,8 @@ final class GestureEngine {
             hover(fingers, t)
         case let .drawing(id, started):
             let f = fingers.first { $0.id == id }
-            if fingers.count >= 2 && (t - started < 0.15 || strokeLengthMM() < 3) {
+            // A second finger soon after the first (or before it has moved much) = pinch/pan, not ink.
+            if fingers.count >= 2 && (t - started < 0.25 || strokeLengthMM() < 6) {
                 onEnd?(false)  // it was the start of a pinch/pan, not a stroke
                 mode = .navigating; navPrev = nil; navigate(fingers)
             } else if let f {
@@ -260,12 +294,15 @@ final class CanvasView: MTKView {
     var doc: Document { pages[pageIndex] }
     /// Called when page, hint or mode status changes (the window updates its labels).
     var onStatus: (() -> Void)?
-    var tools = ToolState() {
+    var tools = ToolState.load() {
         didSet {
-            if tools.panStyle != oldValue.panStyle || tools.lineWidthIndex != oldValue.lineWidthIndex { endWritingLine() }
+            if tools.lineWidthIndex != oldValue.lineWidthIndex { endWritingLine() }
+            if !testMode { tools.save() }
             needsRender = true
         }
     }
+    /// Test modes don't touch the saved settings.
+    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw"].contains { CommandLine.arguments.contains($0) }
     private(set) var camera: Camera
     private var renderer: Renderer!
     private let gestures = GestureEngine()
@@ -304,11 +341,7 @@ final class CanvasView: MTKView {
     var writingMode = false { didSet { endWritingLine(); needsRender = true } }
     private var lineInk: CGRect?
     private var lineLeft: Double?
-    private var lastLiftPad: CGPoint?        // where the finger lifted last, pad 0...1
-    private var newLinePending = false       // the line reached its width: next return starts a new line
-    /// Shift applied at this stroke's touch-down (undone if the stroke turns out to be a dot).
-    private var reanchor: (shift: CGPoint, consumedNewLine: Bool, lineBefore: CGRect?)?
-    private(set) var reanchorCount = 0
+
     private var camAnim: (from: CGPoint, to: CGPoint, start: Double)?
     private(set) var panCount = 0
     private(set) var newLineCount = 0
@@ -352,28 +385,9 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineLeft = nil; lastLiftPad = nil; newLinePending = false }
+    private func endWritingLine() { lineInk = nil; lineLeft = nil }
 
-    /// Touch-down in writing mode: if it's a return (well left of the last lift), shift the page so
-    /// the finger is just after the line's end (or at the next line's start).
-    private func reanchorIfReturning(_ c: Contact) {
-        reanchor = nil
-        guard writingMode, tools.panStyle == .followFinger, let lift = lastLiftPad, let line = lineInk, let left = lineLeft else { return }
-        var r = Reanchor(); r.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
-        guard r.isReturn(down: c.norm, lastLift: lift) else { return }
-        let gap = 3 * camera.page.width / camera.zoom / Multitouch.padMM.width  // 3 mm on the pad, in canvas units
-        let target = r.continuation(line: line, lineLeft: left, newLine: newLinePending, gap: gap)
-        let p = camera.canvas(fromPad: c.norm)
-        let before = camera.center
-        camera.center.x += target.x - p.x
-        if newLinePending { camera.center.y += target.y - p.y }
-        camera.clamp()
-        let shift = CGPoint(x: camera.center.x - before.x, y: camera.center.y - before.y)
-        reanchor = (shift, newLinePending, lineInk)
-        if newLinePending { lineInk = nil; newLinePending = false }
-        reanchorCount += 1
-        needsRender = true
-    }
+
 
     /// Test hook: where a canvas point currently is on the pad (0...1).
     func padPoint(_ p: CGPoint) -> CGPoint {
@@ -534,7 +548,7 @@ final class CanvasView: MTKView {
         camera.clamp(); endWritingLine(); needsRender = true
     }
     override func magnify(with e: NSEvent) {
-        guard !drawMode else { return }
+        guard !drawMode, !tools.zoomLocked else { return }
         let p = convert(e.locationInWindow, from: nil)
         let pad = CGPoint(x: p.x / bounds.width, y: p.y / bounds.height)
         let anchor = camera.canvas(fromPad: pad)
@@ -573,12 +587,7 @@ final class CanvasView: MTKView {
         gestures.onEnd = { [weak self] commit in self?.endStroke(commit) }
         gestures.onNavigate = { [weak self] prev, now, ratio in
             guard let self else { return }
-            let anchor = self.camera.canvas(fromPad: prev)
-            self.camera.zoom *= ratio
-            self.camera.zoom = min(max(self.camera.zoom, 1), Camera.maxZoom)
-            let v = self.camera.visible
-            self.camera.center = CGPoint(x: anchor.x - now.x * v.width + v.width / 2, y: anchor.y - now.y * v.height + v.height / 2)
-            self.camera.clamp()
+            self.camera.navigate(from: prev, to: now, ratio: ratio, zoomLocked: self.tools.zoomLocked)
             self.endWritingLine()  // moved by hand: the next stroke starts a new line where it lands
         }
     }
@@ -589,7 +598,6 @@ final class CanvasView: MTKView {
 
     private func beginStroke(_ c: Contact, _ t: Double) {
         finishSlide()
-        reanchorIfReturning(c)
         let cam = camera, pad = Multitouch.padMM
         let model = makeWidthModel(usingMT ? settings.widthModel : "speed")
         builder = StrokeBuilder(model: model, minCutoff: settings.minCutoff, beta: settings.beta) { mm in
@@ -620,51 +628,25 @@ final class CanvasView: MTKView {
         guard var b = builder else { return }
         b.finish()
         logger.end(committed: commit)
-        if !commit, let r = reanchor {  // a "return" that became a pinch: undo the page shift
-            camera.center.x -= r.shift.x; camera.center.y -= r.shift.y
-            if r.consumedNewLine { newLinePending = true; lineInk = r.lineBefore }
-            reanchor = nil; reanchorCount -= 1
-        }
         if liveTool == .eraser { doc.dropEmptyUndo(); return }
         guard commit, !b.points.isEmpty else { return }
         let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
         doc.add(s)
         updateScreensFilled()
-        // Writing mode, now that the finger is up.
+        // Writing mode, now that the finger is up: pan along the line (stroke at the view's right
+        // edge -> it ends mid-screen), or at the line width go to the start of the next line.
         if writingMode {
-            if let r = reanchor, b.lengthMM < 3 {
-                // A dot after a "return": it was a dot/tick near earlier writing, not a return.
-                // Put it where the finger really was and undo the page shift.
-                camera.center.x -= r.shift.x; camera.center.y -= r.shift.y
-                doc.replaceLast(Stroke(tool: s.tool, color: s.color, size: s.size,
-                                       points: s.points.map { StrokePoint(p: CGPoint(x: $0.p.x - r.shift.x, y: $0.p.y - r.shift.y), pressure: $0.pressure) }, maxStep: 0))
-                if r.consumedNewLine { newLinePending = true; lineInk = r.lineBefore }
-                reanchorCount -= 1
-                reanchor = nil
-                lastLiftPad = b.lastRaw.map { CGPoint(x: $0.x / Multitouch.padMM.width, y: $0.y / Multitouch.padMM.height) }
-                needsRender = true
-                return
-            }
-            reanchor = nil
-            if tools.panStyle == .keepCentred {
-                if lineLeft == nil { lineLeft = s.bounds.minX }
-                let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
-                lineInk = line
-                var layout = WritingLayout()
-                layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
-                switch layout.after(stroke: s.bounds, line: line, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
-                case .none: break
-                case .pan(let c): panCount += 1; slideCamera(to: c)
-                case .newLine(let c): newLineCount += 1; lineInk = nil; slideCamera(to: c)
-                }
-                return
-            }
             if lineLeft == nil { lineLeft = s.bounds.minX }   // kept across new lines: lines align left
-            lineInk = lineInk.map { $0.union(s.bounds) } ?? s.bounds
-            var r = Reanchor(); r.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
-            if !newLinePending, r.lineFull(line: lineInk!, lineLeft: lineLeft!, pageWidth: camera.page.width) { newLinePending = true; newLineCount += 1 }
-            lastLiftPad = b.lastRaw.map { CGPoint(x: $0.x / Multitouch.padMM.width, y: $0.y / Multitouch.padMM.height) }
+            let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
+            lineInk = line
+            var layout = WritingLayout()
+            layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
+            switch layout.after(stroke: s.bounds, line: line, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
+            case .none: break
+            case .pan(let c): panCount += 1; slideCamera(to: c)
+            case .newLine(let c): newLineCount += 1; lineInk = nil; slideCamera(to: c)
+            }
         }
     }
 

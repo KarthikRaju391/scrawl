@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let tb = container.toolbar
         tb.state = cv.tools
-        tb.onChange = { [weak self] s in self?.canvas.tools = s }
+        tb.onChange = { [weak self] s in self?.canvas.tools = s; self?.updateBanner() }
         tb.onUndo = { [weak self] in self?.canvas.undo() }
         tb.onRedo = { [weak self] in self?.canvas.redo() }
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
@@ -165,8 +165,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.85, green: 0.45, blue: 0.05, alpha: 1).cgColor
         } else {
             container.banner.stringValue = canvas.writingMode
-                ? "\(pageText) · Writing: pans by itself at the right edge, new line at the line width. W = off, Esc exits."
-                : "\(pageText) · Drawing: one finger draws, two fingers pan and pinch. W = writing mode, Esc exits."
+                ? "\(pageText) · Writing: pans at the right edge, next line at the line width\(canvas.tools.zoomLocked ? " · zoom locked" : ""). W = off, Esc exits."
+                : "\(pageText) · Drawing: one finger draws, two fingers pan\(canvas.tools.zoomLocked ? " (zoom locked, Z unlocks)" : " and pinch"). W = writing, Esc exits."
             container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
         }
         container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
@@ -187,12 +187,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "e": s.tool = .eraser
         case "w": toggleWriting(); return true
         case "n": page(0); return true
+        case "z": s.zoomLocked.toggle()
         case "k" where canvas.showPageHint: canvas.dismissPageHint(); return true
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false
         }
         canvas.tools = s
         container.toolbar.state = s
+        updateBanner()
         return true
     }
 
@@ -249,7 +251,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
                 var t = canvas.tools; t.lineWidthIndex = 0   // ½ page
-                if a.contains("--centred") { t.panStyle = .keepCentred }
                 canvas.tools = t
                 if !a.contains("--writing-off") { toggleWriting() }
                 TestAutoPan.run(canvas: canvas, dir: dir) { [self] in

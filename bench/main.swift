@@ -181,8 +181,8 @@ do {
 gestureChecks(check)
 smoothingTable(check)
 meshEquivalence(check, strokesPath: ProcessInfo.processInfo.environment["STROKES"])
-writingChecks(check)
 centredChecks(check)
+settingsChecks(check)
 
 // Prediction must point ahead along the motion: sine path like the UI test, at several phases.
 do {

@@ -7,9 +7,10 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
     final class Rec {
         var begins = 0, moves = 0, commits = 0, discards = 0, navs: [Double] = [], centroids: [(CGPoint, CGPoint)] = []
     }
-    func run(_ frames: [[Contact]], length: Double = 10, threshold: Double = 0) -> Rec {
+    func run(_ frames: [[Contact]], length: Double = 10, threshold: Double = 0, palm: Bool = true) -> Rec {
         let g = GestureEngine(), r = Rec()
         g.inkThreshold = threshold
+        g.palmRejection = palm   // the palm tests below exercise it (it is off by default in the app)
         g.onBegin = { _, _ in r.begins += 1 }
         g.onMove = { _, _ in r.moves += 1 }
         g.onEnd = { c in if c { r.commits += 1 } else { r.discards += 1 } }
@@ -51,7 +52,7 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
     check(r.commits == 0, "contact that grows into a palm leaves no ink (commits \(r.commits), discards \(r.discards))")
 
     // 5. After a stroke a leftover finger can't start a new stroke until all fingers lift.
-    f = (0..<30).map { i in [finger(1, 0.3 + Double(i) * 0.005, 0.5)] }
+    f = (0..<50).map { i in [finger(1, 0.3 + Double(i) * 0.003, 0.5)] }   // 400 ms of drawing (past the 250 ms pinch window)
     f += (0..<30).map { i in [finger(1, 0.45 + Double(i) * 0.005, 0.5), finger(2, 0.7, 0.3)] }   // second finger mid-stroke (late, long stroke)
     f += (0..<20).map { _ in [finger(2, 0.7 + 0.001, 0.3)] }   // first lifts; second remains
     f.append([])
@@ -71,6 +72,7 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
     // 7. macOS resting flag: a finger-sized contact that macOS calls resting never draws.
     do {
         let g = GestureEngine(), r = Rec()
+        g.palmRejection = true
         g.isPalm = { $0.id == 7 }
         g.onBegin = { _, _ in r.begins += 1 }
         g.onEnd = { c in if c { r.commits += 1 } }
@@ -84,6 +86,7 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
     // 8. A palm already down when draw mode starts never draws, even if it moves; the next touch does.
     do {
         let g = GestureEngine(), r = Rec()
+        g.palmRejection = true
         g.onBegin = { _, _ in r.begins += 1 }
         g.onEnd = { c in if c { r.commits += 1 } }
         g.ignoreUntilLifted([3])
@@ -93,5 +96,30 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
         fr.append([])
         for (i, f) in fr.enumerated() { g.frame(f, t: Double(i) * 0.008) }
         check(r.begins == 1 && r.commits == 1, "contact down at draw-mode start is ignored until lifted; the next touch draws (begins \(r.begins))")
+    }
+
+    // 9. Palm rejection off (the app default): a pinch where macOS flags one finger as "resting"
+    //    (what broke pinch in Karthik's 18:34 session) zooms instead of drawing.
+    do {
+        let g = GestureEngine(), r = Rec()
+        check(GestureEngine().palmRejection == false, "palm rejection is off by default")
+        g.isPalm = { $0.id == 2 }
+        g.onBegin = { _, _ in r.begins += 1 }
+        g.onEnd = { c in if c { r.commits += 1 } else { r.discards += 1 } }
+        g.onNavigate = { _, _, ratio in r.navs.append(ratio) }
+        g.strokeLengthMM = { 0.5 }
+        var fr: [[Contact]] = (0..<3).map { _ in [finger(1, 0.4, 0.5)] }
+        fr += (0..<30).map { i in [finger(1, 0.4 - Double(i) * 0.003, 0.5), finger(2, 0.6 + Double(i) * 0.003, 0.5)] }
+        fr.append([])
+        for (i, f) in fr.enumerated() { g.frame(f, t: Double(i) * 0.008) }
+        check(r.commits == 0 && r.navs.count > 20 && r.navs.reduce(1, *) > 1.3, String(format: "pinch with a 'resting'-flagged finger zooms, no ink (commits %d, zoom x%.2f)", r.commits, r.navs.reduce(1, *)))
+    }
+    // 10. Second finger 200 ms after the first (slower pinch start): still a pinch, not a stroke.
+    do {
+        var fr: [[Contact]] = (0..<25).map { i in [finger(1, 0.4 + Double(i) * 0.0003, 0.5)] }
+        fr += (0..<30).map { i in [finger(1, 0.4 - Double(i) * 0.003, 0.5), finger(2, 0.6 + Double(i) * 0.003, 0.5)] }
+        fr.append([])
+        let r = run(fr, length: 1.0, palm: false)
+        check(r.commits == 0 && r.navs.count > 20, "second finger 200 ms late still starts a pinch (commits \(r.commits), nav frames \(r.navs.count))")
     }
 }

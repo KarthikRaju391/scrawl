@@ -17,12 +17,9 @@ MultitouchSupport framework.
 - **Esc** always exits. So do ⌃⌥D, switching apps, and closing the window.
 - One finger draws. Two fingers pan, and pinching zooms (1×–12×). Blue rings show where your
   fingers are, since there's no cursor.
-- Palm rejection uses three signals: macOS's own resting-touch flag (matched to the private
-  framework's contacts by position), contact size (`palmMajorAxis` / `palmTotal`), and touches
-  already on the pad when draw mode starts, which are ignored until lifted. Every lifted contact
-  is logged (`"kind": "contact"`) with its peak size and width, whether macOS called it resting,
-  and whether it was treated as a palm. One session with a resting palm is enough to set the
-  thresholds from data.
+- Palm rejection (off by default) uses macOS's resting-touch flag, contact size
+  (`palmMajorAxis` / `palmTotal`), and touches already on the pad when draw mode starts. Every lifted
+  contact is logged (`"kind": "contact"`) for tuning.
 - Writing while zoomed in keeps the same on-screen line width, so small handwriting stays crisp.
 - **Pages**: each page is infinitely long downwards. A dashed line marks every screen height (from
   the aspect ratio of the display the app is on). Writing past one shows a hint: N for a new page,
@@ -31,17 +28,14 @@ MultitouchSupport framework.
 - **Pan and zoom** work everywhere: in draw mode with two fingers (pan) and pinch (zoom); outside
   draw mode with the normal two-finger scroll and pinch.
 - **Writing mode** (W in draw mode, or the cursor button; tap it again for line width ½ / ¾ /
-  full page, pan style, or Off). Two pan styles:
-  - *Keep centred*: when a stroke you finish reaches the right 15% of the view, the view pans so
-    it ends mid-screen and you continue from the middle of the pad.
-  - *Follow finger* (default): the page follows your finger. Carry on from where you lifted and nothing
-  moves (plain absolute mapping, which suits dots and crossbars). When you come back well to the left
-  (≥ 15% of the pad width, your "carriage return"), the page shifts at that moment so the spot
-  under your finger is just after the end of your line, wherever you chose to land. Once a line
-  reaches the chosen width, the next return starts the next line at the line's left edge, under
-  your finger. A "return" that turns out to be a dot is put back where you touched. Based on
-  Karthik's sessions: ~80% of touch-downs land next to the previous lift and ~12% are returns;
-  strokes after a return are almost never dots.
+  full page, or Off): when a stroke you finish reaches the right 15% of the view, the view pans so
+  it ends mid-screen; when the line reaches the chosen width, the view goes to the start of the next
+  line. Nothing moves while a finger is down.
+- **Zoom lock** (lock button, or Z in draw mode): pinching no longer zooms; two fingers still pan.
+- **Saved between launches**: tool, colours, sizes, background, line width, zoom lock, Smoothing and
+  Prediction. Pages are not saved yet.
+- **Palm rejection is off** (`defaults write local.trackpad-draw palmRejection -bool true` turns it
+  back on): macOS's resting flag marked real fingers as palms and broke pinch.
 - **Feel (⚙︎ in the toolbar)**: *Smoothing* (← follows the finger exactly · steadier →) and
   *Prediction* (← never overshoots · keeps up →). They apply to the next stroke and are remembered;
   Defaults resets them (50%, 12 ms). Measured on Karthik's strokes: prediction makes the tip keep
