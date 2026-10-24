@@ -11,25 +11,34 @@ import Carbon.HIToolbox
 enum CursorLock {
     nonisolated(unsafe) static var locked = false
     nonisolated(unsafe) static var savedLocation: CGPoint?
+    /// TRACKPAD_DRAW_DRYLOCK: tests go through every lock/unlock/watchdog step but never touch the
+    /// real cursor (the Mac may be in use). The CG calls are the only thing skipped.
+    static let dry = ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DRYLOCK"] != nil
 
     /// Freeze and hide the cursor at `at` (global display coordinates, top-left origin).
     static func lock(at: CGPoint) {
         guard !locked else { return }
-        savedLocation = CGEvent(source: nil)?.location
-        CGWarpMouseCursorPosition(at)
-        CGAssociateMouseAndMouseCursorPosition(0)
-        NSCursor.hide()
+        if !dry {
+            savedLocation = CGEvent(source: nil)?.location
+            CGWarpMouseCursorPosition(at)
+            CGAssociateMouseAndMouseCursorPosition(0)
+            NSCursor.hide()
+        }
         locked = true
         Watchdog.mark(locked: true)
+        Watchdog.log("cursor locked\(dry ? " (dry run)" : "")")
     }
 
-    static func unlock() {
+    static func unlock(reason: String = "exit") {
         guard locked else { return }
-        CGAssociateMouseAndMouseCursorPosition(1)
-        NSCursor.unhide()
-        if let p = savedLocation { CGWarpMouseCursorPosition(p); CGAssociateMouseAndMouseCursorPosition(1) }
+        if !dry {
+            CGAssociateMouseAndMouseCursorPosition(1)
+            NSCursor.unhide()
+            if let p = savedLocation { CGWarpMouseCursorPosition(p); CGAssociateMouseAndMouseCursorPosition(1) }
+        }
         locked = false
         Watchdog.mark(locked: false)
+        Watchdog.log("cursor restored: \(reason)\(dry ? " (dry run)" : "")")
     }
 }
 
@@ -63,14 +72,17 @@ enum Watchdog {
         let src = DispatchSource.makeProcessSource(identifier: parent, eventMask: .exit, queue: .main)
         src.setEventHandler {
             let wasLocked = FileManager.default.fileExists(atPath: lockedMarker)
-            CGAssociateMouseAndMouseCursorPosition(1)
-            CGDisplayShowCursor(CGMainDisplayID())
+            if !CursorLock.dry {
+                CGAssociateMouseAndMouseCursorPosition(1)
+                CGDisplayShowCursor(CGMainDisplayID())
+            }
             try? FileManager.default.removeItem(atPath: lockedMarker)
-            log("app pid \(parent) exited (locked=\(wasLocked)); re-associated mouse and showed cursor")
+            log("app pid \(parent) exited (locked=\(wasLocked)); re-associated mouse and showed cursor\(CursorLock.dry ? " (dry run)" : "")")
             exit(0)
         }
         src.resume()
-        if kill(parent, 0) != 0 { CGAssociateMouseAndMouseCursorPosition(1); exit(0) }  // parent already gone
+        log("watching app pid \(parent)")
+        if kill(parent, 0) != 0 { if !CursorLock.dry { CGAssociateMouseAndMouseCursorPosition(1) }; exit(0) }  // parent already gone
         dispatchMain()
     }
 }
@@ -89,7 +101,7 @@ enum Signals {
         // Crashes: not async-signal-safe, best effort before the default handler runs.
         for sig in [SIGSEGV, SIGBUS, SIGILL, SIGTRAP, SIGABRT, SIGFPE] {
             signal(sig) { s in
-                CGAssociateMouseAndMouseCursorPosition(1)
+                if !CursorLock.dry { CGAssociateMouseAndMouseCursorPosition(1) }
                 signal(s, SIG_DFL)
                 raise(s)
             }

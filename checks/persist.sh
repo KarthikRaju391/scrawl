@@ -104,4 +104,6 @@ D=$(mktemp -d /tmp/td-persist.XXXX); head -c 5000 /dev/urandom > "$D/Notebook.td
 reopen "$D"
 if ls "$D"/Notebook-unreadable-*.tdnb >/dev/null 2>&1 && grep -q unreadable "$D/actual.json"; then pass "unreadable notebook: kept aside as $(basename "$D"/Notebook-unreadable-*.tdnb), app opened a fresh one"; else fail "unreadable notebook not kept aside"; fi
 
+sleep 2; dlg=$(build/crashdialogs --close)
+[ -z "$dlg" ] && pass "no crash dialog left on screen by the test crash" || fail "test crash opened a crash dialog (closed it: pid $dlg)"
 echo "RESULT: $([ $BAD = 0 ] && echo PASS || echo "FAIL ($BAD)")"

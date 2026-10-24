@@ -64,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ n: Notification) {
         AppPaths.ensure()
         Watchdog.spawn()
-        Signals.install { [weak self] in self?.exitDrawMode(); NSApp.terminate(nil) }
+        Signals.install { [weak self] in self?.exitDrawMode("SIGTERM/SIGINT/SIGHUP"); NSApp.terminate(nil) }
 
         let screen = NSScreen.main!.visibleFrame
         let size = CGSize(width: min(1400, screen.width * 0.85), height: min(940, screen.height * 0.85))
@@ -105,7 +105,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if !canvas.testMode { HotKey.register() }   // tests never take ⌃⌥D from the app in use
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in self?.key(e) == true ? nil : e }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.exitDrawMode(); self?.canvas.autosaver.saveNow(sync: false)
+            self?.exitDrawMode("app deactivated"); self?.canvas.autosaver.saveNow(sync: false)
+        }
+        // The cursor comes back whenever the Mac stops being in front of the user, or the displays change
+        // (the frozen cursor's parking spot and the page mapping are no longer valid).
+        let ws = NSWorkspace.shared.notificationCenter
+        for (name, why) in [(NSWorkspace.screensDidSleepNotification, "display sleep"), (NSWorkspace.willSleepNotification, "system sleep"),
+                            (NSWorkspace.sessionDidResignActiveNotification, "user switched / screen locked")] {
+            ws.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.exitDrawMode(why); self?.canvas.autosaver.saveNow(sync: false) }
+        }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.exitDrawMode("displays changed")
         }
         buildMenu()
         notebookStatus = canvas.loadNotebookFromDisk()
@@ -120,14 +130,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: draw mode
 
+    /// --test-cursor <how>: lock the cursor (dry run only), then end draw mode the way `how` says.
+    /// checks/cursor.sh reads the watchdog log to see the cursor came back.
+    func testCursor(_ how: String) {
+        let dir = AppPaths.logsDir
+        func status(_ name: String) {
+            let r: [String: Any] = ["drawMode": canvas.drawMode, "locked": CursorLock.locked]
+            try? JSONSerialization.data(withJSONObject: r).write(to: URL(fileURLWithPath: dir + "/" + name))
+        }
+        guard CursorLock.dry else { status("refused-not-dry.json"); return }   // never lock the real cursor in a test
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
+            enterDrawMode(lock: true)
+            status("locked.json")
+            switch how {
+            case "crash": TestCrash.now()
+            case "quit": NSApp.terminate(nil)
+            case "sleep": NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidSleepNotification, object: nil)
+            case "systemsleep": NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.willSleepNotification, object: nil)
+            case "session": NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+            case "screens": NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: NSApp)
+            case "esc":
+                if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53) {
+                    _ = key(e)
+                }
+            default: return   // kill / term: the script signals us
+            }
+            status("after.json")
+        }
+    }
+
     func toggleDrawMode() { canvas.drawMode ? exitDrawMode() : enterDrawMode() }
 
     func enterDrawMode(lock: Bool = true) {
         guard !canvas.drawMode else { return }
         container.toolbar.hidePanel()
         if lock {
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
+            if !Launch.background {   // dry-run lock tests stay in the background
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
+            }
             // Park the frozen cursor in the middle of the canvas so stray clicks land on it.
             let r = window.convertToScreen(canvas.convert(canvas.bounds, to: nil))
             let primaryH = NSScreen.screens.first!.frame.height
@@ -138,9 +180,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         updateBanner()
     }
 
-    func exitDrawMode() {
+    func exitDrawMode(_ reason: String = "Esc / hotkey / toolbar") {
         let wasLocked = CursorLock.locked
-        CursorLock.unlock()  // unconditional: also covers a lock without draw mode
+        CursorLock.unlock(reason: reason)  // unconditional: also covers a lock without draw mode
         guard canvas.drawMode else { return }
         if CommandLine.arguments.contains("--test-replay") {  // test mode: record how draw mode ended
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
@@ -245,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         }
+        if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
         if let i = a.firstIndex(of: "--test-persist"), i + 1 < a.count {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPersist.run(a[i + 1], canvas: canvas, app: self) }
         }
@@ -387,8 +430,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         catch { NSAlert(error: error).runModal() }
     }
 
-    func windowWillClose(_ n: Notification) { exitDrawMode(); NSApp.terminate(nil) }
-    func applicationWillTerminate(_ n: Notification) { exitDrawMode(); canvas.autosaver.saveNow(sync: true); canvas.recorder.flush() }
+    func windowWillClose(_ n: Notification) { exitDrawMode("window closed"); NSApp.terminate(nil) }
+    func applicationWillTerminate(_ n: Notification) { exitDrawMode("quit"); canvas.autosaver.saveNow(sync: true); canvas.recorder.flush() }
 }
 
 let app = NSApplication.shared
