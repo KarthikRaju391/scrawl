@@ -9,6 +9,9 @@ suites=(
   "persist|checks/persist.sh"
   "cursor|checks/cursor.sh"
   "input|checks/input.sh"
+  "mapping|checks/mapping.sh"
+  "edge-guard|checks/edge.sh"
+  "keys|checks/keys.sh"
   "aim|checks/aim.sh"
   "zoomlock|checks/zoomlock.sh"
   "autopan-centre|checks/autopan.sh --autopan centre"
@@ -17,6 +20,7 @@ suites=(
   "ui|checks/ui.sh"
   "e2e-replay|checks/e2e.sh data/strokes-20261024-161939.jsonl"
   "session-replay|checks/cf_all.sh"
+  "edge-replay|checks/edge_cf.sh"
 )
 [ "${1:-}" = --no-release ] || suites+=("release-dmg|checks/release.sh")
 bad=0

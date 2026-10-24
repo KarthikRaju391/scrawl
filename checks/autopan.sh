@@ -14,5 +14,8 @@ print("auto-pan:", ["off", "centre", "left"][r["autoPan"]], " strokes:", r["stro
 print("letters overlapping the previous letter:", r["overlapsWithPreviousLetter"], " rows (left edge of each):", [round(x) for x in r["rowStarts"]])
 print("touch-down x on the pad: min %.2f max %.2f" % (min(r["touchX"]), max(r["touchX"])))
 if r["wordStartAfterPan"]: print("after each auto-pan, the word just written starts at pad x:", " ".join(f"{x:.2f}" for x in r["wordStartAfterPan"]))
+mode = ["off", "centre", "left"][r["autoPan"]]
+ok = r["strokes"] == 90 and r["overlapsWithPreviousLetter"] == 0 and r["newLines"] >= 4 and ((r["pans"] == 0) if mode == "off" else (r["pans"] > 0))
+print(("PASS" if ok else "FAIL"), f"writing mode ({mode}): every letter drawn (90), none overlapping, {r['newLines']} new lines, {r['pans']} auto-pans")
 PY
 echo "$OUT"
