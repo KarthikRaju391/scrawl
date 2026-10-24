@@ -85,7 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
         tb.onWriting = { [weak self] in self?.toggleWriting() }
 
-        let testing = ["--test-replay", "--test-ui", "--test-writing", "--test-stress"].contains { CommandLine.arguments.contains($0) }
+        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress"].contains { CommandLine.arguments.contains($0) }
         if testing {
             // Test input only: real touches on the trackpad would interleave with the replay.
             mtError = nil
@@ -149,7 +149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func updateBanner() {
         let model = canvas.usingMT ? Settings().widthModel : "speed (MultitouchSupport off: \(mtError ?? ""))"
         container.banner.stringValue = canvas.writingMode
-            ? "Writing: keep writing at the blue caret; the page moves after you pause. Return = new line, W = off, Esc exits."
+            ? "Writing: the view pans by itself when your writing reaches the right edge. W = off, Esc exits."
             : "Drawing: one finger draws, two fingers pan and pinch. W = writing mode, Esc exits."
         container.banner.isHidden = !canvas.drawMode
         container.hint.stringValue = "⌃⌥D to draw with the trackpad  ·  width: \(model)"
@@ -168,7 +168,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "h": s.tool = .highlighter
         case "e": s.tool = .eraser
         case "w": toggleWriting(); return true
-        case "\r": canvas.newLine(); return true
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false
         }
@@ -194,41 +193,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         }
-        if a.contains("--test-writing") {
+        if a.contains("--test-autopan") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
-            let on = !a.contains("--writing-off")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
                 NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
                 enterDrawMode(lock: false)
-                if on { toggleWriting() } else { canvas.setZoomForTest(settingsWritingZoom: true) }
-                TestWriting.run(canvas: canvas, writing: on, dir: dir) { [self] in
-                    let url = URL(fileURLWithPath: dir + "/page.png")
-                    try? canvas.exportPNG(to: url, pxPerUnit: 1.5)
+                canvas.setZoomForTest(settingsWritingZoom: true)
+                if !a.contains("--writing-off") { toggleWriting() }
+                TestAutoPan.run(canvas: canvas, dir: dir) { [self] in
+                    try? canvas.exportPNG(to: URL(fileURLWithPath: dir + "/page.png"), pxPerUnit: 1.5)
                     try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
-                }
-            }
-        }
-        if a.contains("--test-ui") {
-            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-                NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
-                TestUI.run(window: window, toolbar: container.toolbar, dir: dir) { [self] in
-                    // One wavy stroke through the real input path, without locking the cursor.
-                    enterDrawMode(lock: false)
-                    var frames: [[Contact]] = []
-                    for k in 0...150 {
-                        let x = 20 + Double(k) * 0.55, y = 38 + sin(Double(k) / 12) * 14
-                        frames.append([Contact(id: 1, state: 4, norm: CGPoint(x: x / 124.8, y: y / 76.8), mm: CGPoint(x: x, y: y),
-                                               pressure: 10 + Double(k) / 3, size: 0.5, major: 7.5)])
-                    }
-                    frames.append([])
-                    for (j, f) in frames.enumerated() {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + Double(j) * 0.008) {
-                            Multitouch.onFrame?(f, CACurrentMediaTime(), Double(j) * 0.008)
-                            // onFrame hops to main async: exit after the lift frame has been handled.
-                            if j == frames.count - 1 { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.exitDrawMode() } }
-                        }
-                    }
                 }
             }
         }

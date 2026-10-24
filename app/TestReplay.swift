@@ -116,61 +116,6 @@ enum TestUI {
     }
 }
 
-/// --test-writing [--writing-off]: a simulated writer writes 16 four-letter "words" of small loops
-/// through the real input path. With writing mode it starts each word at the caret (as a person
-/// would aim for it); with --writing-off there is no caret, so it continues right of its previous
-/// word on the pad, as far as the pad goes. Reports where on the pad each word started and where
-/// it landed on the page.
-enum TestWriting {
-    static func run(canvas: CanvasView, writing: Bool, dir: String, done: @escaping () -> Void) {
-        let pad = Multitouch.padMM
-        var word = 0, starts: [[String: Double]] = []
-        var prevEndX = 0.25, id: Int32 = 100
-        func writeWord() {
-            guard word < 16 else { finish(); return }
-            var start = writing ? canvas.caretPad() : CGPoint(x: word == 0 ? 0.25 : prevEndX + 0.05, y: 0.5)
-            var overflow = false
-            if start.x > 0.78 { start.x = 0.78; overflow = true }  // no room left on the pad for 4 letters
-            starts.append(["word": Double(word), "padX": start.x, "padY": start.y, "overflow": overflow ? 1 : 0])
-            var seq: [[Contact]] = []
-            for k in 0..<4 {
-                id += 1
-                let cx = start.x * pad.width + 3 + Double(k) * 7, cy = start.y * pad.height
-                for j in 0...20 {
-                    let a = Double(j) / 20 * 2 * .pi * 1.1
-                    let x = cx + 2.5 * cos(a + .pi), y = cy + 2.5 * sin(a + .pi)
-                    seq.append([Contact(id: id, state: 4, norm: CGPoint(x: x / pad.width, y: y / pad.height), mm: CGPoint(x: x, y: y), pressure: 25, size: 0.5, major: 7.5)])
-                }
-                seq.append([])
-                for _ in 0..<15 { seq.append([]) }  // ~120 ms between letters
-            }
-            prevEndX = (start.x * pad.width + 3 + 3 * 7 + 2.5) / pad.width
-            var sensorT = Double(word) * 10
-            for (j, f) in seq.enumerated() {
-                DispatchQueue.main.asyncAfter(deadline: .now() + Double(j) * 0.008) {
-                    sensorT += 0.008
-                    canvas.handle(f, arrival: CACurrentMediaTime(), sensorT: sensorT)
-                }
-            }
-            word += 1
-            // Pause between words, longer than advanceDelayMs + the slide.
-            DispatchQueue.main.asyncAfter(deadline: .now() + Double(seq.count) * 0.008 + 0.85) { writeWord() }
-        }
-        func finish() {
-            let strokes = canvas.doc.strokes
-            var words: [[String: Double]] = []
-            for w in 0..<(strokes.count / 4) {
-                let b = strokes[(w * 4)..<(w * 4 + 4)].map(\.bounds).reduce(CGRect.null) { $0.union($1) }
-                words.append(["minX": b.minX, "maxX": b.maxX, "midY": b.midY])
-            }
-            let r: [String: Any] = ["writing": writing, "starts": starts, "words": words, "strokes": strokes.count]
-            try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted]).write(to: URL(fileURLWithPath: dir + "/test-writing.json"))
-            done()
-        }
-        writeWord()
-    }
-}
-
 /// --test-stress <strokes.jsonl>: fills the page with N strokes of real handwriting shape (the
 /// recorded strokes, scaled down and tiled like lines of text), then draws one 4-second live stroke
 /// through the input path while recording per-frame CPU/GPU time and gaps between presented frames.
@@ -231,5 +176,50 @@ enum TestStress {
             try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-stress.json"))
             done()
         }
+    }
+}
+
+/// --test-autopan [--writing-off]: a simulated writer at zoom 3 writes 40 small loop "letters"
+/// left to right through the real input path. After each letter it looks at where its last ink now
+/// is on the pad and writes the next letter just right of it (as a person following the screen
+/// would). Reports each pan and where the last ink sat on the pad after it.
+enum TestAutoPan {
+    static func run(canvas: CanvasView, dir: String, done: @escaping () -> Void) {
+        let pad = Multitouch.padMM
+        var events: [[String: Double]] = []
+        let t = Thread {
+            var deadline = CACurrentMediaTime(), sensorT = 0.0, id: Int32 = 5000
+            func emit(_ c: [Contact]) {
+                deadline += 0.008; sensorT += 0.008
+                preciseWait(until: deadline)
+                Multitouch.onFrame?(c, CACurrentMediaTime(), sensorT)
+            }
+            var x = 0.45 * pad.width, y = 0.5 * pad.height
+            for k in 0..<40 {
+                id += 1
+                for j in 0...24 {  // one loop, ~5 mm wide, ~0.2 s
+                    let a = Double(j) / 24 * 2 * .pi
+                    let p = CGPoint(x: x + 2.5 - 2.5 * cos(a) + Double(j) / 24 * 2.5, y: y + 2.5 * sin(a))
+                    emit([Contact(id: id, state: 4, norm: CGPoint(x: p.x / pad.width, y: p.y / pad.height), mm: p, pressure: 25, size: 0.5, major: 7.5)])
+                }
+                emit([])
+                for _ in 0..<35 { emit([]) }  // ~0.28 s gap (lets any pan finish)
+                // Look at the screen: where is the end of the last letter on the pad now?
+                let (pans, end) = DispatchQueue.main.sync { () -> (Int, CGPoint) in
+                    let b = canvas.doc.strokes.last!.bounds
+                    return (canvas.panCount, canvas.padPoint(CGPoint(x: b.maxX, y: b.midY)))
+                }
+                events.append(["letter": Double(k), "pans": Double(pans), "lastInkPadX": end.x])
+                x = end.x * pad.width + 1.5
+                if x > pad.width - 6 { x = pad.width - 6 }  // no room left on the pad
+            }
+            DispatchQueue.main.async {
+                let r: [String: Any] = ["writing": canvas.writingMode, "events": events, "pans": canvas.panCount, "strokes": canvas.doc.strokes.count]
+                try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted]).write(to: URL(fileURLWithPath: dir + "/test-autopan.json"))
+                done()
+            }
+        }
+        t.qualityOfService = .userInteractive
+        t.start()
     }
 }

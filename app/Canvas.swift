@@ -23,9 +23,6 @@ struct Settings {
     /// Inklet-style hover: a lighter touch shows the finger ring without inking; ink starts once
     /// MT pressure reaches this (raw units). 0 = off. Only meaningful with MultitouchSupport.
     var inkThreshold: Double { d.object(forKey: "inkThreshold") as? Double ?? 0 }
-    /// Writing mode: zoom it switches to, and the pause after a stroke before the page moves.
-    var writingZoom: Double { d.object(forKey: "writingZoom") as? Double ?? 3 }
-    var advanceDelayMs: Double { d.object(forKey: "advanceDelayMs") as? Double ?? 500 }
 }
 
 // MARK: - Model
@@ -275,60 +272,16 @@ final class CanvasView: MTKView {
     var perf = Perf()
     private var lastPresented = 0.0
 
-    // MARK: writing mode (see Writing.swift)
-    var writingMode = false {
-        didSet {
-            guard writingMode != oldValue else { return }
-            cancelAdvance(); lineInk = nil
-            if writingMode {
-                // Start at the top-left of the page, zoomed in enough to write comfortably.
-                camera.zoom = max(camera.zoom, settings.writingZoom)
-                let v = camera.visible
-                camera.center = CGPoint(x: v.width / 2, y: camera.page.height - v.height / 2)
-                camera.clamp()
-            }
-            needsRender = true
-        }
-    }
-    private let guide = WritingGuide()
-    private(set) var lineInk: CGRect?
-    private var advanceWork: DispatchWorkItem?
+    // MARK: writing mode = auto-pan (see Writing.swift)
+    var writingMode = false { didSet { needsRender = true } }
+    private let autoPan = AutoPan()
     private var camAnim: (from: CGPoint, to: CGPoint, start: Double)?
+    private(set) var panCount = 0
 
-    private func cancelAdvance() { advanceWork?.cancel(); advanceWork = nil }
-
-    private func scheduleAdvance() {
-        cancelAdvance()
-        let w = DispatchWorkItem { [weak self] in self?.advanceNow() }
-        advanceWork = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + settings.advanceDelayMs / 1000, execute: w)
-    }
-
-    /// Pause after writing: slide the page if the line has reached the advance point.
-    func advanceNow() {
-        advanceWork = nil
-        guard writingMode, builder == nil else { return }
-        switch guide.afterPause(lineInk: lineInk, visible: camera.visible, page: camera.page) {
-        case .none: break
-        case .advance(let c): slideCamera(to: c)
-        case .wrap(let c): lineInk = nil; slideCamera(to: c)
-        }
-        needsRender = true
-    }
-
-    /// Caret in pad coordinates (0...1): where the finger should go next.
-    func caretPad() -> CGPoint {
-        let c = guide.caret(lineInk: lineInk, visible: camera.visible, page: camera.page), v = camera.visible
-        return CGPoint(x: (c.minX - v.minX) / v.width, y: (c.midY - v.minY) / v.height)
-    }
-
-    /// Return key: next line.
-    func newLine() {
-        guard writingMode else { return }
-        cancelAdvance()
-        let c = guide.newLine(lineInk: lineInk, visible: camera.visible, page: camera.page)
-        lineInk = nil
-        slideCamera(to: c)
+    /// Test hook: where a canvas point currently is on the pad (0...1).
+    func padPoint(_ p: CGPoint) -> CGPoint {
+        let v = camera.visible
+        return CGPoint(x: (p.x - v.minX) / v.width, y: (p.y - v.minY) / v.height)
     }
 
     private func slideCamera(to c: CGPoint) {
@@ -421,7 +374,7 @@ final class CanvasView: MTKView {
         frameSensorT = sensorT
         perf.inputsSinceTick += 1
         contacts = cs.filter(\.isDown)
-        if !contacts.isEmpty { cancelAdvance(); finishSlide() }
+        if !contacts.isEmpty { finishSlide() }
         gestures.frame(cs, t: arrival)
         needsRender = true
     }
@@ -489,7 +442,6 @@ final class CanvasView: MTKView {
         gestures.onEnd = { [weak self] commit in self?.endStroke(commit) }
         gestures.onNavigate = { [weak self] prev, now, ratio in
             guard let self else { return }
-            self.lineInk = nil  // moved by hand: start a fresh line wherever they write next
             let anchor = self.camera.canvas(fromPad: prev)
             self.camera.zoom *= ratio
             self.camera.zoom = min(max(self.camera.zoom, 1), Camera.maxZoom)
@@ -504,7 +456,7 @@ final class CanvasView: MTKView {
     }
 
     private func beginStroke(_ c: Contact, _ t: Double) {
-        finishSlide(); cancelAdvance()
+        finishSlide()
         let cam = camera, pad = Multitouch.padMM
         let model = makeWidthModel(usingMT ? settings.widthModel : "speed")
         builder = StrokeBuilder(model: model, minCutoff: settings.minCutoff, beta: settings.beta) { mm in
@@ -539,9 +491,10 @@ final class CanvasView: MTKView {
         let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
         doc.add(s)
-        if writingMode {
-            lineInk = lineInk.map { $0.union(s.bounds) } ?? s.bounds
-            scheduleAdvance()
+        // Writing mode: the stroke reached the right edge of the view -> pan, now that the finger is up.
+        if writingMode, let c = autoPan.afterStroke(s.bounds, visible: camera.visible, page: camera.page) {
+            panCount += 1
+            slideCamera(to: c)
         }
     }
 
@@ -586,17 +539,6 @@ final class CanvasView: MTKView {
                 items.append(.init(mesh: Mesh(), verts: v, color: premul(SIMD4(0.10, 0.45, 0.91, 0.8))))
             }
         }
-        if drawMode && writingMode && builder == nil {  // caret: where the next letter goes
-            let c = guide.caret(lineInk: lineInk, visible: camera.visible, page: camera.page)
-            let k = 1 / (ptPerUnit * camera.zoom), w = 2.5 * k
-            func rect(_ r: CGRect) -> [SIMD2<Float>] {
-                let a = SIMD2<Float>(Float(r.minX), Float(r.minY)), b = SIMD2<Float>(Float(r.maxX), Float(r.minY))
-                let c2 = SIMD2<Float>(Float(r.maxX), Float(r.maxY)), d = SIMD2<Float>(Float(r.minX), Float(r.maxY))
-                return [a, b, c2, a, c2, d]
-            }
-            items.append(.init(mesh: Mesh(), verts: rect(CGRect(x: c.minX - 10 * k, y: c.minY, width: 34 * k, height: c.height)), color: premul(SIMD4(0.10, 0.45, 0.91, 0.07))))
-            items.append(.init(mesh: Mesh(), verts: rect(CGRect(x: c.minX - w / 2, y: c.minY, width: w, height: c.height)), color: premul(SIMD4(0.10, 0.45, 0.91, 0.85))))
-        }
         let arrival = pendingArrival
         pendingArrival = nil
         renderCount += 1
@@ -618,7 +560,7 @@ final class CanvasView: MTKView {
 
     // MARK: commands
 
-    func undo() { doc.undo(); lineInk = nil; needsRender = true }
+    func undo() { doc.undo(); needsRender = true }
     func redo() { doc.redo(); needsRender = true }
     func clearPage() { doc.clear(); needsRender = true }
     /// Test: add a finished stroke as if drawn at the current zoom.
@@ -630,7 +572,7 @@ final class CanvasView: MTKView {
 
     /// Test baseline: same zoom and starting place as writing mode, without writing mode.
     func setZoomForTest(settingsWritingZoom: Bool) {
-        camera.zoom = settings.writingZoom
+        camera.zoom = 3
         let v = camera.visible
         camera.center = CGPoint(x: v.width / 2, y: camera.page.height - v.height / 2)
         camera.clamp(); needsRender = true
