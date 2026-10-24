@@ -8,7 +8,7 @@ strokes = []
 for p in sys.argv[1:]:
     for l in open(p):
         r = json.loads(l)
-        if r.get('kind') != 'contact' and r.get('committed') and len(r['samples']) > 20:
+        if not r.get('kind') and r.get('committed') and len(r['samples']) > 20:
             strokes.append([(s[0], s[1], s[2]) for s in r['samples']])
 def q(v, p): v = sorted(v); return v[min(len(v) - 1, int(p * (len(v) - 1)))]
 for mc, beta in [(1.0, 1.0), (4.0, 1.0)]:

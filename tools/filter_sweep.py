@@ -35,7 +35,7 @@ def main():
     for p in sys.argv[1:]:
         for l in open(p):
             s = json.loads(l)
-            if s.get('kind') != 'contact' and s.get('committed') and len(s['samples']) > 20:
+            if not s.get('kind') and s.get('committed') and len(s['samples']) > 20:
                 strokes.append([(r[0], r[1], r[2]) for r in s['samples']])
     raw_w = sum(wobble([(x, y) for _, x, y in s]) for s in strokes) / len(strokes)
     print(f"{len(strokes)} strokes; raw wobble {raw_w * PT_PER_MM:.2f} pt RMS second difference")

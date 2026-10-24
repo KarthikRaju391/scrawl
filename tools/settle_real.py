@@ -16,7 +16,7 @@ strokes = []
 for p in sys.argv[1:]:
     for l in open(p):
         r = json.loads(l)
-        if r.get('kind') != 'contact' and r.get('committed') and len(r['samples']) > 20:
+        if not r.get('kind') and r.get('committed') and len(r['samples']) > 20:
             strokes.append([(s[0], s[1], s[2]) for s in r['samples']])
 def q(v, p): v = sorted(v); return v[min(len(v) - 1, int(p * (len(v) - 1)))] if v else float('nan')
 for label, (mc, beta) in [("old default (1, 1)", (1.0, 1.0))] + [(f"slider {int(s*100):3d}%", params(s)) for s in (0, .25, .5, .75, 1)]:

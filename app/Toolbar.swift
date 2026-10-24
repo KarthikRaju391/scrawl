@@ -202,7 +202,7 @@ final class PanelView: NSView {
     var preferredSize: CGSize {
         switch mode {
         case .background: return CGSize(width: 4 * 64 + 2 * pad, height: 64 + 2 * pad)
-        case .writing: return CGSize(width: 4 * 64 + 10 + 2 * pad, height: 64 + 2 * pad)
+        case .writing: return CGSize(width: 7 * 64 + 2 * 12 + 2 * pad, height: 64 + 2 * pad)
         case .settings: return CGSize(width: 340, height: 150)
         case .tool: return CGSize(width: 6 * sw + 5 * 8 + 2 * pad, height: state.tool == .eraser ? sw + 2 * pad : 3 * sw + 2 * 8 + 12 + 2 * pad)
         }
@@ -217,9 +217,9 @@ final class PanelView: NSView {
         return CGRect(x: pad + CGFloat(col) * (sw + 8), y: bounds.height - pad - sw - 12 - CGFloat(row + 1) * sw - CGFloat(row) * 8, width: sw, height: sw)
     }
     private func bgRect(_ i: Int) -> CGRect { CGRect(x: pad + CGFloat(i) * 64, y: pad, width: 64, height: 64) }
-    /// Writing panel tiles: 0-2 line width, 3 off (small gap before it).
+    /// Writing panel tiles: 0-2 line width, 3-5 auto-pan (no pan / centre / left), 6 writing off.
     private func writingRect(_ i: Int) -> CGRect {
-        CGRect(x: pad + CGFloat(i) * 64 + (i >= 3 ? 10 : 0), y: pad, width: 64, height: 64)
+        CGRect(x: pad + CGFloat(i) * 64 + (i >= 3 ? 12 : 0) + (i >= 6 ? 12 : 0), y: pad, width: 64, height: 64)
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -254,9 +254,9 @@ final class PanelView: NSView {
                     let ring = NSBezierPath(ovalIn: r.insetBy(dx: -1, dy: -1)); ring.lineWidth = 2; selBlue.setStroke(); ring.stroke()
                 }
             }
-        case .writing:  // line width ½ / ¾ / full · off
-            let names = ["½ page", "¾ page", "Full", "Off"]
-            for i in 0..<4 {
+        case .writing:  // line width ½ / ¾ / full · auto-pan none / centre / left · writing off
+            let names = ["½ page", "¾ page", "Full", "No pan", "Centre", "Left", "Off"]
+            for i in 0..<7 {
                 let r = writingRect(i), tile = CGRect(x: r.midX - 18, y: r.maxY - 42, width: 36, height: 36)
                 NSColor(white: 0.97, alpha: 1).setFill(); NSBezierPath(roundedRect: tile, xRadius: 6, yRadius: 6).fill()
                 NSColor(white: 0.55, alpha: 1).set()
@@ -264,12 +264,21 @@ final class PanelView: NSView {
                 case 0, 1, 2:
                     let w = (tile.width - 8) * CGFloat(ToolState.lineWidths[i])
                     for k in 0..<3 { NSBezierPath.fill(CGRect(x: tile.minX + 4, y: tile.minY + 9 + CGFloat(k) * 8, width: w, height: 2)) }
+                case 3, 4, 5:  // a view frame and where the last word ends up after the pan
+                    NSBezierPath(rect: tile.insetBy(dx: 6, dy: 9)).stroke()
+                    if i != 3 {
+                        let x = i == 4 ? tile.midX - 7 : tile.minX + 8
+                        NSBezierPath.fill(CGRect(x: x, y: tile.midY - 1.5, width: 7, height: 3))
+                    } else {
+                        let l = NSBezierPath(); l.lineWidth = 1.5
+                        l.move(to: CGPoint(x: tile.minX + 8, y: tile.minY + 11)); l.line(to: CGPoint(x: tile.maxX - 8, y: tile.maxY - 11)); l.stroke()
+                    }
                 default:
                     let x = NSBezierPath(); x.lineWidth = 2
                     x.move(to: CGPoint(x: tile.minX + 11, y: tile.minY + 11)); x.line(to: CGPoint(x: tile.maxX - 11, y: tile.maxY - 11))
                     x.move(to: CGPoint(x: tile.minX + 11, y: tile.maxY - 11)); x.line(to: CGPoint(x: tile.maxX - 11, y: tile.minY + 11)); x.stroke()
                 }
-                let selected = i < 3 && state.lineWidthIndex == i
+                let selected = (i < 3 && state.lineWidthIndex == i) || (i >= 3 && i <= 5 && state.autoPan.rawValue == i - 3)
                 if selected { let ring = NSBezierPath(roundedRect: tile.insetBy(dx: -2, dy: -2), xRadius: 7, yRadius: 7); ring.lineWidth = 2; selBlue.setStroke(); ring.stroke() }
                 let attr: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 10), .foregroundColor: NSColor(white: 0.3, alpha: 1)]
                 let str = NSAttributedString(string: names[i], attributes: attr)
@@ -316,9 +325,12 @@ final class PanelView: NSView {
             if resetRect.contains(p) { resetDefaults() }
             return
         case .writing:
-            guard let i = (0..<4).first(where: { writingRect($0).contains(p) }) else { return }
-            if i == 3 { onWritingOff?(); return }
-            s.lineWidthIndex = i
+            guard let i = (0..<7).first(where: { writingRect($0).contains(p) }) else { return }
+            switch i {
+            case 0, 1, 2: s.lineWidthIndex = i
+            case 3, 4, 5: s.autoPan = AutoPan(rawValue: i - 3)!
+            default: onWritingOff?(); return
+            }
         }
         state = s
         needsDisplay = true

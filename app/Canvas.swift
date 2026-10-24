@@ -153,11 +153,12 @@ struct ToolState {
     static let lineWidths = [0.5, 0.75, 1.0]  // writing mode line width, fraction of the page width
     var lineWidthIndex = 1
     var zoomLocked = false
+    var autoPan = AutoPan.centre
 
     /// Saved in defaults ("toolState") so the app reopens with the same tools, sizes, colours,
     /// background, line width and zoom lock. (Smoothing/prediction are saved by their sliders.)
     func save(to defaults: UserDefaults = .standard) {
-        let d: [String: Any] = ["tool": tool.rawValue, "background": background, "lineWidthIndex": lineWidthIndex, "zoomLocked": zoomLocked,
+        let d: [String: Any] = ["tool": tool.rawValue, "background": background, "lineWidthIndex": lineWidthIndex, "zoomLocked": zoomLocked, "autoPan": autoPan.rawValue,
                                 "colorIndex": Dictionary(uniqueKeysWithValues: colorIndex.map { ($0.key.rawValue, $0.value) }),
                                 "sizeIndex": Dictionary(uniqueKeysWithValues: sizeIndex.map { ($0.key.rawValue, $0.value) })]
         defaults.set(d, forKey: "toolState")
@@ -169,6 +170,7 @@ struct ToolState {
         if let v = d["background"] as? Int, (0...3).contains(v) { t.background = v }
         if let v = d["lineWidthIndex"] as? Int, ToolState.lineWidths.indices.contains(v) { t.lineWidthIndex = v }
         if let v = d["zoomLocked"] as? Bool { t.zoomLocked = v }
+        if let v = d["autoPan"] as? Int, let a = AutoPan(rawValue: v) { t.autoPan = a }
         for (k, v) in d["colorIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), ToolState.colors.indices.contains(v) { t.colorIndex[kind] = v } }
         for (k, v) in d["sizeIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), (0..<5).contains(v) { t.sizeIndex[kind] = v } }
         return t
@@ -296,6 +298,7 @@ final class CanvasView: MTKView {
     var onStatus: (() -> Void)?
     var tools = ToolState.load() {
         didSet {
+            if tools.zoomLocked != oldValue.zoomLocked { logger.event(["what": "zoomLock", "locked": tools.zoomLocked, "source": source]) }
             if tools.lineWidthIndex != oldValue.lineWidthIndex { endWritingLine() }
             if !testMode { tools.save() }
             needsRender = true
@@ -303,7 +306,16 @@ final class CanvasView: MTKView {
     }
     /// Test modes don't touch the saved settings.
     let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw"].contains { CommandLine.arguments.contains($0) }
-    private(set) var camera: Camera
+    private(set) var camera: Camera {
+        didSet {  // every zoom change is logged with its cause, to track down "the lock unlocked"
+            if abs(camera.zoom - oldValue.zoom) > 1e-9 {
+                logger.event(["what": "zoom", "from": oldValue.zoom, "to": camera.zoom, "source": source, "locked": tools.zoomLocked])
+            }
+        }
+    }
+    /// What is changing the camera/tools right now (for the event log).
+    var source = "unknown"
+    func changing(_ src: String, _ body: () -> Void) { let old = source; source = src; body(); source = old }
     private var renderer: Renderer!
     private let gestures = GestureEngine()
     private var builder: StrokeBuilder?
@@ -340,6 +352,7 @@ final class CanvasView: MTKView {
     // MARK: writing mode (see Writing.swift)
     var writingMode = false { didSet { endWritingLine(); needsRender = true } }
     private var lineInk: CGRect?
+    private var lineStrokes: [CGRect] = []
     private var lineLeft: Double?
 
     private var camAnim: (from: CGPoint, to: CGPoint, start: Double)?
@@ -368,7 +381,7 @@ final class CanvasView: MTKView {
         if pageCameras.count < pages.count { pageCameras.append(camera) } else { pageCameras[pageIndex] = camera }
         pages.append(Document())
         pageIndex = pages.count - 1
-        camera.home()
+        changing("newPage") { camera.home() }
         pageCameras.append(camera)
         screensFilled = 0; hintDismissedAt = 0
         needsRender = true; onStatus?()
@@ -380,12 +393,16 @@ final class CanvasView: MTKView {
         while pageCameras.count < pages.count { pageCameras.append(camera) }
         pageCameras[pageIndex] = camera
         pageIndex = i
-        camera = pageCameras[i]
+        changing("page") {
+            var c = pageCameras[i]
+            if tools.zoomLocked { c.zoom = camera.zoom; c.clamp() }  // locked: every page keeps this zoom
+            camera = c
+        }
         screensFilled = 0; hintDismissedAt = 0; updateScreensFilled(); hintDismissedAt = screensFilled
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineLeft = nil }
+    private func endWritingLine() { lineInk = nil; lineLeft = nil; lineStrokes = [] }
 
 
 
@@ -545,18 +562,21 @@ final class CanvasView: MTKView {
         let k = 1 / (ptPerUnit * camera.zoom)
         camera.center.x -= e.scrollingDeltaX * k
         camera.center.y += e.scrollingDeltaY * k
-        camera.clamp(); endWritingLine(); needsRender = true
+        camera.clamp(); needsRender = true
     }
     override func magnify(with e: NSEvent) {
         guard !drawMode, !tools.zoomLocked else { return }
         let p = convert(e.locationInWindow, from: nil)
         let pad = CGPoint(x: p.x / bounds.width, y: p.y / bounds.height)
         let anchor = camera.canvas(fromPad: pad)
-        camera.zoom *= 1 + e.magnification
-        camera.zoom = min(max(camera.zoom, 1), Camera.maxZoom)
-        let v = camera.visible
-        camera.center = CGPoint(x: anchor.x - pad.x * v.width + v.width / 2, y: anchor.y - pad.y * v.height + v.height / 2)
-        camera.clamp(); endWritingLine(); needsRender = true
+        changing("magnify") {
+            var c = camera
+            c.zoom = min(max(c.zoom * (1 + e.magnification), 1), Camera.maxZoom)
+            let v = c.visible
+            c.center = CGPoint(x: anchor.x - pad.x * v.width + v.width / 2, y: anchor.y - pad.y * v.height + v.height / 2)
+            c.clamp(); camera = c
+        }
+        needsRender = true
     }
 
     /// Is this contact where macOS currently sees a resting touch? (fresh within 0.25 s, 6% of the pad)
@@ -587,8 +607,7 @@ final class CanvasView: MTKView {
         gestures.onEnd = { [weak self] commit in self?.endStroke(commit) }
         gestures.onNavigate = { [weak self] prev, now, ratio in
             guard let self else { return }
-            self.camera.navigate(from: prev, to: now, ratio: ratio, zoomLocked: self.tools.zoomLocked)
-            self.endWritingLine()  // moved by hand: the next stroke starts a new line where it lands
+            self.changing("pinch") { self.camera.navigate(from: prev, to: now, ratio: ratio, zoomLocked: self.tools.zoomLocked) }  // moved by hand: the next stroke starts a new line where it lands
         }
     }
 
@@ -634,18 +653,24 @@ final class CanvasView: MTKView {
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
         doc.add(s)
         updateScreensFilled()
-        // Writing mode, now that the finger is up: pan along the line (stroke at the view's right
-        // edge -> it ends mid-screen), or at the line width go to the start of the next line.
+        // Writing mode, now that the finger is up (see Writing.swift).
         if writingMode {
-            if lineLeft == nil { lineLeft = s.bounds.minX }   // kept across new lines: lines align left
+            let vh = camera.visible.height
+            // A stroke well above or below the current line (you moved there yourself): new line here.
+            if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
+                lineInk = nil; lineStrokes = []; lineLeft = s.bounds.minX
+            }
+            if lineLeft == nil { lineLeft = s.bounds.minX }   // kept across automatic new lines: lines align left
             let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
             lineInk = line
+            lineStrokes.append(s.bounds)
             var layout = WritingLayout()
             layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
-            switch layout.after(stroke: s.bounds, line: line, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
+            layout.autoPan = tools.autoPan
+            switch layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
             case .none: break
             case .pan(let c): panCount += 1; slideCamera(to: c)
-            case .newLine(let c): newLineCount += 1; lineInk = nil; slideCamera(to: c)
+            case .newLine(let c): newLineCount += 1; lineInk = nil; lineStrokes = []; slideCamera(to: c)
             }
         }
     }
@@ -749,11 +774,13 @@ final class CanvasView: MTKView {
 
     /// Test baseline: same zoom and starting place as writing mode, without writing mode.
     func setZoomForTest(settingsWritingZoom: Bool) {
-        camera.zoom = 3
-        camera.home(); camera.clamp(); needsRender = true
+        changing("test") { camera.zoom = 3; camera.home(); camera.clamp() }; needsRender = true
     }
 
-    func resetZoom() { camera.zoom = 1; camera.clamp(); needsRender = true }
+    func resetZoom() {
+        guard !tools.zoomLocked else { NSSound.beep(); return }  // locked means locked
+        changing("zoomToPage") { camera.zoom = 1; camera.clamp() }; needsRender = true
+    }
 
     /// Full page to PNG at `scale` px per canvas unit (CPU, same union fill as the GPU path).
     func exportPNG(to url: URL, pxPerUnit: Double = 4) throws {
@@ -800,6 +827,11 @@ final class StrokeLog {
         samples.append([t, mm.x, mm.y, pressure, size, out.p.x, out.p.y, out.pressure])
     }
     func latency(_ ms: Double) { latencies.append(ms) }
+    /// One line per notable change (kind "event"): zoom changes, zoom lock on/off, with the cause.
+    func event(_ d: [String: Any]) {
+        var d = d; d["kind"] = "event"; d["time"] = ISO8601DateFormatter().string(from: Date())
+        write(d)
+    }
     /// One line per lifted contact (kind "contact"), for tuning palm rejection.
     func contact(_ d: [String: Any]) {
         var d = d; d["kind"] = "contact"
