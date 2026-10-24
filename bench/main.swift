@@ -95,22 +95,49 @@ if args.count > 1 {
     print(String(format: "filter lag behind raw (all samples): p50 %.2f mm, p95 %.2f mm", pct(lagMM, 0.5), pct(lagMM, 0.95)))
 }
 
-// 3) Render cost: rebuilding + filling a long active stroke every frame on the CPU.
+// 3) Render cost on a 1500x900 pt canvas at 2x (14" MBP window).
+//    Live stroke: only new segments are filled into an offscreen layer each frame, then the
+//    layer is composited. Commit and zoom re-render cost are one-off, not per frame.
 do {
     let scale = 2, w = 1500 * scale, h = 900 * scale
-    let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                        space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-    ctx.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+    func bitmap() -> CGContext {
+        let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
+        c.scaleBy(x: CGFloat(scale), y: CGFloat(scale)); return c
+    }
+    let layer = bitmap(), view = bitmap(), committed = bitmap()
     var pts: [StrokePoint] = []
     for i in 0..<600 { let a = Double(i) / 20; pts.append(StrokePoint(p: CGPoint(x: 750 + cos(a) * Double(i) / 2, y: 450 + sin(a) * Double(i) / 2), pressure: 0.5 + 0.4 * sin(a))) }
-    let n = 120
-    let t0 = CFAbsoluteTimeGetCurrent()
-    for _ in 0..<n {
-        ctx.addPath(strokePath(pts, size: 6, brush: Brush.of(.pen)))
-        ctx.fillPath(using: .winding)
+    let committedImage = committed.makeImage()!
+    var frameMs: [Double] = []
+    var drawn = 0
+    for n in stride(from: 2, through: 600, by: 2) {  // 2 new points per frame (~125 Hz input, 120 Hz display)
+        let t0 = CFAbsoluteTimeGetCurrent()
+        layer.addPath(strokePath(Array(pts[0..<n]), size: 6, brush: Brush.of(.pen), from: max(drawn, 0), live: true))
+        layer.fillPath(using: .winding)
+        drawn = n
+        view.draw(committedImage, in: CGRect(x: 0, y: 0, width: 1500, height: 900))
+        view.setAlpha(0.35)
+        view.draw(layer.makeImage()!, in: CGRect(x: 0, y: 0, width: 1500, height: 900))
+        view.setAlpha(1)
+        frameMs.append((CFAbsoluteTimeGetCurrent() - t0) * 1000)
     }
-    let ms = (CFAbsoluteTimeGetCurrent() - t0) / Double(n) * 1000
-    check(ms < 4, String(format: "600-point stroke build+fill: %.2f ms/frame (budget 4 ms of an 8.3 ms frame)", ms))
+    let sorted = frameMs.sorted()
+    check(sorted[sorted.count * 95 / 100] < 4, String(format: "live-stroke frame (incremental fill + 2 composites): p50 %.2f ms, p95 %.2f ms (budget 4 ms)", sorted[sorted.count / 2], sorted[sorted.count * 95 / 100]))
+    var t0 = CFAbsoluteTimeGetCurrent()
+    committed.addPath(strokePath(pts, size: 6, brush: Brush.of(.pen)))
+    committed.fillPath(using: .winding)
+    print(String(format: "commit a 600-point stroke (one-off): %.2f ms", (CFAbsoluteTimeGetCurrent() - t0) * 1000))
+    // Zoom/pan end: re-render a page of 200 strokes x 150 points.
+    var page: [CGPath] = []
+    for k in 0..<200 {
+        var sp: [StrokePoint] = []
+        for i in 0..<150 { sp.append(StrokePoint(p: CGPoint(x: Double(k % 20) * 70 + Double(i) / 3, y: Double(k / 20) * 85 + sin(Double(i) / 10) * 20 + 40), pressure: 0.5)) }
+        page.append(strokePath(sp, size: 4, brush: Brush.of(.pen)))
+    }
+    t0 = CFAbsoluteTimeGetCurrent()
+    for p in page { committed.addPath(p); committed.fillPath(using: .winding) }
+    print(String(format: "re-render 200 cached stroke paths after zoom (one-off): %.1f ms", (CFAbsoluteTimeGetCurrent() - t0) * 1000))
 }
 
 exit(failures == 0 ? 0 : 1)

@@ -1,0 +1,442 @@
+// Document, camera, gestures and the canvas view.
+// Coordinates: canvas units, y up. The page has the trackpad's aspect ratio, so the whole pad
+// maps absolutely onto whatever part of the page is visible (all of it at zoom 1).
+import AppKit
+import MetalKit
+import QuartzCore
+import simd
+
+// MARK: - Settings (defaults domain local.trackpad-draw; tune after the guided probe run)
+
+struct Settings {
+    let d = UserDefaults.standard
+    var widthModel: String { d.string(forKey: "widthModel") ?? "mt-pressure" }  // mt-pressure | speed | contact-size
+    var inputSource: String { d.string(forKey: "inputSource") ?? "mt" }        // mt | nstouch
+    var minCutoff: Double { d.object(forKey: "oneEuroMinCutoff") as? Double ?? 1.0 }
+    var beta: Double { d.object(forKey: "oneEuroBeta") as? Double ?? 0.05 }
+    var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
+    var palmSize: Double { d.object(forKey: "palmTotal") as? Double ?? 1.4 }
+    var predictMs: Double { d.object(forKey: "predictMs") as? Double ?? 16 }
+}
+
+// MARK: - Model
+
+final class Stroke {
+    let tool: ToolKind
+    let color: SIMD4<Float>   // straight (not premultiplied) RGBA; alpha from the brush
+    let size: Double          // diameter in canvas units at full pressure
+    let points: [StrokePoint]
+    let radii: [Double]
+    var mesh = Mesh()
+    let bounds: CGRect
+
+    init(tool: ToolKind, color: SIMD4<Float>, size: Double, points: [StrokePoint]) {
+        self.tool = tool; self.color = color; self.size = size; self.points = points
+        radii = strokeRadii(points, size: size, brush: Brush.of(tool))
+        let maxR = radii.max() ?? 0
+        let xs = points.map(\.p.x), ys = points.map(\.p.y)
+        bounds = CGRect(x: xs.min()! - maxR, y: ys.min()! - maxR, width: xs.max()! - xs.min()! + 2 * maxR, height: ys.max()! - ys.min()! + 2 * maxR)
+    }
+
+    /// Does a circle at `p` with radius `r` touch this stroke?
+    func hit(_ p: CGPoint, r: Double) -> Bool {
+        guard bounds.insetBy(dx: -r, dy: -r).contains(p) else { return false }
+        for i in points.indices {
+            let q = points[i].p
+            let reach = r + radii[i]
+            if (q.x - p.x) * (q.x - p.x) + (q.y - p.y) * (q.y - p.y) <= reach * reach { return true }
+            if i > 0 {  // segment distance, so fast strokes with sparse points still get hit
+                let a = points[i - 1].p
+                let dx = q.x - a.x, dy = q.y - a.y, l2 = dx * dx + dy * dy
+                if l2 > 0 {
+                    let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2))
+                    let cx = a.x + t * dx - p.x, cy = a.y + t * dy - p.y
+                    if cx * cx + cy * cy <= reach * reach { return true }
+                }
+            }
+        }
+        return false
+    }
+}
+
+final class Document {
+    private(set) var strokes: [Stroke] = []
+    private var undoStack: [[Stroke]] = []
+    private var redoStack: [[Stroke]] = []
+
+    func snapshot() { undoStack.append(strokes); redoStack.removeAll() }
+    func add(_ s: Stroke) { snapshot(); strokes.append(s) }
+    /// Eraser: removes without a new undo step (one step per eraser gesture, taken at its start).
+    func remove(where pred: (Stroke) -> Bool) -> Bool {
+        let n = strokes.count
+        strokes.removeAll(where: pred)
+        return strokes.count != n
+    }
+    func clear() { guard !strokes.isEmpty else { return }; snapshot(); strokes.removeAll() }
+    func undo() { guard let s = undoStack.popLast() else { return }; redoStack.append(strokes); strokes = s }
+    func redo() { guard let s = redoStack.popLast() else { return }; undoStack.append(strokes); strokes = s }
+    func dropEmptyUndo() { if let last = undoStack.last, last.count == strokes.count, zip(last, strokes).allSatisfy({ $0 === $1 }) { undoStack.removeLast() } }
+}
+
+struct Camera {
+    let page: CGSize
+    var zoom = 1.0          // 1 = whole page visible
+    var center: CGPoint
+    static let maxZoom = 12.0
+
+    init(page: CGSize) { self.page = page; center = CGPoint(x: page.width / 2, y: page.height / 2) }
+
+    var visible: CGRect {
+        let w = page.width / zoom, h = page.height / zoom
+        return CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
+    }
+    mutating func clamp() {
+        zoom = min(max(zoom, 1), Self.maxZoom)
+        let v = visible
+        center.x = min(max(center.x, v.width / 2), page.width - v.width / 2)
+        center.y = min(max(center.y, v.height / 2), page.height - v.height / 2)
+    }
+    /// Pad position (0...1, y up) -> canvas point. This is the absolute mapping.
+    func canvas(fromPad n: CGPoint) -> CGPoint {
+        let v = visible
+        return CGPoint(x: v.minX + n.x * v.width, y: v.minY + n.y * v.height)
+    }
+}
+
+// MARK: - Tool state (Keep-style: each tool remembers its own color and size)
+
+struct ToolState {
+    private static let hex: [Int] = [0x000000, 0x5F6368, 0xD93025, 0xF29900, 0xFDD663, 0x1E8E3E, 0x12B5CB, 0x1A73E8, 0x9334E6, 0xE52592, 0x8D6E63, 0xFFFFFF]
+    static let colors: [NSColor] = hex.map { (h: Int) -> NSColor in
+        let r = CGFloat((h >> 16) & 255) / 255, g = CGFloat((h >> 8) & 255) / 255, b = CGFloat(h & 255) / 255
+        return NSColor(srgbRed: r, green: g, blue: b, alpha: 1)
+    }
+    /// Size options in screen points at the zoom where the stroke is drawn (writing zoomed in
+    /// keeps the same on-screen width, which is the point of zooming in to write small).
+    static let sizes: [ToolKind: [Double]] = [
+        .pen: [1.5, 2.5, 4, 6, 9], .marker: [4, 6, 9, 13, 18], .highlighter: [10, 14, 20, 28, 36], .eraser: [8, 14, 22, 32, 44],
+    ]
+    var tool: ToolKind = .pen
+    var colorIndex: [ToolKind: Int] = [.pen: 0, .marker: 7, .highlighter: 4]
+    var sizeIndex: [ToolKind: Int] = [.pen: 1, .marker: 2, .highlighter: 2, .eraser: 2]
+    var background = 0  // 0 none, 1 square, 2 dot, 3 ruled
+
+    var sizePt: Double { Self.sizes[tool]![sizeIndex[tool] ?? 2] }
+    var color: NSColor { Self.colors[colorIndex[tool] ?? 0] }
+}
+
+// MARK: - Gesture engine: contact frames in, strokes / navigation out
+
+final class GestureEngine {
+    enum Mode { case idle, drawing(Int32, Double), navigating, waitLift }
+    private(set) var mode = Mode.idle
+    private var palm = Set<Int32>()
+    private var navPrev: (ids: [Int32], centroid: CGPoint, dist: Double)?
+    var settings = Settings()
+
+    var onBegin: ((Contact, Double) -> Void)?
+    var onMove: ((Contact, Double) -> Void)?
+    var onEnd: ((Bool) -> Void)?                 // true = commit, false = discard
+    var onNavigate: ((CGPoint, CGPoint, Double) -> Void)?  // prev centroid, new centroid (pad 0...1), zoom ratio
+    var strokeLengthMM: () -> Double = { 0 }
+
+    func reset() {
+        if case .drawing = mode { onEnd?(false) }
+        mode = .idle; palm.removeAll(); navPrev = nil
+    }
+
+    func frame(_ contacts: [Contact], t: Double) {
+        let down = contacts.filter(\.isDown)
+        let ids = Set(down.map(\.id))
+        palm = palm.intersection(ids)
+        for c in down where c.major > settings.palmMajor || c.size > settings.palmSize { palm.insert(c.id) }
+        let fingers = down.filter { !palm.contains($0.id) }.sorted { $0.id < $1.id }
+
+        switch mode {
+        case .idle:
+            if fingers.count == 1 { mode = .drawing(fingers[0].id, t); onBegin?(fingers[0], t) }
+            else if fingers.count >= 2 { mode = .navigating; navigate(fingers) }
+        case let .drawing(id, started):
+            let f = fingers.first { $0.id == id }
+            if fingers.count >= 2 && (t - started < 0.15 || strokeLengthMM() < 3) {
+                onEnd?(false)  // it was the start of a pinch/pan, not a stroke
+                mode = .navigating; navPrev = nil; navigate(fingers)
+            } else if let f {
+                onMove?(f, t)
+            } else {
+                onEnd?(!palm.contains(id))  // a contact that turned into a palm is discarded
+                mode = fingers.isEmpty ? .idle : .waitLift
+            }
+        case .navigating:
+            if fingers.count >= 2 { navigate(fingers) } else { navPrev = nil; mode = fingers.isEmpty ? .idle : .waitLift }
+        case .waitLift:
+            if fingers.isEmpty { mode = .idle }
+        }
+    }
+
+    private func navigate(_ fingers: [Contact]) {
+        let a = fingers[0], b = fingers[1]
+        let c = CGPoint(x: (a.norm.x + b.norm.x) / 2, y: (a.norm.y + b.norm.y) / 2)
+        let d = hypot(a.mm.x - b.mm.x, a.mm.y - b.mm.y)
+        defer { navPrev = ([a.id, b.id], c, Double(d)) }
+        guard let p = navPrev, p.ids == [a.id, b.id] else { return }
+        let ratio = p.dist > 5 && d > 5 ? Double(d) / p.dist : 1
+        onNavigate?(p.centroid, c, ratio)
+    }
+}
+
+// MARK: - Canvas view
+
+final class CanvasView: MTKView {
+    let doc = Document()
+    var tools = ToolState() { didSet { needsRender = true } }
+    private(set) var camera: Camera
+    private var renderer: Renderer!
+    private let gestures = GestureEngine()
+    private var builder: StrokeBuilder?
+    private var liveTool: ToolKind = .pen
+    private var liveColor = SIMD4<Float>(0, 0, 0, 1)
+    private var liveSize = 1.0
+    private var contacts: [Contact] = []
+    private var needsRender = true
+    private var link: CADisplayLink?
+    private var settings = Settings()
+    var drawMode = false { didSet { gestures.reset(); contacts = []; needsRender = true } }
+    var usingMT = false
+    let logger = StrokeLog()
+
+    // Latency bookkeeping: arrival time of the newest sample not yet on screen.
+    private var pendingArrival: Double?
+
+    static let pageUnits = CGSize(width: 1600, height: 1600 / (124.8 / 76.8))
+
+    override init(frame: NSRect, device: MTLDevice?) {
+        camera = Camera(page: Self.pageUnits)
+        super.init(frame: frame, device: device ?? MTLCreateSystemDefaultDevice())
+        guard let r = Renderer(view: self) else { fatalError("Metal unavailable") }
+        renderer = r
+        clearStencil = 0
+        isPaused = true                 // driven by our display link, only when something changed
+        enableSetNeedsDisplay = false
+        (layer as? CAMetalLayer)?.maximumDrawableCount = 3
+        (layer as? CAMetalLayer)?.displaySyncEnabled = true
+        allowedTouchTypes = [.indirect]
+        wantsRestingTouches = true
+        wireGestures()
+    }
+    required init(coder: NSCoder) { fatalError() }
+
+    /// Screen points per canvas unit at zoom 1.
+    var ptPerUnit: Double { bounds.width / camera.page.width }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, link == nil else { return }
+        link = displayLink(target: self, selector: #selector(tick(_:)))
+        link?.add(to: .main, forMode: .common)
+    }
+
+    @objc private func tick(_ l: CADisplayLink) {
+        guard needsRender else { return }
+        needsRender = false
+        render(predictAhead: max(l.targetTimestamp - CACurrentMediaTime(), 0) + settings.predictMs / 1000)
+    }
+
+    func setNeedsRender() { needsRender = true }
+
+    // MARK: input
+
+    /// MultitouchSupport frames, already on the main thread.
+    func handle(_ cs: [Contact], arrival: Double) {
+        guard drawMode else { return }
+        contacts = cs.filter(\.isDown)
+        gestures.frame(cs, t: arrival)
+        needsRender = true
+    }
+
+    // NSTouch fallback (public API, no pressure): used when MultitouchSupport is unavailable.
+    private var nsIds: [Int: Int32] = [:]
+    private func nsTouchFrame(_ e: NSEvent) {
+        guard drawMode, !usingMT else { return }
+        let arrival = CACurrentMediaTime()
+        var out: [Contact] = []
+        for t in e.touches(matching: .touching, in: self) where !t.isResting {
+            let key = t.identity.hash
+            let id = nsIds[key] ?? { let n = Int32(nsIds.count + 1); nsIds[key] = n; return n }()
+            let mmPerPt = 25.4 / 72
+            out.append(Contact(id: id, state: 4, norm: t.normalizedPosition,
+                               mm: CGPoint(x: t.normalizedPosition.x * t.deviceSize.width * mmPerPt, y: t.normalizedPosition.y * t.deviceSize.height * mmPerPt),
+                               pressure: 0, size: 0.5, major: 8))
+        }
+        if out.isEmpty { nsIds.removeAll() }
+        handle(out, arrival: arrival)
+    }
+    override func touchesBegan(with e: NSEvent) { nsTouchFrame(e) }
+    override func touchesMoved(with e: NSEvent) { nsTouchFrame(e) }
+    override func touchesEnded(with e: NSEvent) { nsTouchFrame(e) }
+    override func touchesCancelled(with e: NSEvent) { nsTouchFrame(e) }
+    // In draw mode physical clicks land on the frozen cursor over this view: swallow them.
+    override func mouseDown(with e: NSEvent) { if !drawMode { super.mouseDown(with: e) } }
+    override func scrollWheel(with e: NSEvent) { if !drawMode { super.scrollWheel(with: e) } }
+    override func magnify(with e: NSEvent) {}
+
+    private func wireGestures() {
+        gestures.strokeLengthMM = { [weak self] in self?.builder?.lengthMM ?? 0 }
+        gestures.onBegin = { [weak self] c, t in self?.beginStroke(c, t) }
+        gestures.onMove = { [weak self] c, t in self?.moveStroke(c, t) }
+        gestures.onEnd = { [weak self] commit in self?.endStroke(commit) }
+        gestures.onNavigate = { [weak self] prev, now, ratio in
+            guard let self else { return }
+            let anchor = self.camera.canvas(fromPad: prev)
+            self.camera.zoom *= ratio
+            self.camera.zoom = min(max(self.camera.zoom, 1), Camera.maxZoom)
+            let v = self.camera.visible
+            self.camera.center = CGPoint(x: anchor.x - now.x * v.width + v.width / 2, y: anchor.y - now.y * v.height + v.height / 2)
+            self.camera.clamp()
+        }
+    }
+
+    private func sample(_ c: Contact, _ t: Double) -> InputSample {
+        InputSample(mm: c.mm, t: t, pressure: c.pressure, size: c.size)
+    }
+
+    private func beginStroke(_ c: Contact, _ t: Double) {
+        let cam = camera, pad = Multitouch.padMM
+        let model = makeWidthModel(usingMT ? settings.widthModel : "speed")
+        builder = StrokeBuilder(model: model, minCutoff: settings.minCutoff, beta: settings.beta) { mm in
+            cam.canvas(fromPad: CGPoint(x: mm.x / pad.width, y: mm.y / pad.height))
+        }
+        liveTool = tools.tool
+        let col = tools.color.usingColorSpace(.sRGB)!
+        liveColor = SIMD4(Float(col.redComponent), Float(col.greenComponent), Float(col.blueComponent), Float(Brush.of(liveTool).alpha))
+        liveSize = tools.sizePt / (ptPerUnit * camera.zoom)
+        if liveTool == .eraser { doc.snapshot() }
+        logger.begin(tool: liveTool.rawValue, model: model.name, zoom: camera.zoom, ptPerUnit: ptPerUnit, backing: Double(window?.backingScaleFactor ?? 2))
+        moveStroke(c, t)
+    }
+
+    private func moveStroke(_ c: Contact, _ t: Double) {
+        guard builder != nil else { return }
+        builder!.add(sample(c, t))
+        logger.sample(t: t, mm: c.mm, pressure: c.pressure, size: c.size, out: builder!.points.last!)
+        pendingArrival = t
+        if liveTool == .eraser, let p = builder!.points.last {
+            let r = liveSize / 2
+            if doc.remove(where: { $0.hit(p.p, r: r) }) { needsRender = true }
+        }
+    }
+
+    private func endStroke(_ commit: Bool) {
+        defer { builder = nil; needsRender = true }
+        guard let b = builder else { return }
+        logger.end(committed: commit)
+        if liveTool == .eraser { doc.dropEmptyUndo(); return }
+        guard commit, !b.points.isEmpty else { return }
+        let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points)
+        s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii))
+        doc.add(s)
+    }
+
+    // MARK: drawing
+
+    private func premul(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x * c.w, c.y * c.w, c.z * c.w, c.w) }
+
+    private func render(predictAhead: Double) {
+        var items: [Renderer.DrawItem] = doc.strokes.map { s in
+            if s.mesh.buffer == nil { s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii)) }
+            return .init(mesh: s.mesh, verts: nil, color: premul(s.color))
+        }
+        if let b = builder, liveTool != .eraser, !b.points.isEmpty {
+            var pts = b.points
+            if let p = b.predicted(ahead: predictAhead) { pts.append(p) }
+            let radii = strokeRadii(pts, size: liveSize, brush: Brush.of(liveTool), live: true)
+            items.append(.init(mesh: Mesh(), verts: strokeMesh(pts, radii: radii), color: premul(liveColor)))
+        }
+        if drawMode {  // finger markers: where each finger is on the page (there is no cursor)
+            let ringR = 5 / (ptPerUnit * camera.zoom)
+            for c in contacts {
+                let p = camera.canvas(fromPad: c.norm)
+                let r = liveTool == .eraser && builder != nil ? liveSize / 2 : ringR
+                var v: [SIMD2<Float>] = []
+                let n = 32
+                for k in 0..<n {
+                    let a0 = Double(k) / Double(n) * 2 * .pi, a1 = Double(k + 1) / Double(n) * 2 * .pi
+                    let w = 1.2 / (ptPerUnit * camera.zoom)
+                    func pt(_ a: Double, _ rr: Double) -> SIMD2<Float> { SIMD2(Float(p.x + cos(a) * rr), Float(p.y + sin(a) * rr)) }
+                    v += [pt(a0, r - w), pt(a0, r + w), pt(a1, r + w), pt(a0, r - w), pt(a1, r + w), pt(a1, r - w)]
+                }
+                items.append(.init(mesh: Mesh(), verts: v, color: premul(SIMD4(0.10, 0.45, 0.91, 0.8))))
+            }
+        }
+        let arrival = pendingArrival
+        pendingArrival = nil
+        renderer.render(in: self, visible: camera.visible, background: tools.background,
+                        spacing: 48, pxPerUnit: ptPerUnit * camera.zoom * Double(window?.backingScaleFactor ?? 2),
+                        items: items, presented: arrival.map { a in { [weak self] t in
+                            guard t > 0 else { return }  // 0 = dropped frame
+                            DispatchQueue.main.async { self?.logger.latency((t - a) * 1000) }
+                        } })
+    }
+
+    // MARK: commands
+
+    func undo() { doc.undo(); needsRender = true }
+    func redo() { doc.redo(); needsRender = true }
+    func clearPage() { doc.clear(); needsRender = true }
+    func resetZoom() { camera.zoom = 1; camera.clamp(); needsRender = true }
+
+    /// Full page to PNG at `scale` px per canvas unit (CPU, same union fill as the GPU path).
+    func exportPNG(to url: URL, pxPerUnit: Double = 4) throws {
+        let w = Int(camera.page.width * pxPerUnit), h = Int(camera.page.height * pxPerUnit)
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+        ctx.setFillColor(.white)
+        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
+        ctx.scaleBy(x: pxPerUnit, y: pxPerUnit)
+        for s in doc.strokes {
+            ctx.setFillColor(CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: CGFloat(s.color.w)))
+            ctx.addPath(strokePath(s.points, size: s.size, brush: Brush.of(s.tool)))
+            ctx.fillPath(using: .winding)
+        }
+        let rep = NSBitmapImageRep(cgImage: ctx.makeImage()!)
+        try rep.representation(using: .png, properties: [:])!.write(to: url)
+    }
+}
+
+// MARK: - Stroke log (data/ for the jitter and latency checks)
+
+final class StrokeLog {
+    private var fh: FileHandle?
+    private var cur: [String: Any] = [:]
+    private var samples: [[Double]] = []
+    private var latencies: [Double] = []
+    let path: String
+
+    init() {
+        let dir = (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw/data")
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
+        path = "\(dir)/strokes-\(f.string(from: Date())).jsonl"
+    }
+
+    func begin(tool: String, model: String, zoom: Double, ptPerUnit: Double, backing: Double) {
+        cur = ["tool": tool, "model": model, "zoom": zoom, "ptPerUnit": ptPerUnit, "backing": backing]
+        samples = []; latencies = []
+    }
+    /// t, raw mm x/y, pressure, size, output canvas x/y, output pressure
+    func sample(t: Double, mm: CGPoint, pressure: Double, size: Double, out: StrokePoint) {
+        samples.append([t, mm.x, mm.y, pressure, size, out.p.x, out.p.y, out.pressure])
+    }
+    func latency(_ ms: Double) { latencies.append(ms) }
+    func end(committed: Bool) {
+        cur["committed"] = committed
+        cur["samples"] = samples
+        // Presented handlers can arrive after the stroke ends; these are the ones seen so far.
+        cur["latencyMs"] = latencies
+        if fh == nil {
+            FileManager.default.createFile(atPath: path, contents: nil)
+            fh = FileHandle(forWritingAtPath: path)
+        }
+        if let d = try? JSONSerialization.data(withJSONObject: cur) { fh?.write(d); fh?.write(Data("\n".utf8)) }
+    }
+}

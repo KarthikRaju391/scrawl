@@ -142,41 +142,45 @@ struct StrokePoint { var p: CGPoint; var pressure: Double }
     max(size * (0.5 - thinning * (0.5 - pressure)), 0.05 * size)
 }
 
-/// Builds the filled outline as a union of circles at each point plus a quad per segment.
-/// All subpaths share one winding direction, so a nonzero fill is the exact union (no double
-/// alpha for the highlighter, no self-intersection holes at sharp turns).
-func strokePath(_ pts: [StrokePoint], size: Double, brush: Brush) -> CGPath {
-    let path = CGMutablePath()
-    guard !pts.isEmpty else { return path }
-    // Arc length for tapers.
+/// Radius per point: perfect-freehand thinning plus start/end tapers by arc length.
+/// `live` skips the end taper (the end isn't known yet while the finger is down).
+func strokeRadii(_ pts: [StrokePoint], size: Double, brush: Brush, live: Bool = false) -> [Double] {
+    guard !pts.isEmpty else { return [] }
     var lens = [0.0]
     for i in 1..<pts.count { lens.append(lens[i - 1] + hypot(pts[i].p.x - pts[i - 1].p.x, pts[i].p.y - pts[i - 1].p.y)) }
     let total = lens.last!
     let ts = brush.taperStart * size, te = brush.taperEnd * size
-    func r(_ i: Int) -> Double {
+    return pts.indices.map { i in
         var rad = strokeRadius(size: size, thinning: brush.thinning, pressure: pts[i].pressure)
         if ts > 0 { rad *= min(1, 0.25 + 0.75 * lens[i] / ts) }
-        if te > 0 && total > te * 1.5 { rad *= min(1, 0.25 + 0.75 * (total - lens[i]) / te) }
+        if !live && te > 0 && total > te * 1.5 { rad *= min(1, 0.25 + 0.75 * (total - lens[i]) / te) }
         return rad
     }
-    var prevR = r(0)
-    path.addEllipse(in: CGRect(x: pts[0].p.x - prevR, y: pts[0].p.y - prevR, width: 2 * prevR, height: 2 * prevR))
-    for i in 1..<pts.count {
-        let a = pts[i - 1].p, b = pts[i].p
-        let rb = r(i)
+}
+
+/// Filled outline as a union of circles at each point plus a quad per segment.
+/// All subpaths share one winding direction, so a nonzero fill is the exact union (no double
+/// alpha for the highlighter, no self-intersection holes at sharp turns).
+/// `from` > 0 builds only the part from that point on (incremental drawing of a live stroke).
+func strokePath(_ pts: [StrokePoint], size: Double, brush: Brush, from: Int = 0, live: Bool = false) -> CGPath {
+    let path = CGMutablePath()
+    guard from < pts.count else { return path }
+    let r = strokeRadii(pts, size: size, brush: brush, live: live)
+    if from == 0 { path.addEllipse(in: CGRect(x: pts[0].p.x - r[0], y: pts[0].p.y - r[0], width: 2 * r[0], height: 2 * r[0])) }
+    for i in max(from, 1)..<pts.count {
+        let a = pts[i - 1].p, b = pts[i].p, ra = r[i - 1], rb = r[i]
         let dx = b.x - a.x, dy = b.y - a.y
         let d = hypot(dx, dy)
         if d > 1e-6 {
             let nx = -dy / d, ny = dx / d
             // Same winding as addEllipse (checked by the bench's hole test).
-            path.move(to: CGPoint(x: a.x - nx * prevR, y: a.y - ny * prevR))
+            path.move(to: CGPoint(x: a.x - nx * ra, y: a.y - ny * ra))
             path.addLine(to: CGPoint(x: b.x - nx * rb, y: b.y - ny * rb))
             path.addLine(to: CGPoint(x: b.x + nx * rb, y: b.y + ny * rb))
-            path.addLine(to: CGPoint(x: a.x + nx * prevR, y: a.y + ny * prevR))
+            path.addLine(to: CGPoint(x: a.x + nx * ra, y: a.y + ny * ra))
             path.closeSubpath()
         }
         path.addEllipse(in: CGRect(x: b.x - rb, y: b.y - rb, width: 2 * rb, height: 2 * rb))
-        prevR = rb
     }
     return path
 }
