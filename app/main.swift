@@ -83,8 +83,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onUndo = { [weak self] in self?.canvas.undo() }
         tb.onRedo = { [weak self] in self?.canvas.redo() }
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
+        tb.onWriting = { [weak self] in self?.toggleWriting() }
 
-        let testing = CommandLine.arguments.contains("--test-replay") || CommandLine.arguments.contains("--test-ui")
+        let testing = ["--test-replay", "--test-ui", "--test-writing"].contains { CommandLine.arguments.contains($0) }
         if testing {
             // Test input only: real touches on the trackpad would interleave with the replay.
             mtError = nil
@@ -138,9 +139,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         updateBanner()
     }
 
+    func toggleWriting() {
+        canvas.writingMode.toggle()
+        container.toolbar.writingMode = canvas.writingMode
+        updateBanner()
+    }
+
     func updateBanner() {
         let model = canvas.usingMT ? Settings().widthModel : "speed (MultitouchSupport off: \(mtError ?? ""))"
-        container.banner.stringValue = "Drawing: one finger draws, two fingers pan and pinch. Esc exits."
+        container.banner.stringValue = canvas.writingMode
+            ? "Writing: keep writing at the blue caret; the page moves after you pause. Return = new line, W = off, Esc exits."
+            : "Drawing: one finger draws, two fingers pan and pinch. W = writing mode, Esc exits."
         container.banner.isHidden = !canvas.drawMode
         container.hint.stringValue = "⌃⌥D to draw with the trackpad  ·  width: \(model)"
         container.hint.isHidden = canvas.drawMode
@@ -157,6 +166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "m": s.tool = .marker
         case "h": s.tool = .highlighter
         case "e": s.tool = .eraser
+        case "w": toggleWriting(); return true
+        case "\r": canvas.newLine(); return true
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false
         }
@@ -169,6 +180,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func startTestReplayIfAsked() {
         let a = CommandLine.arguments
+        if a.contains("--test-writing") {
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            let on = !a.contains("--writing-off")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+                enterDrawMode(lock: false)
+                if on { toggleWriting() } else { canvas.setZoomForTest(settingsWritingZoom: true) }
+                TestWriting.run(canvas: canvas, writing: on, dir: dir) { [self] in
+                    let url = URL(fileURLWithPath: dir + "/page.png")
+                    try? canvas.exportPNG(to: url, pxPerUnit: 1.5)
+                    try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+                }
+            }
+        }
         if a.contains("--test-ui") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in

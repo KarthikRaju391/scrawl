@@ -4,16 +4,18 @@
 import AppKit
 
 final class ToolbarView: NSView {
-    enum Item: Equatable { case undo, redo, tool(ToolKind), background, draw }
+    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, draw }
     var state = ToolState() { didSet { needsDisplay = true; panel.state = state; panel.needsDisplay = true } }
     var drawMode = false { didSet { needsDisplay = true } }
+    var writingMode = false { didSet { needsDisplay = true } }
+    var onWriting: (() -> Void)?
     var onChange: ((ToolState) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var onDrawMode: (() -> Void)?
     let panel = PanelView()
 
-    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .draw]
+    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .draw]
     private let cell: CGFloat = 44
     static let height: CGFloat = 56
 
@@ -46,6 +48,7 @@ final class ToolbarView: NSView {
         case .tool(.highlighter): return "highlighter"
         case .tool(.eraser): return "eraser"
         case .background: return "square.grid.3x3"
+        case .writing: return "character.cursor.ibeam"
         case .draw: return drawMode ? "hand.draw.fill" : "hand.draw"
         }
     }
@@ -64,6 +67,7 @@ final class ToolbarView: NSView {
             switch item {
             case .tool(let k): selected = state.tool == k; if k != .eraser { tint = ToolState.colors[state.colorIndex[k] ?? 0] }
             case .draw: selected = drawMode
+            case .writing: selected = writingMode
             case .background: selected = !panel.isHidden && panel.mode == .background
             default: selected = false
             }
@@ -89,6 +93,7 @@ final class ToolbarView: NSView {
         case .undo: onUndo?()
         case .redo: onRedo?()
         case .draw: onDrawMode?()
+        case .writing: onWriting?()
         case .background: togglePanel(.background, under: rect(of: i))
         case .tool(let k):
             if state.tool == k { togglePanel(.tool, under: rect(of: i)) } else {

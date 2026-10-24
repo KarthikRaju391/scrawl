@@ -108,3 +108,58 @@ enum TestUI {
         next()
     }
 }
+
+/// --test-writing [--writing-off]: a simulated writer writes 16 four-letter "words" of small loops
+/// through the real input path. With writing mode it starts each word at the caret (as a person
+/// would aim for it); with --writing-off there is no caret, so it continues right of its previous
+/// word on the pad, as far as the pad goes. Reports where on the pad each word started and where
+/// it landed on the page.
+enum TestWriting {
+    static func run(canvas: CanvasView, writing: Bool, dir: String, done: @escaping () -> Void) {
+        let pad = Multitouch.padMM
+        var word = 0, starts: [[String: Double]] = []
+        var prevEndX = 0.25, id: Int32 = 100
+        func writeWord() {
+            guard word < 16 else { finish(); return }
+            var start = writing ? canvas.caretPad() : CGPoint(x: word == 0 ? 0.25 : prevEndX + 0.05, y: 0.5)
+            var overflow = false
+            if start.x > 0.78 { start.x = 0.78; overflow = true }  // no room left on the pad for 4 letters
+            starts.append(["word": Double(word), "padX": start.x, "padY": start.y, "overflow": overflow ? 1 : 0])
+            var seq: [[Contact]] = []
+            for k in 0..<4 {
+                id += 1
+                let cx = start.x * pad.width + 3 + Double(k) * 7, cy = start.y * pad.height
+                for j in 0...20 {
+                    let a = Double(j) / 20 * 2 * .pi * 1.1
+                    let x = cx + 2.5 * cos(a + .pi), y = cy + 2.5 * sin(a + .pi)
+                    seq.append([Contact(id: id, state: 4, norm: CGPoint(x: x / pad.width, y: y / pad.height), mm: CGPoint(x: x, y: y), pressure: 25, size: 0.5, major: 7.5)])
+                }
+                seq.append([])
+                for _ in 0..<15 { seq.append([]) }  // ~120 ms between letters
+            }
+            prevEndX = (start.x * pad.width + 3 + 3 * 7 + 2.5) / pad.width
+            var sensorT = Double(word) * 10
+            for (j, f) in seq.enumerated() {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Double(j) * 0.008) {
+                    sensorT += 0.008
+                    canvas.handle(f, arrival: CACurrentMediaTime(), sensorT: sensorT)
+                }
+            }
+            word += 1
+            // Pause between words, longer than advanceDelayMs + the slide.
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(seq.count) * 0.008 + 0.85) { writeWord() }
+        }
+        func finish() {
+            let strokes = canvas.doc.strokes
+            var words: [[String: Double]] = []
+            for w in 0..<(strokes.count / 4) {
+                let b = strokes[(w * 4)..<(w * 4 + 4)].map(\.bounds).reduce(CGRect.null) { $0.union($1) }
+                words.append(["minX": b.minX, "maxX": b.maxX, "midY": b.midY])
+            }
+            let r: [String: Any] = ["writing": writing, "starts": starts, "words": words, "strokes": strokes.count]
+            try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted]).write(to: URL(fileURLWithPath: dir + "/test-writing.json"))
+            done()
+        }
+        writeWord()
+    }
+}
