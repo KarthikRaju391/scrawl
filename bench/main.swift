@@ -180,6 +180,24 @@ do {
 
 gestureChecks(check)
 
+// Interpolation: 12 samples on a circle of radius 50 (fast stroke). Polyline vs Catmull-Rom
+// worst deviation from the true circle.
+do {
+    let raw = (0...12).map { i -> StrokePoint in let a = Double(i) / 12 * 2 * .pi; return StrokePoint(p: CGPoint(x: 50 * cos(a), y: 50 * sin(a)), pressure: 0.5) }
+    func worst(_ pts: [StrokePoint]) -> Double {
+        var w = 0.0
+        for i in 1..<pts.count { for k in 0...10 {
+            let t = Double(k) / 10, x = pts[i - 1].p.x + (pts[i].p.x - pts[i - 1].p.x) * t, y = pts[i - 1].p.y + (pts[i].p.y - pts[i - 1].p.y) * t
+            w = max(w, abs(hypot(x, y) - 50)) } }
+        return w
+    }
+    let smooth = catmullRom(raw, maxStep: 1)
+    // Interior only (between samples 1 and 11): the end segments have no outer neighbour.
+    let a = 2 * .pi / 12 * 1.0, b = 2 * .pi / 12 * 11.0
+    let interior = smooth.filter { var t = atan2($0.p.y, $0.p.x); if t < 0 { t += 2 * .pi }; return t >= a - 1e-9 && t <= b + 1e-9 }
+    check(worst(interior) < 0.5 && worst(Array(raw[1...11])) > 1.5, String(format: "Catmull-Rom: circle from 12 samples deviates %.2f units (polyline %.2f, radius 50); %d points", worst(interior), worst(Array(raw[1...11])), smooth.count))
+}
+
 // Default window: canvas ~1368 pt wide for a 124.8 mm pad = ~10.96 pt/mm.
 let st = Settings()
 jitterModel(ptPerMM: 10.96, backing: 2, minCutoff: st.minCutoff, beta: st.beta, writeLog: ProcessInfo.processInfo.environment["JITTER_LOG"])

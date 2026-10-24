@@ -51,18 +51,20 @@ enum TestReplay {
         return out
     }
 
-    static func run(path: String, onFrame: @escaping ([Contact], Double) -> Void, done: @escaping (Int, Double, Double) -> Void) {
+    static func run(path: String, onFrame: @escaping ([Contact], Double, Double) -> Void, done: @escaping (Int, Double, Double) -> Void) {
         let fs = frames(from: path)
         let t = Thread {
             Thread.sleep(forTimeInterval: 0.5)
             // Absolute deadlines so sleep overshoot doesn't accumulate.
             var deadline = CACurrentMediaTime()
             let start = deadline
+            var sensorT = 0.0  // recorded timing, like the sensor's own frame clock
             for f in fs {
                 deadline += f.dt
+                sensorT += f.dt
                 let wait = deadline - CACurrentMediaTime()
                 if wait > 0 { Thread.sleep(forTimeInterval: wait) }
-                onFrame(f.contacts, CACurrentMediaTime())
+                onFrame(f.contacts, CACurrentMediaTime(), sensorT)
             }
             let wall = CACurrentMediaTime() - start, planned = fs.reduce(0) { $0 + $1.dt }
             Thread.sleep(forTimeInterval: 0.5)

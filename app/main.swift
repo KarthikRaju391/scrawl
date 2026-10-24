@@ -86,8 +86,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         if Settings().inputSource == "mt" { mtError = Multitouch.start() } else { mtError = "disabled by inputSource=nstouch" }
         cv.usingMT = mtError == nil
-        Multitouch.onFrame = { [weak cv] contacts, arrival in
-            DispatchQueue.main.async { cv?.handle(contacts, arrival: arrival) }
+        Multitouch.onFrame = { [weak cv] contacts, arrival, sensorT in
+            DispatchQueue.main.async { cv?.handle(contacts, arrival: arrival, sensorT: sensorT) }
         }
         HotKey.action = { [weak self] in self?.toggleDrawMode() }
         HotKey.register()
@@ -170,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
             if a.contains("--test-front") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
             enterDrawMode(lock: lock)
-            TestReplay.run(path: a[i + 1], onFrame: { cs, t in Multitouch.onFrame?(cs, t) }) { [self] n, wall, planned in
+            TestReplay.run(path: a[i + 1], onFrame: { cs, t, st in Multitouch.onFrame?(cs, t, st) }) { [self] n, wall, planned in
                 let dir = (canvas.logger.path as NSString).deletingLastPathComponent
                 let report: [String: Any] = ["frames": n, "strokes": canvas.doc.strokes.count, "zoom": canvas.camera.zoom,
                                              "presented": canvas.presentedCount, "rendered": canvas.renderCount, "locked": lock,

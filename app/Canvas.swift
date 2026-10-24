@@ -33,7 +33,9 @@ final class Stroke {
     var mesh = Mesh()
     let bounds: CGRect
 
-    init(tool: ToolKind, color: SIMD4<Float>, size: Double, points: [StrokePoint]) {
+    /// `points` are the filtered samples; they're stored interpolated (`maxStep` canvas units).
+    init(tool: ToolKind, color: SIMD4<Float>, size: Double, points raw: [StrokePoint], maxStep: Double) {
+        let points = catmullRom(raw, maxStep: maxStep)
         self.tool = tool; self.color = color; self.size = size; self.points = points
         radii = strokeRadii(points, size: size, brush: Brush.of(tool))
         let maxR = radii.max() ?? 0
@@ -227,6 +229,9 @@ final class CanvasView: MTKView {
     private(set) var renderCount = 0
     private(set) var presentedCount = 0
 
+    // Timing of the frame being handled: arrival (latency) and sensor time (filter).
+    private var frameArrival = 0.0
+    private var frameSensorT = 0.0
     // Latency bookkeeping: arrival time of the newest sample not yet on screen.
     private var pendingArrival: Double?
 
@@ -276,8 +281,10 @@ final class CanvasView: MTKView {
     // MARK: input
 
     /// MultitouchSupport frames, already on the main thread.
-    func handle(_ cs: [Contact], arrival: Double) {
+    func handle(_ cs: [Contact], arrival: Double, sensorT: Double) {
         guard drawMode else { return }
+        frameArrival = arrival
+        frameSensorT = sensorT
         contacts = cs.filter(\.isDown)
         gestures.frame(cs, t: arrival)
         needsRender = true
@@ -298,7 +305,7 @@ final class CanvasView: MTKView {
                                pressure: 0, size: 0.5, major: 8))
         }
         if out.isEmpty { nsIds.removeAll() }
-        handle(out, arrival: arrival)
+        handle(out, arrival: arrival, sensorT: e.timestamp)
     }
     override func touchesBegan(with e: NSEvent) { nsTouchFrame(e) }
     override func touchesMoved(with e: NSEvent) { nsTouchFrame(e) }
@@ -326,7 +333,7 @@ final class CanvasView: MTKView {
     }
 
     private func sample(_ c: Contact, _ t: Double) -> InputSample {
-        InputSample(mm: c.mm, t: t, pressure: c.pressure, size: c.size)
+        InputSample(mm: c.mm, t: frameSensorT, pressure: c.pressure, size: c.size)
     }
 
     private func beginStroke(_ c: Contact, _ t: Double) {
@@ -347,8 +354,8 @@ final class CanvasView: MTKView {
     private func moveStroke(_ c: Contact, _ t: Double) {
         guard builder != nil else { return }
         builder!.add(sample(c, t))
-        logger.sample(t: t, mm: c.mm, pressure: c.pressure, size: c.size, out: builder!.points.last!)
-        pendingArrival = t
+        logger.sample(t: frameSensorT, mm: c.mm, pressure: c.pressure, size: c.size, out: builder!.points.last!)
+        pendingArrival = frameArrival
         if liveTool == .eraser, let p = builder!.points.last {
             let r = liveSize / 2
             if doc.remove(where: { $0.hit(p.p, r: r) }) { needsRender = true }
@@ -361,12 +368,15 @@ final class CanvasView: MTKView {
         logger.end(committed: commit)
         if liveTool == .eraser { doc.dropEmptyUndo(); return }
         guard commit, !b.points.isEmpty else { return }
-        let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points)
+        let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii))
         doc.add(s)
     }
 
     // MARK: drawing
+
+    /// Interpolation step: 1.5 screen points at the zoom the stroke is drawn at.
+    private var smoothStep: Double { 1.5 / (ptPerUnit * camera.zoom) }
 
     private func premul(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x * c.w, c.y * c.w, c.z * c.w, c.w) }
 
@@ -378,6 +388,7 @@ final class CanvasView: MTKView {
         if let b = builder, liveTool != .eraser, !b.points.isEmpty {
             var pts = b.points
             if let p = b.predicted(ahead: predictAhead) { pts.append(p) }
+            pts = catmullRom(pts, maxStep: smoothStep)
             let radii = strokeRadii(pts, size: liveSize, brush: Brush.of(liveTool), live: true)
             items.append(.init(mesh: Mesh(), verts: strokeMesh(pts, radii: radii), color: premul(liveColor)))
         }

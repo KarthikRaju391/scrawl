@@ -185,6 +185,32 @@ func strokePath(_ pts: [StrokePoint], size: Double, brush: Brush, from: Int = 0,
     return path
 }
 
+/// Catmull-Rom interpolation through the samples so fast strokes (samples several mm apart at
+/// 125 Hz) render as curves, not polylines. Adds points so no step exceeds `maxStep` canvas units;
+/// pressure is interpolated linearly. Passes through every original point.
+func catmullRom(_ pts: [StrokePoint], maxStep: Double) -> [StrokePoint] {
+    guard pts.count > 2, maxStep > 0 else { return pts }
+    var out: [StrokePoint] = [pts[0]]
+    out.reserveCapacity(pts.count * 2)
+    for i in 0..<(pts.count - 1) {
+        let p0 = pts[max(i - 1, 0)].p, p1 = pts[i].p, p2 = pts[i + 1].p, p3 = pts[min(i + 2, pts.count - 1)].p
+        let d = hypot(p2.x - p1.x, p2.y - p1.y)
+        let n = min(Int(ceil(d / maxStep)), 64)
+        if n > 1 {
+            for k in 1..<n {
+                let t = Double(k) / Double(n), t2 = t * t, t3 = t2 * t
+                func cr(_ a: Double, _ b: Double, _ c: Double, _ d: Double) -> Double {
+                    0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3)
+                }
+                let pr = pts[i].pressure + (pts[i + 1].pressure - pts[i].pressure) * t
+                out.append(StrokePoint(p: CGPoint(x: cr(p0.x, p1.x, p2.x, p3.x), y: cr(p0.y, p1.y, p2.y, p3.y)), pressure: pr))
+            }
+        }
+        out.append(pts[i + 1])
+    }
+    return out
+}
+
 // MARK: - Stroke builder: raw samples in, smoothed stroke points out
 
 /// Turns one finger's raw samples into stroke points. Units: filter runs in pad millimetres;

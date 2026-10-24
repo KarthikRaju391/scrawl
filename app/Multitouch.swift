@@ -33,14 +33,15 @@ typealias MTFrameCB = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRaw
 enum Multitouch {
     /// Pad size in mm (from MTDeviceGetSensorSurfaceDimensions), set by start().
     static var padMM = CGSize(width: 124.8, height: 76.8)
-    /// Called on the framework's thread with all contacts of a frame and the arrival time
-    /// (CACurrentMediaTime; the framework's own timestamp is on a different clock).
+    /// Called on the framework's thread with all contacts of a frame, the arrival time
+    /// (CACurrentMediaTime, for latency) and the sensor's frame timestamp (its own clock, steady
+    /// 8 ms steps; used to time the filter so delivery hiccups don't distort strokes).
     /// Pad y assumed to grow upward (bottom-left origin). If strokes come out upside down:
     /// `defaults write local.trackpad-draw padFlipY -bool true`.
     nonisolated(unsafe) static var flipY = UserDefaults.standard.bool(forKey: "padFlipY")
-    nonisolated(unsafe) static var onFrame: (([Contact], Double) -> Void)?
+    nonisolated(unsafe) static var onFrame: (([Contact], Double, Double) -> Void)?
 
-    static let callback: MTFrameCB = { _, raw, n, _, _ in
+    static let callback: MTFrameCB = { _, raw, n, sensorT, _ in
         let arrival = CACurrentMediaTime()
         var out: [Contact] = []
         if let raw, n > 0 {
@@ -55,7 +56,7 @@ enum Multitouch {
                                    pressure: Double(t.pressure), size: Double(t.total), major: Double(t.majorAxis)))
             }
         }
-        Multitouch.onFrame?(out, arrival)
+        Multitouch.onFrame?(out, arrival, sensorT)
     }
 
     /// Starts every built-in multitouch device. Returns nil on success, else why it failed.
