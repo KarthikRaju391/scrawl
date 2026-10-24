@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onPage = { [weak self] d in self?.page(d) }
         cv.onStatus = { [weak self] in self?.updateBanner() }
 
-        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock"].contains { CommandLine.arguments.contains($0) }
+        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock", "--test-hand", "--test-aim", "--test-session"].contains { CommandLine.arguments.contains($0) }
         if testing {
             // Test input only: real touches on the trackpad would interleave with the replay.
             mtError = nil
@@ -101,12 +101,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         HotKey.action = { [weak self] in self?.toggleDrawMode() }
-        HotKey.register()
+        if !canvas.testMode { HotKey.register() }   // tests never take ⌃⌥D from the app in use
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in self?.key(e) == true ? nil : e }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.exitDrawMode() }
         buildMenu()
         updateBanner()
         startTestReplayIfAsked()
+        if UserDefaults.standard.string(forKey: "rejoinMode") == "ab" {   // record the hidden condition
+            canvas.logger.event(["what": "abCondition", "rejoin": Settings.abCondition])
+        }
         // --no-activate: open in the background (used by the smoke test so it doesn't take focus).
         if !CommandLine.arguments.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true) } else { window.orderBack(nil) }
     }
@@ -166,7 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             container.banner.stringValue = canvas.writingMode
                 ? "\(pageText) · Writing: pans at the right edge, next line at the line width\(canvas.tools.zoomLocked ? " · zoom locked" : ""). W = off, Esc exits."
-                : "\(pageText) · Drawing: one finger draws, two fingers pan\(canvas.tools.zoomLocked ? " (zoom locked, L unlocks)" : " and pinch"). W = writing, Esc exits."
+                : "\(pageText) · Drawing: one finger draws, two fingers pan\(canvas.tools.zoomLocked ? " (zoom locked, L unlocks)" : " and pinch")\(canvas.aimActive ? " · aim first: touch lightly to aim, press to write" : ""). W = writing, Esc exits."
             container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
         }
         container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
@@ -190,6 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "w": toggleWriting(); return true
         case "n": page(0); return true
         case "l", "z": s.zoomLocked.toggle()   // L (or Z) locks / unlocks the zoom
+        case "a": s.aimFirst.toggle()           // aim first: light touch aims, press to ink
         case "k" where canvas.showPageHint: canvas.dismissPageHint(); return true
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false
@@ -215,6 +219,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 TestStress.run(canvas: canvas, path: a[i + 1], count: n, dir: dir) {
                     try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
                 }
+            }
+        }
+        if let i = a.firstIndex(of: "--test-hand"), i + 1 < a.count {
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            func arg(_ k: String) -> String? { a.firstIndex(of: k).flatMap { $0 + 1 < a.count ? a[$0 + 1] : nil } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                enterDrawMode(lock: false)
+                var t = ToolState(); t.sizeIndex[.pen] = 1; canvas.tools = t
+                TestHand.run(canvas: canvas, fontDir: a[i + 1], seed: UInt64(arg("--seed") ?? "1") ?? 1, sigma: Double(arg("--sigma") ?? "1.9") ?? 1.9, dir: dir) {
+                    try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+                }
+            }
+        }
+        if let i = a.firstIndex(of: "--test-session"), i + 1 < a.count {
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                TestSession.run(canvas: canvas, path: a[i + 1]) { [self] in
+                    canvas.recorder.flush()
+                    try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+                }
+            }
+        }
+        if a.contains("--test-aim") {
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                enterDrawMode(lock: false); canvas.setZoomForTest(settingsWritingZoom: true); canvas.resetZoom()
+                TestAim.run(canvas: canvas, dir: dir) { try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8) }
             }
         }
         if a.contains("--test-zoomlock") {
@@ -350,7 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func windowWillClose(_ n: Notification) { exitDrawMode(); NSApp.terminate(nil) }
-    func applicationWillTerminate(_ n: Notification) { exitDrawMode() }
+    func applicationWillTerminate(_ n: Notification) { exitDrawMode(); canvas.recorder.flush() }
 }
 
 let app = NSApplication.shared

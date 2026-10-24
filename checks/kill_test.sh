@@ -2,7 +2,7 @@
 # Check 4: kill the app with SIGKILL mid-stroke; the system cursor must still work afterwards.
 # If the cursor is ever stuck: open the app again and press ⌃⌥D twice (lock + unlock re-associates it).
 cd "$(dirname "$0")/.."
-APP="build/Trackpad Draw.app"
+APP="build/Trackpad Draw Predict.app"
 open "$APP"; sleep 2
 PID=$(pgrep -f "MacOS/TrackpadDraw$" | head -1)
 [ -z "$PID" ] && { echo "app did not start"; exit 1; }

@@ -22,6 +22,33 @@ struct Settings {
     /// Off by default: macOS's resting flag marked real fingers as palms (47 of 73 "palms" in
     /// Karthik's 18:34 session were fingertips), which broke two-finger pinch. Kept for later tuning.
     var palmRejection: Bool { d.bool(forKey: "palmRejection") }
+    /// Rejoin snap (experimental): a touch-down soon after a lift and close to it continues exactly
+    /// from the lift point (cursive rejoins). `--rejoin on|off` overrides for tests.
+    /// "off", "on" (snap at touch-down) or "dir" (snap only if the new stroke continues the previous
+    /// one's direction, decided ~1.5 mm in). `--rejoin` overrides for tests; "rejoinMode" in defaults.
+    var rejoinMode: String {
+        let a = CommandLine.arguments
+        if let i = a.firstIndex(of: "--rejoin"), i + 1 < a.count { return a[i + 1] }
+        let m = d.string(forKey: "rejoinMode") ?? "off"
+        return m == "ab" ? Settings.abCondition : m
+    }
+    /// Blind A/B: with rejoinMode "ab", each launch secretly picks on or off (logged, never shown).
+    static let abCondition = Bool.random() ? "on" : "off"
+    var rejoinSnap: Bool { rejoinMode != "off" }
+    /// Writing mode moves the page only after the finger has been up this long (0 = immediately).
+    var pauseBeforeMoveMs: Double {
+        let a = CommandLine.arguments
+        if let i = a.firstIndex(of: "--pause-ms"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
+        return d.object(forKey: "pauseBeforeMoveMs") as? Double ?? 400
+    }
+    /// Writing-mode pan trigger (fraction of the view); `--pan-edge` overrides (replays of old sessions use 0.85).
+    var panEdge: Double {
+        let a = CommandLine.arguments
+        if let i = a.firstIndex(of: "--pan-edge"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
+        return d.object(forKey: "panEdge") as? Double ?? 0.70
+    }
+    var rejoinRadiusMM: Double { d.object(forKey: "rejoinRadiusMM") as? Double ?? 3.5 }
+    var rejoinWindowMs: Double { d.object(forKey: "rejoinWindowMs") as? Double ?? 250 }
     var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
     var palmSize: Double { d.object(forKey: "palmTotal") as? Double ?? 1.4 }
     /// Prediction slider, 0...24 ms (0 = off). Default 12: middle of the lag/overshoot trade-off.
@@ -29,11 +56,15 @@ struct Settings {
     /// Inklet-style hover: a lighter touch shows the finger ring without inking; ink starts once
     /// MT pressure reaches this (raw units). 0 = off. Only meaningful with MultitouchSupport.
     var inkThreshold: Double { d.object(forKey: "inkThreshold") as? Double ?? 0 }
+    /// Aim first: pressure that starts the ink (Karthik's strokes: at 15, 0.4% of math strokes and
+    /// 1.3% of writing strokes never press that hard; touch-downs start at p50 9 / 16).
+    var aimThreshold: Double { d.object(forKey: "aimThreshold") as? Double ?? 15 }
 }
 
 // MARK: - Model
 
 final class Stroke {
+    var id = 0                 // stable id (session replay: commits, erases, undo)
     let tool: ToolKind
     let color: SIMD4<Float>   // straight (not premultiplied) RGBA; alpha from the brush
     let size: Double          // diameter in canvas units at full pressure
@@ -154,11 +185,12 @@ struct ToolState {
     var lineWidthIndex = 1
     var zoomLocked = false
     var autoPan = AutoPan.centre
+    var aimFirst = false   // light touch shows where you'll write; press to start the ink
 
     /// Saved in defaults ("toolState") so the app reopens with the same tools, sizes, colours,
     /// background, line width and zoom lock. (Smoothing/prediction are saved by their sliders.)
     func save(to defaults: UserDefaults = .standard) {
-        let d: [String: Any] = ["tool": tool.rawValue, "background": background, "lineWidthIndex": lineWidthIndex, "zoomLocked": zoomLocked, "autoPan": autoPan.rawValue,
+        let d: [String: Any] = ["tool": tool.rawValue, "background": background, "lineWidthIndex": lineWidthIndex, "zoomLocked": zoomLocked, "autoPan": autoPan.rawValue, "aimFirst": aimFirst,
                                 "colorIndex": Dictionary(uniqueKeysWithValues: colorIndex.map { ($0.key.rawValue, $0.value) }),
                                 "sizeIndex": Dictionary(uniqueKeysWithValues: sizeIndex.map { ($0.key.rawValue, $0.value) })]
         defaults.set(d, forKey: "toolState")
@@ -171,6 +203,7 @@ struct ToolState {
         if let v = d["lineWidthIndex"] as? Int, ToolState.lineWidths.indices.contains(v) { t.lineWidthIndex = v }
         if let v = d["zoomLocked"] as? Bool { t.zoomLocked = v }
         if let v = d["autoPan"] as? Int, let a = AutoPan(rawValue: v) { t.autoPan = a }
+        if let v = d["aimFirst"] as? Bool { t.aimFirst = v }
         for (k, v) in d["colorIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), ToolState.colors.indices.contains(v) { t.colorIndex[kind] = v } }
         for (k, v) in d["sizeIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), (0..<5).contains(v) { t.sizeIndex[kind] = v } }
         return t
@@ -185,6 +218,7 @@ struct ToolState {
 final class GestureEngine {
     enum Mode { case idle, hover(Int32), drawing(Int32, Double), navigating, waitLift }
     private(set) var mode = Mode.idle
+    var drawingId: Int32? { if case let .drawing(id, _) = mode { return id }; return nil }
     private var palm = Set<Int32>()
     /// Extra palm signal (macOS resting-touch classification), checked per contact per frame.
     var isPalm: (Contact) -> Bool = { _ in false }
@@ -299,15 +333,22 @@ final class CanvasView: MTKView {
     var tools = ToolState.load() {
         didSet {
             if tools.zoomLocked != oldValue.zoomLocked { logger.event(["what": "zoomLock", "locked": tools.zoomLocked, "source": source]) }
+            if tools.tool != oldValue.tool || tools.autoPan != oldValue.autoPan || tools.zoomLocked != oldValue.zoomLocked || tools.lineWidthIndex != oldValue.lineWidthIndex {
+                act("tools", ["tool": tools.tool.rawValue, "autoPan": tools.autoPan.rawValue, "zoomLocked": tools.zoomLocked, "lineWidth": tools.lineWidthIndex])
+            }
             if tools.lineWidthIndex != oldValue.lineWidthIndex { endWritingLine() }
             if !testMode { tools.save() }
             needsRender = true
         }
     }
     /// Test modes don't touch the saved settings.
-    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock"].contains { CommandLine.arguments.contains($0) }
+    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock", "--test-hand", "--test-aim", "--test-session"].contains { CommandLine.arguments.contains($0) }
     private(set) var camera: Camera {
         didSet {  // every zoom change is logged with its cause, to track down "the lock unlocked"
+            if camera.center != oldValue.center || camera.zoom != oldValue.zoom {
+                let v = camera.visible
+                recorder.record(["k": "view", "x": v.minX, "y": v.minY, "w": v.width, "h": v.height, "z": camera.zoom, "src": source], sensorT: frameSensorT)
+            }
             // One line per gesture (same cause within 0.5 s is coalesced); always when locked.
             if abs(camera.zoom - oldValue.zoom) > 1e-9 {
                 let now = CACurrentMediaTime()
@@ -331,9 +372,10 @@ final class CanvasView: MTKView {
     private var contacts: [Contact] = []
     private var needsRender = true
     private var link: CADisplayLink?
-    private var settings = Settings()
+    private(set) var settings = Settings()
     var drawMode = false {
         didSet {
+            if drawMode != oldValue { act("drawMode", ["on": drawMode]) }
             gestures.reset(); contacts = []; needsRender = true
             if drawMode { gestures.ignoreUntilLifted(downIds) }
             // No App Nap / timer coalescing while drawing: input and frames must not be throttled.
@@ -346,6 +388,15 @@ final class CanvasView: MTKView {
     var usingMT = false
     let logger = StrokeLog()
     let input = InputQueue()
+    lazy var recorder: SessionRecorder = {
+        let r = SessionRecorder(dir: (logger.path as NSString).deletingLastPathComponent)
+        r.clock = { [weak self] in self?.now() ?? CACurrentMediaTime() }
+        return r
+    }()
+    func act(_ name: String, _ extra: [String: Any] = [:]) {
+        var d = extra; d["k"] = "act"; d["a"] = name
+        recorder.record(d, sensorT: frameSensorT)
+    }
 
     /// Frames encoded / frames the display actually showed (test mode reports both).
     private(set) var renderCount = 0
@@ -356,12 +407,12 @@ final class CanvasView: MTKView {
     private var lastPresented = 0.0
 
     // MARK: writing mode (see Writing.swift)
-    var writingMode = false { didSet { endWritingLine(); needsRender = true } }
+    var writingMode = false { didSet { if writingMode != oldValue { act("writingMode", ["on": writingMode]) }; endWritingLine(); needsRender = true } }
     private var lineInk: CGRect?
     private var lineStrokes: [CGRect] = []
     private var lineLeft: Double?
 
-    private var camAnim: (from: CGPoint, to: CGPoint, start: Double)?
+    private var camAnim: (from: CGPoint, to: CGPoint, start: Double, src: String)?
     private(set) var panCount = 0
     private(set) var lastPanWordStart: Double?   // test/diagnostics: start of the word at the last pan
     private(set) var newLineCount = 0
@@ -384,6 +435,7 @@ final class CanvasView: MTKView {
     }
 
     func newPage() {
+        act("newPage", ["pages": pages.count + 1])
         endWritingLine()
         if pageCameras.count < pages.count { pageCameras.append(camera) } else { pageCameras[pageIndex] = camera }
         pages.append(Document())
@@ -395,6 +447,7 @@ final class CanvasView: MTKView {
     }
 
     func goToPage(_ i: Int) {
+        act("goToPage", ["page": i])
         guard pages.indices.contains(i), i != pageIndex else { return }
         endWritingLine()
         while pageCameras.count < pages.count { pageCameras.append(camera) }
@@ -409,7 +462,7 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineLeft = nil; lineStrokes = [] }
+    private func endWritingLine() { lineInk = nil; lineLeft = nil; lineStrokes = []; pendingMove = nil }
 
 
 
@@ -419,22 +472,22 @@ final class CanvasView: MTKView {
         return CGPoint(x: (p.x - v.minX) / v.width, y: (p.y - v.minY) / v.height)
     }
 
-    private func slideCamera(to c: CGPoint) {
+    private func slideCamera(to c: CGPoint, src: String = "autopan") {
         var target = camera; target.center = c; target.clamp()
-        camAnim = (camera.center, target.center, CACurrentMediaTime())
+        camAnim = (camera.center, target.center, CACurrentMediaTime(), src)
         needsRender = true
     }
 
     /// Finish any slide immediately (a finger touched down: the mapping must not move under it).
     private func finishSlide() {
-        if let a = camAnim { camera.center = a.to; camAnim = nil }
+        if let a = camAnim { changing(a.src) { camera.center = a.to }; camAnim = nil }
     }
 
     private func stepSlide() {
         guard let a = camAnim else { return }
         let t = min((CACurrentMediaTime() - a.start) / 0.18, 1)
         let e = 1 - pow(1 - t, 3)  // ease out
-        camera.center = CGPoint(x: a.from.x + (a.to.x - a.from.x) * e, y: a.from.y + (a.to.y - a.from.y) * e)
+        changing(a.src) { camera.center = CGPoint(x: a.from.x + (a.to.x - a.from.x) * e, y: a.from.y + (a.to.y - a.from.y) * e) }
         if t >= 1 { camAnim = nil } else { needsRender = true }
     }
     private(set) var presentedCount = 0
@@ -484,6 +537,7 @@ final class CanvasView: MTKView {
         drainInput()
         if !needsRender && camAnim == nil { perf.ticksIdle += 1 }
         perf.inputsPerTick.append(perf.inputsSinceTick); perf.inputsSinceTick = 0
+        advanceClock()
         if camAnim != nil { stepSlide(); needsRender = true }
         guard needsRender else { return }
         needsRender = false
@@ -506,7 +560,7 @@ final class CanvasView: MTKView {
     /// Fallback when display ticks stop (window covered, display link paused): process queued
     /// input anyway, so gestures and strokes never wait on the screen.
     /// Tests: process everything queued before reading counts.
-    func flushInputForTest() { drainInput(); finishSlide() }
+    func flushInputForTest() { drainInput(); finishSlide(); recorder.flush() }
 
     func drainIfStale() {
         if CACurrentMediaTime() - lastDrain > 0.04 { drainInput() }
@@ -523,9 +577,19 @@ final class CanvasView: MTKView {
         guard drawMode else { return }
         frameArrival = arrival
         frameSensorT = sensorT
+        recorder.record(["k": "touch", "c": cs.map { [Int($0.id), Int($0.state), ($0.norm.x * 10000).rounded() / 10000, ($0.norm.y * 10000).rounded() / 10000, ($0.pressure * 10).rounded() / 10] }], sensorT: sensorT)
         perf.inputsSinceTick += 1
         contacts = cs.filter(\.isDown)
-        if !contacts.isEmpty { finishSlide() }
+        if !contacts.isEmpty { finishSlide(); cancelPendingMove() }
+        // Aim first: ink starts only past the pressure threshold (needs MultitouchSupport pressure).
+        gestures.inkThreshold = aimActive ? settings.aimThreshold : settings.inkThreshold
+        if aimActive {   // the path of each not-yet-inking finger, to fill in the press ramp
+            let ids = Set(contacts.map(\.id))
+            aimTrail = aimTrail.filter { ids.contains($0.key) }
+            for c in contacts where c.id != gestures.drawingId {
+                aimTrail[c.id, default: []].append(InputSample(mm: c.mm, t: sensorT, pressure: c.pressure, size: c.size))
+            }
+        }
         gestures.frame(cs, t: arrival)
         needsRender = true
     }
@@ -567,9 +631,8 @@ final class CanvasView: MTKView {
     override func scrollWheel(with e: NSEvent) {
         guard !drawMode else { return }
         let k = 1 / (ptPerUnit * camera.zoom)
-        camera.center.x -= e.scrollingDeltaX * k
-        camera.center.y += e.scrollingDeltaY * k
-        camera.clamp(); needsRender = true
+        changing("scroll") { camera.center.x -= e.scrollingDeltaX * k; camera.center.y += e.scrollingDeltaY * k; camera.clamp() }
+        needsRender = true
     }
     override func magnify(with e: NSEvent) {
         guard !drawMode, !tools.zoomLocked else { return }
@@ -619,33 +682,86 @@ final class CanvasView: MTKView {
     }
 
     private func sample(_ c: Contact, _ t: Double) -> InputSample {
-        InputSample(mm: c.mm, t: frameSensorT, pressure: c.pressure, size: c.size)
+        InputSample(mm: CGPoint(x: c.mm.x + strokeOffset.x, y: c.mm.y + strokeOffset.y), t: frameSensorT, pressure: c.pressure, size: c.size)
     }
+
+    /// Where the last stroke lifted (pad mm, after any snap) and when (sensor clock).
+    private var lastLift: (mm: CGPoint, t: Double, dir: CGPoint)?
+    /// Aim first is on and usable (MultitouchSupport gives pressure).
+    var aimActive: Bool { tools.aimFirst && usingMT }
+    private var aimTrail: [Int32: [InputSample]] = [:]
+    /// Raw (unshifted) samples of the current stroke, and a pending rejoin waiting for the direction check.
+    private var rawSamples: [InputSample] = []
+    private var pendingSnap: CGPoint?
+    private var makeBuilder: (() -> StrokeBuilder)?
+    /// Offset applied to every sample of the current stroke (pad mm): non-zero when snapped.
+    private var strokeOffset = CGPoint.zero
+    private(set) var rejoinCount = 0
+    private var nextStrokeId = 1
 
     private func beginStroke(_ c: Contact, _ t: Double) {
         finishSlide()
+        strokeOffset = .zero; pendingSnap = nil; rawSamples = []
+        if settings.rejoinSnap, tools.tool != .eraser, let l = lastLift,
+           (frameSensorT - l.t) * 1000 < settings.rejoinWindowMs, hypot(c.mm.x - l.mm.x, c.mm.y - l.mm.y) < settings.rejoinRadiusMM {
+            let snap = CGPoint(x: l.mm.x - c.mm.x, y: l.mm.y - c.mm.y)   // continue exactly from the lift
+            if settings.rejoinMode == "dir" { pendingSnap = snap } else { strokeOffset = snap; rejoinCount += 1 }
+        }
         let cam = camera, pad = Multitouch.padMM
         let model = makeWidthModel(usingMT ? settings.widthModel : "speed")
-        builder = StrokeBuilder(model: model, minCutoff: settings.minCutoff, beta: settings.beta) { mm in
-            cam.canvas(fromPad: CGPoint(x: mm.x / pad.width, y: mm.y / pad.height))
+        let st = settings
+        makeBuilder = {
+            StrokeBuilder(model: model, minCutoff: st.minCutoff, beta: st.beta) { mm in
+                cam.canvas(fromPad: CGPoint(x: mm.x / pad.width, y: mm.y / pad.height))
+            }
         }
+        builder = makeBuilder!()
         liveTool = tools.tool
         let col = tools.color.usingColorSpace(.sRGB)!
         liveColor = SIMD4(Float(col.redComponent), Float(col.greenComponent), Float(col.blueComponent), Float(Brush.of(liveTool).alpha))
         liveSize = tools.sizePt / (ptPerUnit * camera.zoom)
         if liveTool == .eraser { doc.snapshot() }
         logger.begin(tool: liveTool.rawValue, model: model.name, zoom: camera.zoom, ptPerUnit: ptPerUnit, backing: Double(window?.backingScaleFactor ?? 2))
+        if aimActive, let trail = aimTrail[c.id] {
+            // Fill in the press: the trailing samples within 1.5 mm of where the press crossed the
+            // threshold (the aiming path before that stays ink-free).
+            var back: [InputSample] = []
+            for smp in trail.dropLast().reversed() {
+                if hypot(smp.mm.x - c.mm.x, smp.mm.y - c.mm.y) > 1.5 { break }
+                back.insert(smp, at: 0)
+            }
+            for smp in back { builder!.add(smp); rawSamples.append(smp) }
+            aimTrail[c.id] = nil
+        }
+        act("strokeBegin", ["tool": liveTool.rawValue, "padX": c.norm.x, "padY": c.norm.y, "snapX": strokeOffset.x, "snapY": strokeOffset.y, "pendingSnap": pendingSnap != nil])
         moveStroke(c, t)
     }
 
     private func moveStroke(_ c: Contact, _ t: Double) {
         guard builder != nil else { return }
+        let raw = InputSample(mm: c.mm, t: frameSensorT, pressure: c.pressure, size: c.size)
+        rawSamples.append(raw)
+        if let snap = pendingSnap, let l = lastLift {
+            // Direction check ~1.5 mm in: snap only if this stroke carries on the previous one's direction.
+            let first = rawSamples[0].mm, dx = c.mm.x - first.x, dy = c.mm.y - first.y, len = hypot(dx, dy)
+            if len >= 1.5 {
+                pendingSnap = nil
+                let cosTurn = (dx * l.dir.x + dy * l.dir.y) / len
+                logger.event(["what": "rejoinCandidate", "cos": cosTurn, "stroke": doc.strokes.count, "snapLen": hypot(snap.x, snap.y)])
+                if cosTurn > 0.3 {
+                    strokeOffset = snap; rejoinCount += 1
+                    builder = makeBuilder!()   // rebuild from the start with the offset (only ~1.5 mm drawn so far)
+                    for r in rawSamples.dropLast() { builder!.add(InputSample(mm: CGPoint(x: r.mm.x + snap.x, y: r.mm.y + snap.y), t: r.t, pressure: r.pressure, size: r.size)) }
+                }
+            }
+        }
         builder!.add(sample(c, t))
         logger.sample(t: frameSensorT, mm: c.mm, pressure: c.pressure, size: c.size, out: builder!.points.last!)
         pendingArrival = frameArrival
         if liveTool == .eraser, let p = builder!.points.last {
             let r = liveSize / 2
-            if doc.remove(where: { $0.hit(p.p, r: r) }) { needsRender = true }
+            let hit = doc.strokes.filter { $0.hit(p.p, r: r) }.map(\.id)
+            if !hit.isEmpty, doc.remove(where: { $0.hit(p.p, r: r) }) { act("erase", ["ids": hit]); needsRender = true }
         }
     }
 
@@ -654,11 +770,23 @@ final class CanvasView: MTKView {
         guard var b = builder else { return }
         b.finish()
         logger.end(committed: commit)
+        act("strokeEnd", ["committed": commit, "index": commit ? doc.strokes.count : -1, "snapX": strokeOffset.x, "snapY": strokeOffset.y])
         if liveTool == .eraser { doc.dropEmptyUndo(); return }
         guard commit, !b.points.isEmpty else { return }
+        if liveTool != .eraser, let raw = b.lastRaw {
+            // Direction the stroke was heading at the end: last raw point vs the one ~1.5 mm earlier.
+            var dir = CGPoint.zero
+            if let back = rawSamples.reversed().first(where: { hypot($0.mm.x + strokeOffset.x - raw.x, $0.mm.y + strokeOffset.y - raw.y) >= 1.5 }) {
+                let dx = raw.x - (back.mm.x + strokeOffset.x), dy = raw.y - (back.mm.y + strokeOffset.y), l = hypot(dx, dy)
+                dir = CGPoint(x: dx / l, y: dy / l)
+            }
+            lastLift = (raw, frameSensorT, dir)
+        }
         let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
+        s.id = nextStrokeId; nextStrokeId += 1
         doc.add(s)
+        act("commit", ["id": s.id, "page": pageIndex])
         updateScreensFilled()
         // Writing mode, now that the finger is up (see Writing.swift).
         if writingMode {
@@ -674,15 +802,49 @@ final class CanvasView: MTKView {
             var layout = WritingLayout()
             layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
             layout.autoPan = tools.autoPan
-            switch layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
-            case .none: break
-            case .pan(let c):
-                panCount += 1
-                lastPanWordStart = WritingLayout.lastWordStart(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01))
-                slideCamera(to: c)
-            case .newLine(let c): newLineCount += 1; lineInk = nil; lineStrokes = []; slideCamera(to: c)
-            }
+            layout.edge = settings.panEdge
+            layout.legacyStrokeEdge = CommandLine.arguments.contains("--legacy-edge")
+            let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width)
+            if move == .none { pendingMove = nil }
+            else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
+            else { pendingMove = (move, now()); act("movePending", ["kind": move.kind]) }
         }
+    }
+
+    // MARK: page moves wait for a pause
+
+    /// The writing-mode move waiting for the finger to stay up `pauseBeforeMoveMs`.
+    private var pendingMove: (move: WritingLayout.Move, liftAt: Double)?
+    /// The clock for that wait (replaced by a virtual clock when replaying recorded sessions).
+    var now: () -> Double = { CACurrentMediaTime() }
+    private(set) var movesCancelled = 0
+
+    /// A finger touched down before the pause was up: no move now; it's re-decided at the next lift.
+    private func cancelPendingMove() {
+        guard pendingMove != nil else { return }
+        pendingMove = nil; movesCancelled += 1; act("moveCancelled")
+    }
+
+    /// Called every display tick (and by the replay driver): run the pending move once the pause is up.
+    func advanceClock() {
+        guard let p = pendingMove, contacts.isEmpty, now() - p.liftAt >= settings.pauseBeforeMoveMs / 1000 else { return }
+        pendingMove = nil
+        applyMove(p.move)
+    }
+
+    private func applyMove(_ move: WritingLayout.Move) {
+        switch move {
+        case .none: break
+        case .pan(let c):
+            act("autoPan", ["toX": c.x, "toY": c.y, "mode": tools.autoPan.rawValue])
+            panCount += 1
+            if let line = lineInk { lastPanWordStart = WritingLayout.lastWordStart(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01)) }
+            slideCamera(to: c)
+        case .newLine(let c):
+            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []
+            slideCamera(to: c, src: "newLine")
+        }
+        needsRender = true
     }
 
     // MARK: drawing
@@ -736,7 +898,15 @@ final class CanvasView: MTKView {
             let ringR = 5 / (ptPerUnit * camera.zoom)
             for c in contacts {
                 let p = camera.canvas(fromPad: c.norm)
-                let r = liveTool == .eraser && builder != nil ? liveSize / 2 : ringR
+                let aiming = aimActive && c.id != gestures.drawingId
+                if aiming {   // aim: bigger ring + centre dot, no ink yet
+                    let k = 1 / (ptPerUnit * camera.zoom)
+                    var dot: [SIMD2<Float>] = []
+                    for j in 0..<16 { let a0 = Double(j) / 16 * 2 * .pi, a1 = Double(j + 1) / 16 * 2 * .pi
+                        dot += [SIMD2(Float(p.x), Float(p.y)), SIMD2(Float(p.x + cos(a0) * 1.6 * k), Float(p.y + sin(a0) * 1.6 * k)), SIMD2(Float(p.x + cos(a1) * 1.6 * k), Float(p.y + sin(a1) * 1.6 * k))] }
+                    items.append(.init(mesh: Mesh(), verts: dot, color: premul(SIMD4(0.93, 0.42, 0.08, 0.9))))
+                }
+                let r = liveTool == .eraser && builder != nil ? liveSize / 2 : (aiming ? ringR * 2 : ringR)
                 var v: [SIMD2<Float>] = []
                 let n = 32
                 for k in 0..<n {
@@ -745,7 +915,7 @@ final class CanvasView: MTKView {
                     func pt(_ a: Double, _ rr: Double) -> SIMD2<Float> { SIMD2(Float(p.x + cos(a) * rr), Float(p.y + sin(a) * rr)) }
                     v += [pt(a0, r - w), pt(a0, r + w), pt(a1, r + w), pt(a0, r - w), pt(a1, r + w), pt(a1, r - w)]
                 }
-                items.append(.init(mesh: Mesh(), verts: v, color: premul(SIMD4(0.10, 0.45, 0.91, 0.8))))
+                items.append(.init(mesh: Mesh(), verts: v, color: premul(aiming ? SIMD4(0.93, 0.42, 0.08, 0.9) : SIMD4(0.10, 0.45, 0.91, 0.8))))
             }
         }
         let arrival = pendingArrival
@@ -769,20 +939,36 @@ final class CanvasView: MTKView {
 
     // MARK: commands
 
-    func undo() { doc.undo(); endWritingLine(); updateScreensFilled(); needsRender = true }
-    func redo() { doc.redo(); needsRender = true }
-    func clearPage() { doc.clear(); endWritingLine(); updateScreensFilled(); needsRender = true }
+    func undo() {
+        logger.event(["what": "undo", "strokesBefore": doc.strokes.count])   // the "that landed wrong" signal
+        act("undo", ["strokes": doc.strokes.count])
+        doc.undo(); endWritingLine(); updateScreensFilled(); needsRender = true
+    }
+    func redo() { act("redo", ["strokes": doc.strokes.count]); doc.redo(); needsRender = true }
+    func clearPage() {
+        act("clear", ["strokes": doc.strokes.count]); doc.clear(); endWritingLine(); updateScreensFilled(); needsRender = true }
     /// Dismiss the "new page?" hint until another screen fills up.
     func dismissPageHint() { hintDismissedAt = screensFilled; onStatus?() }
     /// Test: add a finished stroke as if drawn at the current zoom.
     func testAddStroke(_ pts: [StrokePoint], tool: ToolKind = .pen) {
         let s = Stroke(tool: tool, color: SIMD4(0, 0, 0, 1), size: tools.sizePt / (ptPerUnit * camera.zoom), points: pts, maxStep: smoothStep)
+        s.id = nextStrokeId; nextStrokeId += 1
         doc.add(s)
         updateScreensFilled()
     }
     func resetPerf() { perf = Perf(); lastPresented = 0 }
 
     /// Test baseline: same zoom and starting place as writing mode, without writing mode.
+    /// Replay: put the view exactly where a recorded view record says (scrolls/magnify done outside draw mode).
+    func setVisibleForReplay(x: Double, y: Double, w: Double, z: Double) {
+        changing("replay") {
+            var c = camera; c.zoom = z
+            let v = c.visible
+            c.center = CGPoint(x: x + v.width / 2, y: y + v.height / 2)
+            camera = c
+        }
+    }
+
     func setZoomForTest(settingsWritingZoom: Bool) {
         changing("test") { camera.zoom = 3; camera.home(); camera.clamp() }; needsRender = true
     }
@@ -812,6 +998,38 @@ final class CanvasView: MTKView {
     }
 }
 
+// MARK: - Session recorder (test build): everything needed to replay a drawing session exactly
+
+/// session-<time>.jsonl next to the stroke log. Every record has "m" (CACurrentMediaTime) and "t"
+/// (sensor clock, same as the stroke log's sample times):
+///   {"k":"touch","c":[[id,state,x,y,pressure],...]}  every trackpad frame in draw mode (pad 0...1)
+///   {"k":"view","x":minX,"y":minY,"w":w,"h":h,"z":zoom,"src":cause}  every change of the visible page area
+///   {"k":"act","a":name,...}  undo/redo/clear, stroke begin/end, auto-pan, new line, tool, modes, pages
+/// Only this app's own state is recorded (no screen capture).
+final class SessionRecorder {
+    private var fh: FileHandle?
+    private var buffer: [Data] = []
+    private var lastFlush = 0.0
+    let path: String
+    init(dir: String) {
+        let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
+        path = "\(dir)/session-\(f.string(from: Date())).jsonl"
+    }
+    var clock: () -> Double = { CACurrentMediaTime() }   // the canvas clock (virtual in replays)
+    func record(_ d: [String: Any], sensorT: Double) {
+        var d = d; d["m"] = clock(); d["t"] = sensorT
+        if let data = try? JSONSerialization.data(withJSONObject: d) { buffer.append(data) }
+        if CACurrentMediaTime() - lastFlush > 0.5 { flush() }
+    }
+    func flush() {
+        lastFlush = CACurrentMediaTime()
+        guard !buffer.isEmpty else { return }
+        if fh == nil { FileManager.default.createFile(atPath: path, contents: nil); fh = FileHandle(forWritingAtPath: path) }
+        for b in buffer { fh?.write(b); fh?.write(Data("\n".utf8)) }
+        buffer.removeAll(keepingCapacity: true)
+    }
+}
+
 // MARK: - Stroke log (data/ for the jitter and latency checks)
 
 final class StrokeLog {
@@ -822,7 +1040,7 @@ final class StrokeLog {
     let path: String
 
     init() {
-        let dir = (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw/data")
+        let dir = (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw-predict/data")
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
         path = "\(dir)/strokes-\(f.string(from: Date())).jsonl"

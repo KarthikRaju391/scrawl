@@ -7,6 +7,7 @@ func writingLayoutChecks(_ check: (Bool, String) -> Void) {
     var cam = Camera(page: page); cam.zoom = 3; cam.home(); cam.center.x += 200
     let v = cam.visible
     // A line of 3 "words" (letters 20 wide, 4 apart; words 40 apart); the last letter ends at 90% of the view.
+    // (The pan trigger is at 70% of the view.)
     var strokes: [CGRect] = []
     var x = v.minX + v.width * 0.9 - (3 * 3 * 20 + 6 * 4 + 2 * 40)
     for _ in 0..<3 { for _ in 0..<3 { strokes.append(CGRect(x: x, y: 800, width: 20, height: 30)); x += 24 }; x += 36 }

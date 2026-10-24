@@ -202,7 +202,8 @@ enum TestAutoPan {
             func contact(_ i: Int32, _ p: CGPoint) -> Contact {
                 Contact(id: i, state: 4, norm: CGPoint(x: p.x / pad.width, y: p.y / pad.height), mm: p, pressure: 25, size: 0.5, major: 7.5)
             }
-            func stroke(_ pts: [CGPoint]) { id += 1; for p in pts { emit([contact(id, p)]) }; emit([]); for _ in 0..<25 { emit([]) } }
+            // Karthik's rhythm: ~120 ms between letters of a word, ~700 ms between words.
+            func stroke(_ pts: [CGPoint], gap: Double = 0.12) { id += 1; for p in pts { emit([contact(id, p)]) }; emit([]); for _ in 0..<Int(gap / 0.008) { emit([]) } }
             func manualPan(_ dx: Double) {   // two fingers sliding left by dx mm
                 id += 2
                 for k in 0...40 { let o = -dx * Double(k) / 40
@@ -216,7 +217,7 @@ enum TestAutoPan {
             for k in 0..<90 {
                 touches.append(x / pad.width)
                 stroke((0...24).map { j in let a = Double(j) / 24 * 2 * .pi
-                    return CGPoint(x: x + 2.5 - 2.5 * cos(a) + Double(j) / 24 * 2.5, y: y + 2.5 * sin(a)) })
+                    return CGPoint(x: x + 2.5 - 2.5 * cos(a) + Double(j) / 24 * 2.5, y: y + 2.5 * sin(a)) }, gap: k % 3 == 2 ? 0.7 : 0.12)
                 x += 8.5                   // each loop letter is 7.5 mm wide (5 mm circle + drift); 1 mm apart
                 if k % 3 == 2 { x += 6 }   // space between words
                 let (pans, lines, end, first) = DispatchQueue.main.sync { () -> (Int, Int, CGPoint, Double) in
@@ -310,5 +311,109 @@ enum TestDraw {
         }
         t.qualityOfService = .userInteractive
         t.start()
+    }
+}
+
+/// --test-aim: aim-first mode end to end through the input path (background, no trackpad).
+enum TestAim {
+    static func run(canvas: CanvasView, dir: String, done: @escaping () -> Void) {
+        let pad = Multitouch.padMM
+        var t = 0.0, id: Int32 = 30000
+        func frame(_ mm: CGPoint?, p: Double) {
+            t += 0.008
+            let cs = mm.map { [Contact(id: id, state: 4, norm: CGPoint(x: $0.x / pad.width, y: $0.y / pad.height), mm: $0, pressure: p, size: 0.5, major: 7.5)] } ?? []
+            canvas.handle(cs, arrival: t + 1000, sensorT: t)
+        }
+        func lift() { frame(nil, p: 0); for _ in 0..<10 { frame(nil, p: 0) } ; id += 1 }
+        func firstInkMM(_ s: Stroke) -> CGPoint {
+            let q = canvas.padPoint(s.points.first!.p); return CGPoint(x: q.x * pad.width, y: q.y * pad.height)
+        }
+        var r: [String: Any] = [:]
+        var tools = canvas.tools; tools.aimFirst = true; canvas.tools = tools
+        // S1: aim lightly from 40 to 50 mm, press at 50 mm, draw to 65 mm.
+        for k in 0...30 { frame(CGPoint(x: 40 + Double(k) / 3, y: 30), p: 8) }
+        frame(CGPoint(x: 50.1, y: 30), p: 12); frame(CGPoint(x: 50.2, y: 30), p: 30)
+        for k in 0...30 { frame(CGPoint(x: 50.2 + Double(k) / 2, y: 30), p: 30) }
+        lift()
+        let s1 = canvas.doc.strokes.last.map(firstInkMM)
+        let s1MinX = canvas.doc.strokes.last.map { st in st.points.map { canvas.padPoint($0.p).x * pad.width }.min()! }
+        r["aimThenPress"] = ["strokes": canvas.doc.strokes.count, "firstInkX": s1?.x ?? -1, "leftmostInkX": s1MinX ?? -1]
+        // S2: normal quick press: touch at (30,50) light, pressed on the next frame, draw right.
+        frame(CGPoint(x: 30, y: 50), p: 9); frame(CGPoint(x: 30.3, y: 50), p: 25)
+        for k in 0...30 { frame(CGPoint(x: 30.3 + Double(k) / 2, y: 50), p: 27) }
+        lift()
+        let s2 = canvas.doc.strokes.last.map(firstInkMM)
+        r["quickPress"] = ["strokes": canvas.doc.strokes.count, "firstInkX": s2?.x ?? -1, "firstInkY": s2?.y ?? -1]
+        // S3: light tap: no ink.
+        let before = canvas.doc.strokes.count
+        for _ in 0..<12 { frame(CGPoint(x: 80, y: 20), p: 8) }
+        lift()
+        r["lightTap"] = ["newStrokes": canvas.doc.strokes.count - before]
+        // S4: aim off: a light stroke inks at once.
+        tools.aimFirst = false; canvas.tools = tools
+        let b4 = canvas.doc.strokes.count
+        for k in 0...30 { frame(CGPoint(x: 20 + Double(k) / 2, y: 15), p: 8) }
+        lift()
+        r["aimOffLightStroke"] = ["newStrokes": canvas.doc.strokes.count - b4, "firstInkX": canvas.doc.strokes.last.map(firstInkMM)?.x ?? -1]
+        try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-aim.json"))
+        done()
+    }
+}
+
+/// --test-session <recorded session.jsonl>: re-runs a recorded session through the app logic with a
+/// virtual clock (recorded times), synchronously and fast. Replays touch frames and the things touch
+/// doesn't produce (tool/mode changes, undo/redo/clear, pages, scroll/magnify outside draw mode);
+/// auto-pans, new lines and pinch moves are produced again by the app. The new run is recorded like
+/// any session, so the same analysis tools compare it with the original.
+enum TestSession {
+    static func run(canvas: CanvasView, path: String, done: @escaping () -> Void) {
+        let pad = Multitouch.padMM
+        let rows = (try? String(contentsOfFile: path, encoding: .utf8))?.split(separator: "\n")
+            .compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] } ?? []
+        var vclock = rows.first?["m"] as? Double ?? 0
+        canvas.now = { vclock }
+        // Start from the first recorded tool state and view.
+        if let t0 = rows.first(where: { $0["a"] as? String == "tools" }) { apply(tools: t0, canvas) }
+        var drawing = false
+        for r in rows {
+            vclock = r["m"] as? Double ?? vclock
+            canvas.advanceClock(); canvas.flushInputForTest()
+            switch r["k"] as? String {
+            case "touch":
+                guard drawing, let cs = r["c"] as? [[Double]] else { continue }
+                let contacts = cs.map { c in Contact(id: Int32(c[0]), state: Int32(c[1]), norm: CGPoint(x: c[2], y: c[3]),
+                                                     mm: CGPoint(x: c[2] * pad.width, y: c[3] * pad.height), pressure: c[4], size: 0.5, major: 7.5) }
+                canvas.handle(contacts, arrival: vclock, sensorT: r["t"] as? Double ?? 0)
+            case "view":
+                let src = r["src"] as? String ?? ""
+                if ["scroll", "magnify", "test", "zoomToPage", "replay", "unknown"].contains(src) {
+                    canvas.setVisibleForReplay(x: r["x"] as! Double, y: r["y"] as! Double, w: r["w"] as! Double, z: r["z"] as! Double)
+                }
+            case "act":
+                switch r["a"] as? String {
+                case "tools": apply(tools: r, canvas)
+                case "writingMode": canvas.writingMode = r["on"] as? Bool ?? false
+                case "drawMode": drawing = r["on"] as? Bool ?? false; canvas.drawMode = drawing
+                case "undo": canvas.undo()
+                case "redo": canvas.redo()
+                case "clear": canvas.clearPage()
+                case "newPage": canvas.newPage()
+                case "goToPage": canvas.goToPage(r["page"] as? Int ?? 0)
+                default: break
+                }
+            default: break
+            }
+        }
+        vclock += 5; canvas.advanceClock(); canvas.flushInputForTest()
+        canvas.now = { CACurrentMediaTime() }
+        done()
+    }
+    static func apply(tools r: [String: Any], _ canvas: CanvasView) {
+        var t = canvas.tools
+        if let v = r["tool"] as? String, let k = ToolKind(rawValue: v) { t.tool = k }
+        if let v = r["autoPan"] as? Int, let a = AutoPan(rawValue: v) { t.autoPan = a }
+        if let v = r["zoomLocked"] as? Bool { t.zoomLocked = v }
+        if let v = r["lineWidth"] as? Int { t.lineWidthIndex = v }
+        canvas.tools = t
     }
 }
