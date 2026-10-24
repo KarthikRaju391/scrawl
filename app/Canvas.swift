@@ -22,6 +22,21 @@ struct Settings {
     /// Off by default: macOS's resting flag marked real fingers as palms (47 of 73 "palms" in
     /// Karthik's 18:34 session were fingertips), which broke two-finger pinch. Kept for later tuning.
     var palmRejection: Bool { d.bool(forKey: "palmRejection") }
+    /// Rejoin snap (experimental): a touch-down soon after a lift and close to it continues exactly
+    /// from the lift point (cursive rejoins). `--rejoin on|off` overrides for tests.
+    /// "off", "on" (snap at touch-down) or "dir" (snap only if the new stroke continues the previous
+    /// one's direction, decided ~1.5 mm in). `--rejoin` overrides for tests; "rejoinMode" in defaults.
+    var rejoinMode: String {
+        let a = CommandLine.arguments
+        if let i = a.firstIndex(of: "--rejoin"), i + 1 < a.count { return a[i + 1] }
+        let m = d.string(forKey: "rejoinMode") ?? "off"
+        return m == "ab" ? Settings.abCondition : m
+    }
+    /// Blind A/B: with rejoinMode "ab", each launch secretly picks on or off (logged, never shown).
+    static let abCondition = Bool.random() ? "on" : "off"
+    var rejoinSnap: Bool { rejoinMode != "off" }
+    var rejoinRadiusMM: Double { d.object(forKey: "rejoinRadiusMM") as? Double ?? 3.5 }
+    var rejoinWindowMs: Double { d.object(forKey: "rejoinWindowMs") as? Double ?? 250 }
     var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
     var palmSize: Double { d.object(forKey: "palmTotal") as? Double ?? 1.4 }
     /// Prediction slider, 0...24 ms (0 = off). Default 12: middle of the lag/overshoot trade-off.
@@ -305,7 +320,7 @@ final class CanvasView: MTKView {
         }
     }
     /// Test modes don't touch the saved settings.
-    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock"].contains { CommandLine.arguments.contains($0) }
+    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock", "--test-hand"].contains { CommandLine.arguments.contains($0) }
     private(set) var camera: Camera {
         didSet {  // every zoom change is logged with its cause, to track down "the lock unlocked"
             // One line per gesture (same cause within 0.5 s is coalesced); always when locked.
@@ -331,7 +346,7 @@ final class CanvasView: MTKView {
     private var contacts: [Contact] = []
     private var needsRender = true
     private var link: CADisplayLink?
-    private var settings = Settings()
+    private(set) var settings = Settings()
     var drawMode = false {
         didSet {
             gestures.reset(); contacts = []; needsRender = true
@@ -619,16 +634,36 @@ final class CanvasView: MTKView {
     }
 
     private func sample(_ c: Contact, _ t: Double) -> InputSample {
-        InputSample(mm: c.mm, t: frameSensorT, pressure: c.pressure, size: c.size)
+        InputSample(mm: CGPoint(x: c.mm.x + strokeOffset.x, y: c.mm.y + strokeOffset.y), t: frameSensorT, pressure: c.pressure, size: c.size)
     }
+
+    /// Where the last stroke lifted (pad mm, after any snap) and when (sensor clock).
+    private var lastLift: (mm: CGPoint, t: Double, dir: CGPoint)?
+    /// Raw (unshifted) samples of the current stroke, and a pending rejoin waiting for the direction check.
+    private var rawSamples: [InputSample] = []
+    private var pendingSnap: CGPoint?
+    private var makeBuilder: (() -> StrokeBuilder)?
+    /// Offset applied to every sample of the current stroke (pad mm): non-zero when snapped.
+    private var strokeOffset = CGPoint.zero
+    private(set) var rejoinCount = 0
 
     private func beginStroke(_ c: Contact, _ t: Double) {
         finishSlide()
+        strokeOffset = .zero; pendingSnap = nil; rawSamples = []
+        if settings.rejoinSnap, tools.tool != .eraser, let l = lastLift,
+           (frameSensorT - l.t) * 1000 < settings.rejoinWindowMs, hypot(c.mm.x - l.mm.x, c.mm.y - l.mm.y) < settings.rejoinRadiusMM {
+            let snap = CGPoint(x: l.mm.x - c.mm.x, y: l.mm.y - c.mm.y)   // continue exactly from the lift
+            if settings.rejoinMode == "dir" { pendingSnap = snap } else { strokeOffset = snap; rejoinCount += 1 }
+        }
         let cam = camera, pad = Multitouch.padMM
         let model = makeWidthModel(usingMT ? settings.widthModel : "speed")
-        builder = StrokeBuilder(model: model, minCutoff: settings.minCutoff, beta: settings.beta) { mm in
-            cam.canvas(fromPad: CGPoint(x: mm.x / pad.width, y: mm.y / pad.height))
+        let st = settings
+        makeBuilder = {
+            StrokeBuilder(model: model, minCutoff: st.minCutoff, beta: st.beta) { mm in
+                cam.canvas(fromPad: CGPoint(x: mm.x / pad.width, y: mm.y / pad.height))
+            }
         }
+        builder = makeBuilder!()
         liveTool = tools.tool
         let col = tools.color.usingColorSpace(.sRGB)!
         liveColor = SIMD4(Float(col.redComponent), Float(col.greenComponent), Float(col.blueComponent), Float(Brush.of(liveTool).alpha))
@@ -640,6 +675,22 @@ final class CanvasView: MTKView {
 
     private func moveStroke(_ c: Contact, _ t: Double) {
         guard builder != nil else { return }
+        let raw = InputSample(mm: c.mm, t: frameSensorT, pressure: c.pressure, size: c.size)
+        rawSamples.append(raw)
+        if let snap = pendingSnap, let l = lastLift {
+            // Direction check ~1.5 mm in: snap only if this stroke carries on the previous one's direction.
+            let first = rawSamples[0].mm, dx = c.mm.x - first.x, dy = c.mm.y - first.y, len = hypot(dx, dy)
+            if len >= 1.5 {
+                pendingSnap = nil
+                let cosTurn = (dx * l.dir.x + dy * l.dir.y) / len
+                logger.event(["what": "rejoinCandidate", "cos": cosTurn, "stroke": doc.strokes.count, "snapLen": hypot(snap.x, snap.y)])
+                if cosTurn > 0.3 {
+                    strokeOffset = snap; rejoinCount += 1
+                    builder = makeBuilder!()   // rebuild from the start with the offset (only ~1.5 mm drawn so far)
+                    for r in rawSamples.dropLast() { builder!.add(InputSample(mm: CGPoint(x: r.mm.x + snap.x, y: r.mm.y + snap.y), t: r.t, pressure: r.pressure, size: r.size)) }
+                }
+            }
+        }
         builder!.add(sample(c, t))
         logger.sample(t: frameSensorT, mm: c.mm, pressure: c.pressure, size: c.size, out: builder!.points.last!)
         pendingArrival = frameArrival
@@ -656,6 +707,15 @@ final class CanvasView: MTKView {
         logger.end(committed: commit)
         if liveTool == .eraser { doc.dropEmptyUndo(); return }
         guard commit, !b.points.isEmpty else { return }
+        if liveTool != .eraser, let raw = b.lastRaw {
+            // Direction the stroke was heading at the end: last raw point vs the one ~1.5 mm earlier.
+            var dir = CGPoint.zero
+            if let back = rawSamples.reversed().first(where: { hypot($0.mm.x + strokeOffset.x - raw.x, $0.mm.y + strokeOffset.y - raw.y) >= 1.5 }) {
+                let dx = raw.x - (back.mm.x + strokeOffset.x), dy = raw.y - (back.mm.y + strokeOffset.y), l = hypot(dx, dy)
+                dir = CGPoint(x: dx / l, y: dy / l)
+            }
+            lastLift = (raw, frameSensorT, dir)
+        }
         let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
         doc.add(s)
@@ -769,7 +829,10 @@ final class CanvasView: MTKView {
 
     // MARK: commands
 
-    func undo() { doc.undo(); endWritingLine(); updateScreensFilled(); needsRender = true }
+    func undo() {
+        logger.event(["what": "undo", "strokesBefore": doc.strokes.count])   // the "that landed wrong" signal
+        doc.undo(); endWritingLine(); updateScreensFilled(); needsRender = true
+    }
     func redo() { doc.redo(); needsRender = true }
     func clearPage() { doc.clear(); endWritingLine(); updateScreensFilled(); needsRender = true }
     /// Dismiss the "new page?" hint until another screen fills up.
@@ -822,7 +885,7 @@ final class StrokeLog {
     let path: String
 
     init() {
-        let dir = (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw/data")
+        let dir = (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw-predict/data")
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
         path = "\(dir)/strokes-\(f.string(from: Date())).jsonl"

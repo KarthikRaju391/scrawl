@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onPage = { [weak self] d in self?.page(d) }
         cv.onStatus = { [weak self] in self?.updateBanner() }
 
-        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock"].contains { CommandLine.arguments.contains($0) }
+        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock", "--test-hand"].contains { CommandLine.arguments.contains($0) }
         if testing {
             // Test input only: real touches on the trackpad would interleave with the replay.
             mtError = nil
@@ -101,12 +101,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         HotKey.action = { [weak self] in self?.toggleDrawMode() }
-        HotKey.register()
+        if !canvas.testMode { HotKey.register() }   // tests never take ⌃⌥D from the app in use
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in self?.key(e) == true ? nil : e }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.exitDrawMode() }
         buildMenu()
         updateBanner()
         startTestReplayIfAsked()
+        if UserDefaults.standard.string(forKey: "rejoinMode") == "ab" {   // record the hidden condition
+            canvas.logger.event(["what": "abCondition", "rejoin": Settings.abCondition])
+        }
         // --no-activate: open in the background (used by the smoke test so it doesn't take focus).
         if !CommandLine.arguments.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true) } else { window.orderBack(nil) }
     }
@@ -213,6 +216,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 canvas.setZoomForTest(settingsWritingZoom: true)
                 if !a.contains("--zoomed") { canvas.resetZoom() }
                 TestStress.run(canvas: canvas, path: a[i + 1], count: n, dir: dir) {
+                    try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+                }
+            }
+        }
+        if let i = a.firstIndex(of: "--test-hand"), i + 1 < a.count {
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            func arg(_ k: String) -> String? { a.firstIndex(of: k).flatMap { $0 + 1 < a.count ? a[$0 + 1] : nil } }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                enterDrawMode(lock: false)
+                var t = ToolState(); t.sizeIndex[.pen] = 1; canvas.tools = t
+                TestHand.run(canvas: canvas, fontDir: a[i + 1], seed: UInt64(arg("--seed") ?? "1") ?? 1, sigma: Double(arg("--sigma") ?? "1.9") ?? 1.9, dir: dir) {
                     try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
                 }
             }
