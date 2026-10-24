@@ -10,9 +10,9 @@ screencapture -x -o -l"$WID" "$OUT/final.png"; kill -TERM $PID
 python3 -I - "$OUT/test-autopan.json" <<'PY'
 import json, sys
 r = json.load(open(sys.argv[1]))
-print("writing mode:", r["writing"], " strokes:", r["strokes"], " letters:", r["letters"], " returns re-anchored:", r["returns"], " auto-pans:", r.get("pans"), " new lines:", r["newLines"])
-print("letters overlapping the previous letter:", r["overlapsWithPreviousLetter"], " letters left of the previous (same row):", r["lettersLeftOfPrevious"], " rows:", r["lineRows"])
+print("auto-pan:", ["off", "centre", "left"][r["autoPan"]], " strokes:", r["strokes"], " auto-pans:", r["pans"], " new lines:", r["newLines"])
+print("letters overlapping the previous letter:", r["overlapsWithPreviousLetter"], " rows (left edge of each):", [round(x) for x in r["rowStarts"]])
 print("touch-down x on the pad: min %.2f max %.2f" % (min(r["touchX"]), max(r["touchX"])))
-print("hint: before", r["hintBefore"], "after a stroke 1.1 screens down", r["hintAfterDeepStroke"], "| new page:", r["afterNewPage"], "back:", r["backToFirst"])
+if r["wordStartAfterPan"]: print("after each auto-pan, the word just written starts at pad x:", " ".join(f"{x:.2f}" for x in r["wordStartAfterPan"]))
 PY
 echo "$OUT"

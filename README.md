@@ -27,11 +27,18 @@ MultitouchSupport framework.
   in memory only: quitting loses them.
 - **Pan and zoom** work everywhere: in draw mode with two fingers (pan) and pinch (zoom); outside
   draw mode with the normal two-finger scroll and pinch.
-- **Writing mode** (W in draw mode, or the cursor button; tap it again for line width ½ / ¾ /
-  full page, or Off): when a stroke you finish reaches the right 15% of the view, the view pans so
-  it ends mid-screen; when the line reaches the chosen width, the view goes to the start of the next
-  line. Nothing moves while a finger is down.
-- **Zoom lock** (lock button, or Z in draw mode): pinching no longer zooms; two fingers still pan.
+- **Writing mode** (W in draw mode, or the cursor button; tap it again for the panel):
+  - line width ½ / ¾ / full page;
+  - auto-pan when a finished stroke reaches the right 15% of the view: *No pan*, *Centre* (it ends
+    mid-screen) or *Left* (the word just written moves to the left edge, leaving the most room);
+  - new line: when the line reaches its width, or the view can't pan further right, the view goes
+    to the start of the next line (aligned with the line above). This happens with *No pan* too.
+    Panning by hand doesn't break the line; writing well above/below it starts a new one there.
+  Nothing moves while a finger is down.
+- **Zoom lock** (lock button, or Z in draw mode): nothing changes the zoom: not pinch, not
+  switching pages (pages used to bring back their own zoom), not ⌘0. Two fingers still pan.
+  Every zoom/lock change is logged in `data/strokes-*.jsonl` (`"kind": "event"`) with its cause.
+  `checks/zoomlock.sh` runs every path with the lock on.
 - **Saved between launches**: tool, colours, sizes, background, line width, zoom lock, Smoothing and
   Prediction. Pages are not saved yet.
 - **Palm rejection is off** (`defaults write local.trackpad-draw palmRejection -bool true` turns it
@@ -71,7 +78,7 @@ it after `probe/run-guided.sh` (see PHASE1.md).
 - `checks/e2e.sh <strokes.jsonl> --test-front [--test-lock]`: replays recorded strokes through
   the input callback in the real app, then screenshots, counts ink, and reports frames presented and
   latency. `checks/ui.sh`: clicks through the toolbar with real NSEvents and screenshots each step.
-  `checks/autopan.sh [--writing-off]`: simulated writer following its ink across the view.
+  `checks/autopan.sh --autopan off|centre|left`: simulated writer following its ink across the view.
   `checks/stress.sh N
   [--zoomed]`: per-frame CPU/GPU and frame gaps with N strokes on the page. In test modes the
   real trackpad feed is off.

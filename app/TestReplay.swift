@@ -106,7 +106,7 @@ enum TestUI {
             ("8-writing-on", { click(toolbar.center(of: .writing)) }),
             ("9-writing-panel", { click(toolbar.center(of: .writing)) }),
             ("10-full-width", { click(toolbar.panel.centerOfWriting(2)) }),
-            ("10b-centred", { click(toolbar.panel.centerOfWriting(4)) }),
+            ("10b-pan-left", { click(toolbar.panel.centerOfWriting(5)) }),
             ("11-settings", { toolbar.hidePanel(); click(toolbar.center(of: .settings)) }),
         ]
         var i = 0
@@ -184,71 +184,78 @@ enum TestStress {
     }
 }
 
-/// --test-autopan [--writing-off]: a simulated writer behaving like Karthik's sessions, at zoom 3 with
-/// a ½-page line: it continues each letter from where it lifted; when it gets past 80% of the pad it
-/// returns to the left (somewhere around 0.12-0.24, never the same spot); after some words it dots
-/// right next to where it lifted. It never looks at the screen. Reports where letters landed.
+/// --test-autopan [--autopan off|centre|left]: a simulated writer at zoom 3, ½-page lines, writes
+/// 90 small loop letters in words of 3 through the real input path, following the screen: it carries
+/// on just right of its last letter as it appears on the pad; after a new line it starts at the
+/// line's left edge. With no auto-pan it pans by hand (two fingers) when it runs out of pad.
 enum TestAutoPan {
     static func run(canvas: CanvasView, dir: String, done: @escaping () -> Void) {
         let pad = Multitouch.padMM
-        var touches: [Double] = []
+        var touches: [Double] = [], afterPanWordX: [Double] = []
         let t = Thread {
             var deadline = CACurrentMediaTime(), sensorT = 0.0, id: Int32 = 5000
-            var rng = TestRNG(s: 7)
             func emit(_ c: [Contact]) {
                 deadline += 0.008; sensorT += 0.008
                 preciseWait(until: deadline)
                 Multitouch.onFrame?(c, CACurrentMediaTime(), sensorT)
             }
-            func stroke(_ pts: [CGPoint]) {
-                id += 1
-                for p in pts { emit([Contact(id: id, state: 4, norm: CGPoint(x: p.x / pad.width, y: p.y / pad.height), mm: p, pressure: 25, size: 0.5, major: 7.5)]) }
+            func contact(_ i: Int32, _ p: CGPoint) -> Contact {
+                Contact(id: i, state: 4, norm: CGPoint(x: p.x / pad.width, y: p.y / pad.height), mm: p, pressure: 25, size: 0.5, major: 7.5)
+            }
+            func stroke(_ pts: [CGPoint]) { id += 1; for p in pts { emit([contact(id, p)]) }; emit([]); for _ in 0..<25 { emit([]) } }
+            func manualPan(_ dx: Double) {   // two fingers sliding left by dx mm
+                id += 2
+                for k in 0...40 { let o = -dx * Double(k) / 40
+                    emit([contact(id, CGPoint(x: 70 + o, y: 30)), contact(id + 1, CGPoint(x: 90 + o, y: 30))]) }
                 emit([]); for _ in 0..<25 { emit([]) }
             }
+            let manualOnly = DispatchQueue.main.sync { canvas.tools.autoPan == .off }
             var x = 0.15 * pad.width
             let y = 0.5 * pad.height
-            let centred = true  // writing mode keeps writing centred; the writer follows the screen
-            var seenPans = 0, seenLines = 0
-            var lineStart: Double?
+            var seenPans = 0, seenLines = 0, lineStart: Double?
             for k in 0..<90 {
                 touches.append(x / pad.width)
                 stroke((0...24).map { j in let a = Double(j) / 24 * 2 * .pi
                     return CGPoint(x: x + 2.5 - 2.5 * cos(a) + Double(j) / 24 * 2.5, y: y + 2.5 * sin(a)) })
-                x += 7.5                                   // next letter starts where this one ended
-                if k % 6 == 5 { stroke([CGPoint(x: x - 1, y: y + 6), CGPoint(x: x - 0.8, y: y + 6.2)]) }  // a dot by the lift
-                if centred {
-                    // Centred mode: the writer watches the screen. After a pan (or new line) it carries
-                    // on from where its last letter now appears; otherwise it continues from the lift.
-                    let (pans, lines, end) = DispatchQueue.main.sync { () -> (Int, Int, CGPoint) in
-                        let b = canvas.doc.strokes.filter { $0.bounds.width > 8 }.last!.bounds
-                        return (canvas.panCount, canvas.newLineCount, canvas.padPoint(CGPoint(x: b.maxX, y: b.midY)))
+                x += 8.5                   // each loop letter is 7.5 mm wide (5 mm circle + drift); 1 mm apart
+                if k % 3 == 2 { x += 6 }   // space between words
+                let (pans, lines, end, first) = DispatchQueue.main.sync { () -> (Int, Int, CGPoint, Double) in
+                    canvas.flushInputForTest()
+                    let b = canvas.doc.strokes.last!.bounds
+                    return (canvas.panCount, canvas.newLineCount, canvas.padPoint(CGPoint(x: b.maxX, y: b.midY)), Double(canvas.doc.strokes.first!.bounds.minX))
+                }
+                if lineStart == nil { lineStart = first }
+                if lines > seenLines {
+                    seenLines = lines
+                    x = Double(DispatchQueue.main.sync { canvas.padPoint(CGPoint(x: lineStart!, y: 0)).x }) * pad.width
+                } else if pans > seenPans {
+                    seenPans = pans
+                    // where does the word just written start now? (left mode puts it at the left edge)
+                    let ws = DispatchQueue.main.sync { () -> Double in   // the word the app aligned (left mode)
+                        Double(canvas.padPoint(CGPoint(x: canvas.lastPanWordStart ?? 0, y: 0)).x)
                     }
-                    if lines > seenLines { seenLines = lines; x = Double(DispatchQueue.main.sync { canvas.padPoint(CGPoint(x: lineStart ?? 0, y: 0)).x }) * pad.width }
-                    else if pans > seenPans { seenPans = pans; x = end.x * pad.width + 1.5 }
-                    if lineStart == nil { lineStart = DispatchQueue.main.sync { Double(canvas.doc.strokes.first!.bounds.minX) } }
-                } else if x / pad.width > 0.8 { x = (0.12 + rng.next() * 0.12) * pad.width }  // carriage return
+                    afterPanWordX.append(ws)
+                    x = end.x * pad.width + 1.5 + (k % 3 == 2 ? 6 : 0)
+                } else if manualOnly && x / pad.width > 0.85 {
+                    manualPan(0.5 * pad.width)
+                    let e2 = DispatchQueue.main.sync { () -> CGPoint in let b = canvas.doc.strokes.last!.bounds; return canvas.padPoint(CGPoint(x: b.maxX, y: b.midY)) }
+                    x = e2.x * pad.width + 1.5 + (k % 3 == 2 ? 6 : 0)
+                }
             }
             DispatchQueue.main.async {
                 canvas.flushInputForTest()
-                let letters = canvas.doc.strokes.filter { $0.bounds.width > 8 }.map(\.bounds)
+                let letters = canvas.doc.strokes.map(\.bounds)
                 var overlaps = 0, backwards = 0
                 for (p, q) in zip(letters, letters.dropFirst()) where abs(p.midY - q.midY) < 10 {
                     if q.minX < p.maxX - 1 { overlaps += 1 }
                     if q.midX < p.midX { backwards += 1 }
                 }
-                let lines = Set(letters.map { Int(($0.midY / 10).rounded()) }).count
-                var r: [String: Any] = ["writing": canvas.writingMode, "strokes": canvas.doc.strokes.count, "letters": letters.count,
-                                        "returns": 0, "pans": canvas.panCount, "newLines": canvas.newLineCount, "overlapsWithPreviousLetter": overlaps,
-                                        "lettersLeftOfPrevious": backwards, "lineRows": lines, "touchX": touches]
-                r["hintBefore"] = canvas.showPageHint
-                let deep = canvas.camera.page.height - canvas.screenUnits * 1.1
-                canvas.testAddStroke([StrokePoint(p: CGPoint(x: 200, y: deep), pressure: 0.5), StrokePoint(p: CGPoint(x: 260, y: deep), pressure: 0.5)])
-                r["hintAfterDeepStroke"] = canvas.showPageHint
-                let n = canvas.doc.strokes.count
-                canvas.newPage()
-                r["afterNewPage"] = ["pages": canvas.pages.count, "strokes": canvas.doc.strokes.count]
-                canvas.goToPage(0)
-                r["backToFirst"] = ["strokes": canvas.doc.strokes.count, "expected": n]
+                var rows: [Int: Double] = [:]   // row -> leftmost x
+                for l in letters { let r = Int((l.midY / 10).rounded()); rows[r] = min(rows[r] ?? .infinity, l.minX) }
+                let r: [String: Any] = ["autoPan": canvas.tools.autoPan.rawValue, "strokes": canvas.doc.strokes.count,
+                                        "pans": canvas.panCount, "newLines": canvas.newLineCount, "overlapsWithPreviousLetter": overlaps,
+                                        "lettersLeftOfPrevious": backwards, "rowStarts": rows.sorted { $0.key > $1.key }.map(\.value),
+                                        "touchX": touches, "wordStartAfterPan": afterPanWordX]
                 try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted]).write(to: URL(fileURLWithPath: dir + "/test-autopan.json"))
                 done()
             }

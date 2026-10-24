@@ -305,14 +305,20 @@ final class CanvasView: MTKView {
         }
     }
     /// Test modes don't touch the saved settings.
-    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw"].contains { CommandLine.arguments.contains($0) }
+    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock"].contains { CommandLine.arguments.contains($0) }
     private(set) var camera: Camera {
         didSet {  // every zoom change is logged with its cause, to track down "the lock unlocked"
+            // One line per gesture (same cause within 0.5 s is coalesced); always when locked.
             if abs(camera.zoom - oldValue.zoom) > 1e-9 {
-                logger.event(["what": "zoom", "from": oldValue.zoom, "to": camera.zoom, "source": source, "locked": tools.zoomLocked])
+                let now = CACurrentMediaTime()
+                if tools.zoomLocked || source != lastZoomLog.source || now - lastZoomLog.t > 0.5 {
+                    logger.event(["what": "zoom", "from": oldValue.zoom, "to": camera.zoom, "source": source, "locked": tools.zoomLocked])
+                }
+                lastZoomLog = (source, now)
             }
         }
     }
+    private var lastZoomLog = (source: "", t: 0.0)
     /// What is changing the camera/tools right now (for the event log).
     var source = "unknown"
     func changing(_ src: String, _ body: () -> Void) { let old = source; source = src; body(); source = old }
@@ -357,6 +363,7 @@ final class CanvasView: MTKView {
 
     private var camAnim: (from: CGPoint, to: CGPoint, start: Double)?
     private(set) var panCount = 0
+    private(set) var lastPanWordStart: Double?   // test/diagnostics: start of the word at the last pan
     private(set) var newLineCount = 0
 
     // MARK: pages and the screen-height hint
@@ -499,7 +506,7 @@ final class CanvasView: MTKView {
     /// Fallback when display ticks stop (window covered, display link paused): process queued
     /// input anyway, so gestures and strokes never wait on the screen.
     /// Tests: process everything queued before reading counts.
-    func flushInputForTest() { drainInput() }
+    func flushInputForTest() { drainInput(); finishSlide() }
 
     func drainIfStale() {
         if CACurrentMediaTime() - lastDrain > 0.04 { drainInput() }
@@ -669,7 +676,10 @@ final class CanvasView: MTKView {
             layout.autoPan = tools.autoPan
             switch layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
             case .none: break
-            case .pan(let c): panCount += 1; slideCamera(to: c)
+            case .pan(let c):
+                panCount += 1
+                lastPanWordStart = WritingLayout.lastWordStart(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01))
+                slideCamera(to: c)
             case .newLine(let c): newLineCount += 1; lineInk = nil; lineStrokes = []; slideCamera(to: c)
             }
         }

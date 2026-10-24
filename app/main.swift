@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let tb = container.toolbar
         tb.state = cv.tools
-        tb.onChange = { [weak self] s in self?.canvas.tools = s; self?.updateBanner() }
+        tb.onChange = { [weak self] s in self?.canvas.changing("toolbar") { self?.canvas.tools = s }; self?.updateBanner() }
         tb.onUndo = { [weak self] in self?.canvas.undo() }
         tb.onRedo = { [weak self] in self?.canvas.redo() }
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
@@ -87,7 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onPage = { [weak self] d in self?.page(d) }
         cv.onStatus = { [weak self] in self?.updateBanner() }
 
-        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw"].contains { CommandLine.arguments.contains($0) }
+        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock"].contains { CommandLine.arguments.contains($0) }
         if testing {
             // Test input only: real touches on the trackpad would interleave with the replay.
             mtError = nil
@@ -192,7 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false
         }
-        canvas.tools = s
+        canvas.changing("key") { canvas.tools = s }
         container.toolbar.state = s
         updateBanner()
         return true
@@ -214,6 +214,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
                 }
             }
+        }
+        if a.contains("--test-zoomlock") {
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in runZoomLockTest(dir: dir) }
         }
         if let i = a.firstIndex(of: "--test-draw"), i + 1 < a.count {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
@@ -251,8 +255,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
                 var t = canvas.tools; t.lineWidthIndex = 0   // ½ page
+                if let i = a.firstIndex(of: "--autopan"), i + 1 < a.count { t.autoPan = ["off": .off, "left": .left][a[i + 1]] ?? .centre } else { t.autoPan = .centre }
                 canvas.tools = t
-                if !a.contains("--writing-off") { toggleWriting() }
+                toggleWriting()
                 TestAutoPan.run(canvas: canvas, dir: dir) { [self] in
                     try? canvas.exportPNG(to: URL(fileURLWithPath: dir + "/page.png"), pxPerUnit: 1.5)
                     try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
