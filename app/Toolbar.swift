@@ -155,6 +155,11 @@ final class PanelView: NSView {
     private lazy var smoothSlider = makeSlider(min: 0, max: 100, key: "smoothing", scale: 100, fallback: Smoothing.defaultValue * 100)
     private lazy var predictSlider = makeSlider(min: 0, max: 24, key: "predictMs", scale: 1, fallback: 12)
     private let smoothLabel = NSTextField(labelWithString: ""), predictLabel = NSTextField(labelWithString: "")
+    private lazy var aimBox: NSButton = {
+        let b = NSButton(checkboxWithTitle: "Aim first (A): a light touch shows where you'll write; press to ink", target: self, action: #selector(aimToggled))
+        b.font = .systemFont(ofSize: 11); return b
+    }()
+    @objc private func aimToggled() { var s = state; s.aimFirst = aimBox.state == .on; state = s; onPick?(s) }
     private var resetRect: CGRect { CGRect(x: bounds.width - pad - 70, y: 8, width: 70, height: 20) }
 
     private func makeSlider(min: Double, max: Double, key: String, scale: Double, fallback: Double) -> NSSlider {
@@ -181,7 +186,7 @@ final class PanelView: NSView {
     }
     private func layoutSettings() {
         let show = mode == .settings
-        for v in [smoothSlider, predictSlider, smoothLabel, predictLabel] as [NSView] {
+        for v in [smoothSlider, predictSlider, smoothLabel, predictLabel, aimBox] as [NSView] {
             if v.superview == nil { addSubview(v) }
             v.isHidden = !show
         }
@@ -192,6 +197,8 @@ final class PanelView: NSView {
         smoothSlider.frame = CGRect(x: pad, y: bounds.height - pad - 40, width: w, height: 22)
         predictLabel.frame = CGRect(x: pad, y: bounds.height - pad - 66, width: w, height: 16)
         predictSlider.frame = CGRect(x: pad, y: bounds.height - pad - 90, width: w, height: 22)
+        aimBox.frame = CGRect(x: pad, y: bounds.height - pad - 118, width: w, height: 20)
+        aimBox.state = state.aimFirst ? .on : .off
         updateSettingsLabels()
     }
     override var isHidden: Bool { didSet { if !isHidden { layoutSettings() } } }
@@ -203,7 +210,7 @@ final class PanelView: NSView {
         switch mode {
         case .background: return CGSize(width: 4 * 64 + 2 * pad, height: 64 + 2 * pad)
         case .writing: return CGSize(width: 7 * 64 + 2 * 12 + 2 * pad, height: 64 + 2 * pad)
-        case .settings: return CGSize(width: 340, height: 150)
+        case .settings: return CGSize(width: 400, height: 172)
         case .tool: return CGSize(width: 6 * sw + 5 * 8 + 2 * pad, height: state.tool == .eraser ? sw + 2 * pad : 3 * sw + 2 * 8 + 12 + 2 * pad)
         }
     }

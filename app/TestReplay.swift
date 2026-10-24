@@ -313,3 +313,49 @@ enum TestDraw {
         t.start()
     }
 }
+
+/// --test-aim: aim-first mode end to end through the input path (background, no trackpad).
+enum TestAim {
+    static func run(canvas: CanvasView, dir: String, done: @escaping () -> Void) {
+        let pad = Multitouch.padMM
+        var t = 0.0, id: Int32 = 30000
+        func frame(_ mm: CGPoint?, p: Double) {
+            t += 0.008
+            let cs = mm.map { [Contact(id: id, state: 4, norm: CGPoint(x: $0.x / pad.width, y: $0.y / pad.height), mm: $0, pressure: p, size: 0.5, major: 7.5)] } ?? []
+            canvas.handle(cs, arrival: t + 1000, sensorT: t)
+        }
+        func lift() { frame(nil, p: 0); for _ in 0..<10 { frame(nil, p: 0) } ; id += 1 }
+        func firstInkMM(_ s: Stroke) -> CGPoint {
+            let q = canvas.padPoint(s.points.first!.p); return CGPoint(x: q.x * pad.width, y: q.y * pad.height)
+        }
+        var r: [String: Any] = [:]
+        var tools = canvas.tools; tools.aimFirst = true; canvas.tools = tools
+        // S1: aim lightly from 40 to 50 mm, press at 50 mm, draw to 65 mm.
+        for k in 0...30 { frame(CGPoint(x: 40 + Double(k) / 3, y: 30), p: 8) }
+        frame(CGPoint(x: 50.1, y: 30), p: 12); frame(CGPoint(x: 50.2, y: 30), p: 30)
+        for k in 0...30 { frame(CGPoint(x: 50.2 + Double(k) / 2, y: 30), p: 30) }
+        lift()
+        let s1 = canvas.doc.strokes.last.map(firstInkMM)
+        let s1MinX = canvas.doc.strokes.last.map { st in st.points.map { canvas.padPoint($0.p).x * pad.width }.min()! }
+        r["aimThenPress"] = ["strokes": canvas.doc.strokes.count, "firstInkX": s1?.x ?? -1, "leftmostInkX": s1MinX ?? -1]
+        // S2: normal quick press: touch at (30,50) light, pressed on the next frame, draw right.
+        frame(CGPoint(x: 30, y: 50), p: 9); frame(CGPoint(x: 30.3, y: 50), p: 25)
+        for k in 0...30 { frame(CGPoint(x: 30.3 + Double(k) / 2, y: 50), p: 27) }
+        lift()
+        let s2 = canvas.doc.strokes.last.map(firstInkMM)
+        r["quickPress"] = ["strokes": canvas.doc.strokes.count, "firstInkX": s2?.x ?? -1, "firstInkY": s2?.y ?? -1]
+        // S3: light tap: no ink.
+        let before = canvas.doc.strokes.count
+        for _ in 0..<12 { frame(CGPoint(x: 80, y: 20), p: 8) }
+        lift()
+        r["lightTap"] = ["newStrokes": canvas.doc.strokes.count - before]
+        // S4: aim off: a light stroke inks at once.
+        tools.aimFirst = false; canvas.tools = tools
+        let b4 = canvas.doc.strokes.count
+        for k in 0...30 { frame(CGPoint(x: 20 + Double(k) / 2, y: 15), p: 8) }
+        lift()
+        r["aimOffLightStroke"] = ["newStrokes": canvas.doc.strokes.count - b4, "firstInkX": canvas.doc.strokes.last.map(firstInkMM)?.x ?? -1]
+        try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-aim.json"))
+        done()
+    }
+}
