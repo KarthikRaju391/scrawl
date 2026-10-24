@@ -219,7 +219,7 @@ struct StrokeBuilder {
     var filter: OneEuro2D
     var model: WidthModel
     var toCanvas: (CGPoint) -> CGPoint
-    var streamline = 0.25  // perfect-freehand streamline on top of One Euro (0 = off)
+    var streamline = 0.0   // perfect-freehand streamline on top of One Euro (0 = off; 0.25 added lag)
     private(set) var points: [StrokePoint] = []
     private(set) var lastFiltered: CGPoint?
     private(set) var lastT = 0.0

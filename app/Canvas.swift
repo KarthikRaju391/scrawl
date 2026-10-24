@@ -13,7 +13,10 @@ struct Settings {
     var widthModel: String { d.string(forKey: "widthModel") ?? "mt-pressure" }  // mt-pressure | speed | contact-size
     var inputSource: String { d.string(forKey: "inputSource") ?? "mt" }        // mt | nstouch
     var minCutoff: Double { d.object(forKey: "oneEuroMinCutoff") as? Double ?? 1.0 }
-    var beta: Double { d.object(forKey: "oneEuroBeta") as? Double ?? 0.05 }
+    // beta 1.0 (was 0.05): replaying Karthik's real strokes, the ink trailed the finger by a median
+    // 47 pt (p95 122 pt) at writing zoom; beta 1.0 cuts that to 7 pt (p95 21 pt). minCutoff, which
+    // sets still-finger smoothing, stays at 1. See tools/filter_sweep.py.
+    var beta: Double { d.object(forKey: "oneEuroBeta") as? Double ?? 1.0 }
     var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
     var palmSize: Double { d.object(forKey: "palmTotal") as? Double ?? 1.4 }
     var predictMs: Double { d.object(forKey: "predictMs") as? Double ?? 16 }
