@@ -45,7 +45,11 @@ extension AppDelegate {
         func add(_ name: String, _ body: @escaping () -> Void) { steps.append((name, body)) }
 
         // Control (unlocked): pinch zooms; each page keeps its own zoom.
-        add("control: enter draw mode, zoom 3") { self.enterDrawMode(lock: false); self.canvas.setZoomForTest(settingsWritingZoom: true) }
+        add("control: enter draw mode, zoom 3") {
+            // Start from a known state, not the user's saved settings (test mode never saves).
+            var t = ToolState(); t.zoomLocked = false; self.canvas.tools = t; self.container.toolbar.state = t
+            self.enterDrawMode(lock: false); self.canvas.setZoomForTest(settingsWritingZoom: true)
+        }
         add("control: new page, pinch to zoom it") { self.page(0); pinch(spread: true) }
         add("control: back to page 1") { self.page(-1) }
         // Lock, then every path.
@@ -82,6 +86,10 @@ extension AppDelegate {
         // Unlock: Z in draw mode, then pinch must zoom again.
         add("UNLOCK via Z key") { self.enterDrawMode(lock: false); key("z", code: 6) }
         add("pinch out (unlocked)") { pinch(spread: true) }
+        // Shortcuts outside draw mode: E picks the eraser, P the pen, D enters draw mode.
+        add("Esc, then E (outside draw mode)") { key("\u{1b}", code: 53); key("e", code: 14) }
+        add("P (outside draw mode)") { key("p", code: 35) }
+        add("D enters draw mode") { key("d", code: 2) }
 
         var i = 0
         var lockedZoom: Double?
@@ -94,7 +102,8 @@ extension AppDelegate {
                 let z = self.canvas.camera.zoom, locked = self.canvas.tools.zoomLocked
                 if name.hasPrefix("LOCK") { lockedZoom = z }
                 var row: [String: Any] = ["step": name, "locked": locked, "zoom": (z * 1000).rounded() / 1000, "page": self.canvas.pageIndex + 1,
-                                          "toolbarShowsLocked": tb.state.zoomLocked]
+                                          "toolbarShowsLocked": tb.state.zoomLocked, "tool": self.canvas.tools.tool.rawValue,
+                                          "toolbarTool": tb.state.tool.rawValue, "drawMode": self.canvas.drawMode]
                 if name == "saved state reloads locked" { row["reloadedLocked"] = ToolState.load().zoomLocked || !self.canvas.testMode }
                 if let lz = lockedZoom { row["zoomUnchangedSinceLock"] = abs(z - lz) < 1e-9 }
                 log.append(row)

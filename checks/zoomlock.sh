@@ -12,9 +12,12 @@ steps = json.load(open(sys.argv[1]))["steps"]
 bad = 0
 for s in steps:
     flag = ""
-    if "zoomUnchangedSinceLock" in s and not s["step"].startswith(("UNLOCK", "pinch out (unlocked)")):
+    if "zoomUnchangedSinceLock" in s and not s["step"].startswith(("UNLOCK", "pinch out (unlocked)", "Esc, then E", "P (outside", "D enters")):
         if not s["locked"] or not s["zoomUnchangedSinceLock"] or not s["toolbarShowsLocked"]: flag = "  <-- FAIL"; bad += 1
-    print(f"{s['step']:62s} locked={str(s['locked']):5s} zoom={s['zoom']:<6} page={s['page']} {flag}")
+    if s["step"].startswith("Esc, then E") and not (s["tool"] == "eraser" and s["toolbarTool"] == "eraser" and not s["drawMode"]): flag = "  <-- FAIL"; bad += 1
+    if s["step"].startswith("P (outside") and s["tool"] != "pen": flag = "  <-- FAIL"; bad += 1
+    if s["step"].startswith("D enters") and not s["drawMode"]: flag = "  <-- FAIL"; bad += 1
+    print(f"{s['step']:62s} locked={str(s['locked']):5s} zoom={s['zoom']:<6} page={s['page']} tool={s['tool']:7s} draw={s['drawMode']} {flag}")
 ev = [json.loads(l) for f in glob.glob(sys.argv[2] + "/strokes-*.jsonl") for l in open(f)]
 ev = [e for e in ev if e.get("kind") == "event"]
 print("zoom/lock events:", [(e["what"], e.get("source"), e.get("locked"), round(e.get("to", 0), 2)) for e in ev])

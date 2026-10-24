@@ -178,9 +178,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Returns true if the key was handled.
     func key(_ e: NSEvent) -> Bool {
         if e.keyCode == 53 { if canvas.drawMode { exitDrawMode(); return true }; container.toolbar.hidePanel(); return true }  // Esc
-        guard canvas.drawMode, e.modifierFlags.intersection([.command, .control, .option]).isEmpty, let ch = e.charactersIgnoringModifiers?.lowercased() else { return false }
+        // Single-letter shortcuts work in and out of draw mode. D enters draw mode.
+        guard e.modifierFlags.intersection([.command, .control, .option]).isEmpty, let ch = e.charactersIgnoringModifiers?.lowercased() else { return false }
         var s = canvas.tools
         switch ch {
+        case "d": if !canvas.drawMode { enterDrawMode(lock: !canvas.testMode) }; return true   // tests never freeze the cursor
         case "p": s.tool = .pen
         case "m": s.tool = .marker
         case "h": s.tool = .highlighter
