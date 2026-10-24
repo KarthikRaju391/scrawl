@@ -95,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.exitDrawMode() }
         buildMenu()
         updateBanner()
+        startTestReplayIfAsked()
         // --no-activate: open in the background (used by the smoke test so it doesn't take focus).
         if !CommandLine.arguments.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true) } else { window.orderBack(nil) }
     }
@@ -103,23 +104,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func toggleDrawMode() { canvas.drawMode ? exitDrawMode() : enterDrawMode() }
 
-    func enterDrawMode() {
+    func enterDrawMode(lock: Bool = true) {
         guard !canvas.drawMode else { return }
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
         container.toolbar.hidePanel()
-        // Park the frozen cursor in the middle of the canvas so stray clicks land on it.
-        let r = window.convertToScreen(canvas.convert(canvas.bounds, to: nil))
-        let primaryH = NSScreen.screens.first!.frame.height
-        CursorLock.lock(at: CGPoint(x: r.midX, y: primaryH - r.midY))
+        if lock {
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            // Park the frozen cursor in the middle of the canvas so stray clicks land on it.
+            let r = window.convertToScreen(canvas.convert(canvas.bounds, to: nil))
+            let primaryH = NSScreen.screens.first!.frame.height
+            CursorLock.lock(at: CGPoint(x: r.midX, y: primaryH - r.midY))
+        }
         canvas.drawMode = true
         container.toolbar.drawMode = true
         updateBanner()
     }
 
     func exitDrawMode() {
+        let wasLocked = CursorLock.locked
         CursorLock.unlock()  // unconditional: also covers a lock without draw mode
         guard canvas.drawMode else { return }
+        if CommandLine.arguments.contains("--test-replay") {  // test mode: record how draw mode ended
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            let r: [String: Any] = ["wasLocked": wasLocked, "lockedAfter": CursorLock.locked, "t": Date().timeIntervalSince1970]
+            try? JSONSerialization.data(withJSONObject: r).write(to: URL(fileURLWithPath: dir + "/test-exit.json"))
+        }
         canvas.drawMode = false
         container.toolbar.drawMode = false
         updateBanner()
@@ -150,6 +159,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         canvas.tools = s
         container.toolbar.state = s
         return true
+    }
+
+    // MARK: test mode (see TestReplay.swift)
+
+    func startTestReplayIfAsked() {
+        let a = CommandLine.arguments
+        guard let i = a.firstIndex(of: "--test-replay"), i + 1 < a.count else { return }
+        let lock = a.contains("--test-lock")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+            if a.contains("--test-front") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
+            enterDrawMode(lock: lock)
+            TestReplay.run(path: a[i + 1], onFrame: { cs, t in Multitouch.onFrame?(cs, t) }) { [self] n, wall, planned in
+                let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+                let report: [String: Any] = ["frames": n, "strokes": canvas.doc.strokes.count, "zoom": canvas.camera.zoom,
+                                             "presented": canvas.presentedCount, "rendered": canvas.renderCount, "locked": lock,
+                                             "replayWallSec": wall, "replayPlannedSec": planned]
+                try? JSONSerialization.data(withJSONObject: report).write(to: URL(fileURLWithPath: dir + "/test-replay-done.json"))
+            }
+        }
     }
 
     // MARK: menu

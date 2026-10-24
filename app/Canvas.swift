@@ -210,9 +210,22 @@ final class CanvasView: MTKView {
     private var needsRender = true
     private var link: CADisplayLink?
     private var settings = Settings()
-    var drawMode = false { didSet { gestures.reset(); contacts = []; needsRender = true } }
+    var drawMode = false {
+        didSet {
+            gestures.reset(); contacts = []; needsRender = true
+            // No App Nap / timer coalescing while drawing: input and frames must not be throttled.
+            if drawMode, activity == nil {
+                activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "drawing")
+            } else if !drawMode, let a = activity { ProcessInfo.processInfo.endActivity(a); activity = nil }
+        }
+    }
+    private var activity: NSObjectProtocol?
     var usingMT = false
     let logger = StrokeLog()
+
+    /// Frames encoded / frames the display actually showed (test mode reports both).
+    private(set) var renderCount = 0
+    private(set) var presentedCount = 0
 
     // Latency bookkeeping: arrival time of the newest sample not yet on screen.
     private var pendingArrival: Double?
@@ -245,11 +258,18 @@ final class CanvasView: MTKView {
         link?.add(to: .main, forMode: .common)
     }
 
+    private var predictAhead = 0.0
+
     @objc private func tick(_ l: CADisplayLink) {
         guard needsRender else { return }
         needsRender = false
-        render(predictAhead: max(l.targetTimestamp - CACurrentMediaTime(), 0) + settings.predictMs / 1000)
+        predictAhead = max(l.targetTimestamp - CACurrentMediaTime(), 0) + settings.predictMs / 1000
+        // MTKView.draw() calls draw(_:) and then releases currentDrawable. Rendering outside it
+        // (paused view) kept re-presenting the first drawable: nothing new ever reached the screen.
+        draw()
     }
+
+    override func draw(_ dirtyRect: NSRect) { render(predictAhead: predictAhead) }
 
     func setNeedsRender() { needsRender = true }
 
@@ -379,12 +399,16 @@ final class CanvasView: MTKView {
         }
         let arrival = pendingArrival
         pendingArrival = nil
+        renderCount += 1
         renderer.render(in: self, visible: camera.visible, background: tools.background,
                         spacing: 48, pxPerUnit: ptPerUnit * camera.zoom * Double(window?.backingScaleFactor ?? 2),
-                        items: items, presented: arrival.map { a in { [weak self] t in
+                        items: items, presented: { [weak self] t in
                             guard t > 0 else { return }  // 0 = dropped frame
-                            DispatchQueue.main.async { self?.logger.latency((t - a) * 1000) }
-                        } })
+                            DispatchQueue.main.async {
+                                self?.presentedCount += 1
+                                if let a = arrival { self?.logger.latency((t - a) * 1000) }
+                            }
+                        })
     }
 
     // MARK: commands
