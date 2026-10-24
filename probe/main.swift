@@ -183,9 +183,13 @@ final class App: NSObject, NSApplicationDelegate {
         view = ProbeView(frame: window.contentView!.bounds)
         view.autoresizingMask = [.width, .height]
         window.contentView = view
-        window.makeKeyAndOrderFront(nil)
-        window.makeFirstResponder(view)
-        NSApp.activate(ignoringOtherApps: true)
+        if smoke {  // build check: run all setup but never show the window or take focus
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { print("smoke ok"); exit(0) }
+        } else {
+            window.makeKeyAndOrderFront(nil)
+            window.makeFirstResponder(view)
+            NSApp.activate(ignoringOtherApps: true)
+        }
         mtStatus = startMT()
         Log.shared.write("meta", ["mt": mtStatus, "os": ProcessInfo.processInfo.operatingSystemVersionString])
         view.label.stringValue = "Trackpad probe — \(steps.count) short steps, about 1 minute.\n\nKeep this window in front. Follow each prompt.\n\nPress SPACE to start.  (Esc quits.)\n\nMT: \(mtStatus)"
@@ -248,9 +252,10 @@ if let i = CommandLine.arguments.firstIndex(of: "--listen"), CommandLine.argumen
     exit(0)
 }
 
-let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "probe-\(Int(Date().timeIntervalSince1970)).jsonl"
+let out = CommandLine.arguments.count > 1 && !CommandLine.arguments[1].hasPrefix("--") ? CommandLine.arguments[1] : "probe-\(Int(Date().timeIntervalSince1970)).jsonl"
+let smoke = CommandLine.arguments.contains("--smoke")
 let app = NSApplication.shared
-app.setActivationPolicy(.regular)
+app.setActivationPolicy(smoke ? .prohibited : .regular)
 let delegate = App(outPath: out)
 app.delegate = delegate
 app.run()
