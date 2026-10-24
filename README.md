@@ -1,86 +1,96 @@
 # Trackpad Draw
 
-A personal macOS app that turns the MacBook trackpad into a finger-drawing surface. The tools
-follow Google Keep's drawing screen. It's local only: unsigned (ad-hoc), and it uses the private
-MultitouchSupport framework.
+Write and sketch with a finger on your Mac's trackpad. The tools follow Google Keep's drawing screen:
+pen, marker, highlighter, eraser, backgrounds. Pages scroll down forever, and a writing mode pans
+along your line as you write.
 
-## Build and run
+![Trackpad Draw](examples/porsche-window.png)
 
-    ./build.sh                       # Command Line Tools only, no Xcode
-    open "build/Trackpad Draw.app"
-    ./build/bench data/passive-1.jsonl   # offline checks (ink, renderer, gestures, jitter model)
+## Requirements
 
-## Use
+- macOS 14 Sonoma or later.
+- A trackpad: the built-in one, or a Magic Trackpad.
+- Apple silicon. The download also runs on Intel Macs, but nobody has tested it there yet.
 
-- **⌃⌥D** enters draw mode. You can use it from any app. The cursor freezes and hides, and the
-  whole trackpad maps to the visible part of the page.
-- **Esc** always exits. So do ⌃⌥D, switching apps, and closing the window.
-- One finger draws. Two fingers pan, and pinching zooms (1×–12×). Blue rings show where your
-  fingers are, since there's no cursor.
-- Palm rejection (off by default) uses macOS's resting-touch flag, contact size
-  (`palmMajorAxis` / `palmTotal`), and touches already on the pad when draw mode starts. Every lifted
-  contact is logged (`"kind": "contact"`) for tuning.
-- Writing while zoomed in keeps the same on-screen line width, so small handwriting stays crisp.
-- **Pages**: each page is infinitely long downwards. A dashed line marks every screen height (from
-  the aspect ratio of the display the app is on). Writing past one shows a hint: N for a new page,
-  or K to keep writing. Toolbar ‹ › + (or ⌘[ ⌘] ⌘N) move between pages and add one. Pages are
-  in memory only: quitting loses them.
-- **Pan and zoom** work everywhere: in draw mode with two fingers (pan) and pinch (zoom); outside
-  draw mode with the normal two-finger scroll and pinch.
-- **Writing mode** (W in draw mode, or the cursor button; tap it again for the panel):
-  - line width ½ / ¾ / full page;
-  - auto-pan when a finished stroke reaches the right 15% of the view: *No pan*, *Centre* (it ends
-    mid-screen) or *Left* (the word just written moves to the left edge, leaving the most room);
-  - new line: when the line reaches its width, or the view can't pan further right, the view goes
-    to the start of the next line (aligned with the line above). This happens with *No pan* too.
-    Panning by hand doesn't break the line; writing well above/below it starts a new one there.
-  Nothing moves while a finger is down.
-- **Zoom lock** (lock button, or L): nothing changes the zoom: not pinch, not
-  switching pages (pages used to bring back their own zoom), not ⌘0. Two fingers still pan.
-  Every zoom/lock change is logged in `data/strokes-*.jsonl` (`"kind": "event"`) with its cause.
-  `checks/zoomlock.sh` runs every path with the lock on.
-- **Saved between launches**: tool, colours, sizes, background, line width, zoom lock, Smoothing and
-  Prediction. Pages are not saved yet.
-- **Palm rejection is off** (`defaults write local.trackpad-draw palmRejection -bool true` turns it
-  back on): macOS's resting flag marked real fingers as palms and broke pinch.
-- **Feel (⚙︎ in the toolbar)**: *Smoothing* (← follows the finger exactly · steadier →) and
-  *Prediction* (← never overshoots · keeps up →). They apply to the next stroke and are remembered;
-  Defaults resets them (50%, 12 ms). Measured on Karthik's strokes: prediction makes the tip keep
-  up (20 → 10 pt behind the finger at 24 ms) but it shoots off at turns and stops; it's damped when
-  slowing or turning. Every stroke ends exactly where the finger lifted.
-- Toolbar: undo, redo, pen, marker, highlighter, eraser (erases whole strokes), background
-  (none/square/dot/ruled), draw mode. Tap the selected tool for sizes and colors.
-- Keys (in or out of draw mode): D draw mode, P/M/H/E pen/marker/highlighter/eraser, 1–5 size,
-  L zoom lock, W writing mode, N new page, Esc leaves draw mode.
-- Menu: ⌘Z / ⇧⌘Z, Clear Page (⌘⌫), Zoom to Whole Page (⌘0), Export Page PNG (⇧⌘E, saves to `data/`).
+## Installing
 
-## Tuning (`defaults write local.trackpad-draw <key> <value>`, then relaunch)
+1. Download `Trackpad-Draw-<version>.dmg` from the
+   [Releases](https://github.com/KarthikRaju391/trackpad-draw/releases) page. Check it against
+   `SHA256SUMS.txt` if you like: `shasum -a 256 Trackpad-Draw-*.dmg`.
+2. Open the DMG and drag **Trackpad Draw** into **Applications**.
+3. Open it. The app isn't notarized by Apple yet, so macOS stops it the first time:
+   - **macOS 14:** Control-click (or right-click) Trackpad Draw in Applications, choose **Open**, then
+     **Open** again.
+   - **macOS 15 and later:** open it once and macOS blocks it. Then go to **System Settings ›
+     Privacy & Security**, scroll down to "Trackpad Draw was blocked", click **Open Anyway** and
+     confirm with your password.
 
-| key | default | meaning |
-|---|---|---|
-| `widthModel` | `mt-pressure` | `mt-pressure` (per-finger force), `speed` (fallback), `contact-size` |
-| `inputSource` | `mt` | `nstouch` forces the public-API path (no pressure, so speed width) |
-| `smoothing` / `predictMs` | 0.5 / 12 | the ⚙︎ sliders (`oneEuroMinCutoff` / `oneEuroBeta` override smoothing) |
-| `inkThreshold` | 0 (off) | Inklet-style hover: ink only starts once MT pressure reaches this |
-| `palmMajorAxis` / `palmTotal` | 11 / 1.4 | contacts above either value are ignored as palms |
-| `padFlipY` | false | set true if strokes come out upside down (unverified pad y direction) |
+   After that it opens normally. If you prefer Terminal:
+   `xattr -dr com.apple.quarantine "/Applications/Trackpad Draw.app"`.
 
-The pressure range in `MTPressureModel` (`lo` 4, `hi` 70) is a guess from passive data. Retune
-it after `probe/run-guided.sh` (see PHASE1.md).
+The app needs no special permissions: no Accessibility, Input Monitoring or Screen Recording.
 
-## Layout
+## Using it
 
-- `app/Ink.swift`: One Euro filter, width models, perfect-freehand radius, CPU stroke path (export)
-- `app/Renderer.swift`: Metal: stroke triangle meshes, per-stroke stencil, shader backgrounds
-- `app/Canvas.swift`: document, camera, gesture engine, canvas view, stroke log
-- `app/DrawMode.swift`: cursor lock, watchdog process, signals, global hotkey
-- `app/Toolbar.swift`: Keep-style toolbar and panel
-- `app/Multitouch.swift`: private MultitouchSupport access
-- `checks/e2e.sh <strokes.jsonl> --test-front [--test-lock]`: replays recorded strokes through
-  the input callback in the real app, then screenshots, counts ink, and reports frames presented and
-  latency. `checks/ui.sh`: clicks through the toolbar with real NSEvents and screenshots each step.
-  `checks/autopan.sh --autopan off|centre|left`: simulated writer following its ink across the view.
-  `checks/stress.sh N
-  [--zoomed]`: per-frame CPU/GPU and frame gaps with N strokes on the page. In test modes the
-  real trackpad feed is off.
-- `bench/`: offline checks. `checks/`: scripts for the four acceptance checks. `probe/`: Phase 1.
+- **⌃⌥D** (or **D** when the app is in front) starts drawing. The pointer freezes and hides, and the
+  whole trackpad becomes the visible part of the page. **Esc** gives the pointer back. So do ⌃⌥D,
+  switching apps, the display sleeping, and quitting.
+- **One finger** draws. **Two fingers** pan, and pinching zooms. Blue rings show where your fingers
+  are, since there's no pointer.
+- **Tools:** P pen, M marker, H highlighter, E eraser, 1–5 size. Tap the selected tool in the
+  toolbar for sizes and colours.
+- **Writing mode (W):** pans along the line as you write, and goes to the start of the next line
+  when the line is full. The page waits until your finger has been up for 0.4 s, so it never moves
+  in the middle of a word. Choose the line width (½, ¾, full) and how it pans in the panel.
+- **Aim first (A):** touch lightly to see where you are (an orange ring), then press to start the
+  ink. Useful for maths and diagrams.
+- **Zoom lock (L)** keeps the zoom fixed while two fingers still pan.
+- **Pages:** N or ⌘N adds a page, ⌘[ and ⌘] move between them. Each page keeps its own view.
+- **Export:** ⌘E saves every page as one PDF (vector, sharp at any size), and ⇧⌘E saves the current
+  page as a PNG.
+- **Help › Trackpad Draw Help** (⌘?) lists every shortcut.
+
+Everything is saved automatically, half a second after each change and when you quit. That covers
+every page, its view, and undo/redo history. If the app is killed or crashes, at most the last half
+second of ink is lost.
+
+## Your data and privacy
+
+- Pages are saved only on this Mac, in `~/Library/Application Support/Trackpad Draw/Notebook.tdnb`.
+- Nothing is uploaded and there are no analytics. The only network request is **Check for Updates**,
+  which runs only when you choose it. It asks GitHub for the latest release and opens the release page
+  if there's a newer one.
+- Local logs live in `~/Library/Logs/Trackpad Draw`. They note when the pointer was given back, and when
+  a session ended without quitting. Touch diagnostics (raw touch data, for tuning) are off unless
+  you turn on **Help › Record Touch Diagnostics**. They also stay on this Mac.
+- If the app crashes, macOS's own crash reporter may offer to send a report to Apple, according to
+  your Analytics settings in System Settings. Trackpad Draw sends nothing itself.
+
+## How the touch input works
+
+For finger pressure, Trackpad Draw reads the trackpad through **MultitouchSupport**, a private
+macOS framework. That's why it can't be sold on the Mac App Store, and a future macOS update could
+break it. If that framework is turned off or stops sending touches, the app switches to macOS's
+public touch events and keeps working. Drawing still works there, but there's no pressure: line
+width follows your speed, and aim-first mode is off. You can choose this yourself with **View › Use
+Basic Touch Input**.
+
+## If the pointer seems stuck
+
+Press **Esc**, or ⌃⌥D. A small watchdog process also gives the pointer back if the app is killed or
+crashes. As a last resort, quit the app from the Dock or Activity Monitor.
+
+## Uninstalling
+
+Delete **Trackpad Draw** from Applications. To remove your pages and settings too, delete
+`~/Library/Application Support/Trackpad Draw` and `~/Library/Logs/Trackpad Draw`, then run
+`defaults delete io.github.karthikraju391.trackpad-draw`.
+
+## Building from source
+
+See [DEVELOPMENT.md](DEVELOPMENT.md). You need only the Command Line Tools, not Xcode: run
+`./build.sh`, then `open "build/Trackpad Draw.app"`.
+
+## License
+
+See [LICENSE](LICENSE).
