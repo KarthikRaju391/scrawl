@@ -2,6 +2,7 @@
 // Usage: bench <probe-log.jsonl> [screen points per mm]
 import CoreGraphics
 import Foundation
+import Metal
 
 var failures = 0
 func check(_ ok: Bool, _ msg: String) { print(ok ? "PASS" : "FAIL", msg); if !ok { failures += 1 } }
@@ -95,49 +96,86 @@ if args.count > 1 {
     print(String(format: "filter lag behind raw (all samples): p50 %.2f mm, p95 %.2f mm", pct(lagMM, 0.5), pct(lagMM, 0.95)))
 }
 
-// 3) Render cost on a 1500x900 pt canvas at 2x (14" MBP window).
-//    Live stroke: only new segments are filled into an offscreen layer each frame, then the
-//    layer is composited. Commit and zoom re-render cost are one-off, not per frame.
+// 3) Render cost of the app's Metal path, offscreen at 1500x900 pt @2x with 4x MSAA:
+//    a page of 200 committed strokes + a 600-point live stroke rebuilt every frame.
 do {
-    let scale = 2, w = 1500 * scale, h = 900 * scale
-    func bitmap() -> CGContext {
-        let c = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
-                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
-        c.scaleBy(x: CGFloat(scale), y: CGFloat(scale)); return c
+    let dev = MTLCreateSystemDefaultDevice()!
+    let r = Renderer(device: dev)!
+    let w = 3000, h = 1800
+    func tex(_ f: MTLPixelFormat, ms: Bool) -> MTLTexture {
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: f, width: w, height: h, mipmapped: false)
+        d.usage = .renderTarget; d.storageMode = .private
+        if ms { d.textureType = .type2DMultisample; d.sampleCount = Renderer.sampleCount }
+        return dev.makeTexture(descriptor: d)!
     }
-    let layer = bitmap(), view = bitmap(), committed = bitmap()
-    var pts: [StrokePoint] = []
-    for i in 0..<600 { let a = Double(i) / 20; pts.append(StrokePoint(p: CGPoint(x: 750 + cos(a) * Double(i) / 2, y: 450 + sin(a) * Double(i) / 2), pressure: 0.5 + 0.4 * sin(a))) }
-    let committedImage = committed.makeImage()!
-    var frameMs: [Double] = []
-    var drawn = 0
-    for n in stride(from: 2, through: 600, by: 2) {  // 2 new points per frame (~125 Hz input, 120 Hz display)
-        let t0 = CFAbsoluteTimeGetCurrent()
-        layer.addPath(strokePath(Array(pts[0..<n]), size: 6, brush: Brush.of(.pen), from: max(drawn, 0), live: true))
-        layer.fillPath(using: .winding)
-        drawn = n
-        view.draw(committedImage, in: CGRect(x: 0, y: 0, width: 1500, height: 900))
-        view.setAlpha(0.35)
-        view.draw(layer.makeImage()!, in: CGRect(x: 0, y: 0, width: 1500, height: 900))
-        view.setAlpha(1)
-        frameMs.append((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-    }
-    let sorted = frameMs.sorted()
-    check(sorted[sorted.count * 95 / 100] < 4, String(format: "live-stroke frame (incremental fill + 2 composites): p50 %.2f ms, p95 %.2f ms (budget 4 ms)", sorted[sorted.count / 2], sorted[sorted.count * 95 / 100]))
-    var t0 = CFAbsoluteTimeGetCurrent()
-    committed.addPath(strokePath(pts, size: 6, brush: Brush.of(.pen)))
-    committed.fillPath(using: .winding)
-    print(String(format: "commit a 600-point stroke (one-off): %.2f ms", (CFAbsoluteTimeGetCurrent() - t0) * 1000))
-    // Zoom/pan end: re-render a page of 200 strokes x 150 points.
-    var page: [CGPath] = []
+    let rpd = MTLRenderPassDescriptor()
+    rpd.colorAttachments[0].texture = tex(.bgra8Unorm, ms: true)
+    rpd.colorAttachments[0].resolveTexture = tex(.bgra8Unorm, ms: false)
+    rpd.colorAttachments[0].loadAction = .clear
+    rpd.colorAttachments[0].storeAction = .multisampleResolve
+    rpd.stencilAttachment.texture = tex(.stencil8, ms: true)
+    rpd.stencilAttachment.loadAction = .clear
+    rpd.stencilAttachment.clearStencil = 0
+    rpd.stencilAttachment.storeAction = .dontCare
+    let page = CGRect(x: 0, y: 0, width: 1600, height: 985)
+    var items: [Renderer.DrawItem] = []
     for k in 0..<200 {
         var sp: [StrokePoint] = []
-        for i in 0..<150 { sp.append(StrokePoint(p: CGPoint(x: Double(k % 20) * 70 + Double(i) / 3, y: Double(k / 20) * 85 + sin(Double(i) / 10) * 20 + 40), pressure: 0.5)) }
-        page.append(strokePath(sp, size: 4, brush: Brush.of(.pen)))
+        for i in 0..<150 { sp.append(StrokePoint(p: CGPoint(x: Double(k % 20) * 78 + Double(i) / 3, y: Double(k / 20) * 95 + sin(Double(i) / 10) * 20 + 40), pressure: 0.5)) }
+        let br = Brush.of(k % 10 == 0 ? .highlighter : .pen)
+        items.append(.init(mesh: r.makeMesh(strokeMesh(sp, radii: strokeRadii(sp, size: k % 10 == 0 ? 14 : 3, brush: br))), verts: nil, color: SIMD4(0, 0, 0, 1)))
     }
-    t0 = CFAbsoluteTimeGetCurrent()
-    for p in page { committed.addPath(p); committed.fillPath(using: .winding) }
-    print(String(format: "re-render 200 cached stroke paths after zoom (one-off): %.1f ms", (CFAbsoluteTimeGetCurrent() - t0) * 1000))
+    // GPU union check: one highlighter hairpin stroke over white; overlaps must not darken.
+    do {
+        let sw = 400, sh = 200
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: sw, height: sh, mipmapped: false)
+        d.usage = .renderTarget; d.storageMode = .shared
+        let out = dev.makeTexture(descriptor: d)!
+        let md = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: sw, height: sh, mipmapped: false)
+        md.usage = .renderTarget; md.storageMode = .private; md.textureType = .type2DMultisample; md.sampleCount = Renderer.sampleCount
+        let sd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .stencil8, width: sw, height: sh, mipmapped: false)
+        sd.usage = .renderTarget; sd.storageMode = .private; sd.textureType = .type2DMultisample; sd.sampleCount = Renderer.sampleCount
+        let p2 = MTLRenderPassDescriptor()
+        p2.colorAttachments[0].texture = dev.makeTexture(descriptor: md)
+        p2.colorAttachments[0].resolveTexture = out
+        p2.colorAttachments[0].loadAction = .clear
+        p2.colorAttachments[0].storeAction = .multisampleResolve
+        p2.stencilAttachment.texture = dev.makeTexture(descriptor: sd)
+        p2.stencilAttachment.loadAction = .clear
+        var hp: [StrokePoint] = []
+        for i in 0...40 { hp.append(StrokePoint(p: CGPoint(x: 20 + Double(i) * 4, y: 50 + sin(Double(i) / 4) * 15), pressure: 0.5)) }
+        hp.append(StrokePoint(p: CGPoint(x: 100, y: 52), pressure: 0.5))
+        let a: Float = 0.35
+        let m = r.makeMesh(strokeMesh(hp, radii: strokeRadii(hp, size: 12, brush: Brush.of(.highlighter))))
+        let cb = r.queue.makeCommandBuffer()!
+        r.encode(cb, p2, visible: CGRect(x: 0, y: 0, width: 200, height: 100), background: 0, spacing: 48, pxPerUnit: 2,
+                 items: [.init(mesh: m, verts: nil, color: SIMD4(0, 0, 0, a))])
+        cb.commit(); cb.waitUntilCompleted()
+        var px = [UInt8](repeating: 0, count: sw * sh * 4)
+        out.getBytes(&px, bytesPerRow: sw * 4, from: MTLRegionMake2D(0, 0, sw, sh), mipmapLevel: 0)
+        let darkest = stride(from: 0, to: px.count, by: 4).map { px[$0] }.min()!
+        check(darkest == UInt8((1 - a) * 255 + 0.5) || darkest == UInt8((1 - a) * 255), "GPU highlighter applies alpha once per stroke (darkest \(darkest), want \(UInt8((1 - a) * 255 + 0.5)); double-applied would be \(UInt8((1 - a) * (1 - a) * 255)))")
+    }
+    var live: [StrokePoint] = []
+    for i in 0..<600 { let a = Double(i) / 20; live.append(StrokePoint(p: CGPoint(x: 800 + cos(a) * Double(i) / 2, y: 490 + sin(a) * Double(i) / 2), pressure: 0.5 + 0.4 * sin(a))) }
+    var cpu: [Double] = [], gpu: [Double] = []
+    for frame in 0..<60 {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let radii = strokeRadii(live, size: 3, brush: Brush.of(.pen), live: true)
+        let verts = strokeMesh(live, radii: radii)
+        let cb = r.queue.makeCommandBuffer()!
+        r.encode(cb, rpd, visible: frame % 2 == 0 ? page : page.insetBy(dx: 300, dy: 180), background: 2, spacing: 48, pxPerUnit: 3.75,
+                 items: items + [.init(mesh: Mesh(), verts: verts, color: SIMD4(0, 0, 0, 1))])
+        cb.commit()
+        cpu.append((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        cb.waitUntilCompleted()
+        gpu.append((cb.gpuEndTime - cb.gpuStartTime) * 1000)
+    }
+    func p(_ v: [Double], _ q: Double) -> Double { let s = v.sorted(); return s[Int(q * Double(s.count - 1))] }
+    let total = items.reduce(0) { $0 + $1.mesh.count }
+    print(String(format: "Metal frame, 200 strokes (%d vertices) + live 600-pt stroke, zoom alternating 1x/2x:", total))
+    check(p(cpu, 0.95) < 4, String(format: "  CPU (live mesh + encode): p50 %.2f ms, p95 %.2f ms (budget 4 ms)", p(cpu, 0.5), p(cpu, 0.95)))
+    check(p(gpu, 0.95) < 6, String(format: "  GPU: p50 %.2f ms, p95 %.2f ms (budget 6 ms of an 8.3 ms frame)", p(gpu, 0.5), p(gpu, 0.95)))
 }
 
 exit(failures == 0 ? 0 : 1)

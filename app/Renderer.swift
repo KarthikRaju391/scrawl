@@ -81,14 +81,22 @@ final class Renderer {
     private let stencilOnce: MTLDepthStencilState
     static let sampleCount = 4
 
-    init?(view: MTKView) {
-        guard let device = view.device ?? MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else { return nil }
+    let colorFormat: MTLPixelFormat = .bgra8Unorm
+    let stencilFormat: MTLPixelFormat = .stencil8
+
+    convenience init?(view: MTKView) {
+        guard let device = view.device ?? MTLCreateSystemDefaultDevice() else { return nil }
+        self.init(device: device)
+        view.device = device
+        view.colorPixelFormat = colorFormat
+        view.depthStencilPixelFormat = stencilFormat
+        view.sampleCount = Self.sampleCount
+    }
+
+    init?(device: MTLDevice) {
+        guard let queue = device.makeCommandQueue() else { return nil }
         self.device = device
         self.queue = queue
-        view.device = device
-        view.colorPixelFormat = .bgra8Unorm
-        view.depthStencilPixelFormat = .stencil8
-        view.sampleCount = Self.sampleCount
         do {
             let lib = try device.makeLibrary(source: shaderSource, options: nil)
             func pso(_ vfn: String, _ ffn: String, blend: Bool) throws -> MTLRenderPipelineState {
@@ -96,8 +104,8 @@ final class Renderer {
                 d.vertexFunction = lib.makeFunction(name: vfn)
                 d.fragmentFunction = lib.makeFunction(name: ffn)
                 d.rasterSampleCount = Self.sampleCount
-                d.colorAttachments[0].pixelFormat = view.colorPixelFormat
-                d.stencilAttachmentPixelFormat = view.depthStencilPixelFormat
+                d.colorAttachments[0].pixelFormat = .bgra8Unorm
+                d.stencilAttachmentPixelFormat = .stencil8
                 if blend {
                     let c = d.colorAttachments[0]!
                     c.isBlendingEnabled = true
@@ -131,7 +139,16 @@ final class Renderer {
     func render(in view: MTKView, visible: CGRect, background: Int, spacing: Double, pxPerUnit: Double,
                 items: [DrawItem], presented: ((Double) -> Void)?) {
         guard let rpd = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
-              let cb = queue.makeCommandBuffer(), let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
+              let cb = queue.makeCommandBuffer() else { return }
+        encode(cb, rpd, visible: visible, background: background, spacing: spacing, pxPerUnit: pxPerUnit, items: items)
+        if let presented { drawable.addPresentedHandler { d in presented(d.presentedTime) } }
+        cb.present(drawable)
+        cb.commit()
+    }
+
+    func encode(_ cb: MTLCommandBuffer, _ rpd: MTLRenderPassDescriptor, visible: CGRect, background: Int, spacing: Double,
+                pxPerUnit: Double, items: [DrawItem]) {
+        guard let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
         var xf = SIMD4<Float>(Float(2 / visible.width), Float(2 / visible.height),
                               Float(-1 - 2 * visible.minX / visible.width), Float(-1 - 2 * visible.minY / visible.height))
         enc.setRenderPipelineState(bgPSO)
@@ -162,8 +179,5 @@ final class Renderer {
             }
         }
         enc.endEncoding()
-        if let presented { drawable.addPresentedHandler { d in presented(d.presentedTime) } }
-        cb.present(drawable)
-        cb.commit()
     }
 }
