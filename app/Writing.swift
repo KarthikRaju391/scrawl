@@ -16,6 +16,7 @@ struct WritingLayout {
                            // the next word starts with room; 0.85 ran words off the pad edge)
     var lineWidth = 0.75   // fraction of the page width a line may span (½, ¾, full)
     var margin = 0.03      // page side margin, fraction of the page width
+    var legacyStrokeEdge = false   // replays of old sessions: the edge check used only the last stroke
 
     enum Move: Equatable {
         case none, pan(CGPoint), newLine(CGPoint)
@@ -28,7 +29,7 @@ struct WritingLayout {
         let lineEnd = min(lineLeft + lineWidth * pageWidth, pageWidth * (1 - margin))
         // The line's rightmost ink, not just this stroke: an i-dot or t-cross placed back inside the
         // word must not cancel a move that the word's end already called for.
-        let right = max(s.maxX, line.maxX)
+        let right = legacyStrokeEdge ? s.maxX : max(s.maxX, line.maxX)
         let atEdge = right > v.minX + v.width * edge
         let viewAtPageEnd = v.maxX >= pageWidth - 0.5
         if right >= lineEnd || (atEdge && viewAtPageEnd) {

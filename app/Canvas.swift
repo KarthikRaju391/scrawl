@@ -41,6 +41,12 @@ struct Settings {
         if let i = a.firstIndex(of: "--pause-ms"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
         return d.object(forKey: "pauseBeforeMoveMs") as? Double ?? 400
     }
+    /// Writing-mode pan trigger (fraction of the view); `--pan-edge` overrides (replays of old sessions use 0.85).
+    var panEdge: Double {
+        let a = CommandLine.arguments
+        if let i = a.firstIndex(of: "--pan-edge"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
+        return d.object(forKey: "panEdge") as? Double ?? 0.70
+    }
     var rejoinRadiusMM: Double { d.object(forKey: "rejoinRadiusMM") as? Double ?? 3.5 }
     var rejoinWindowMs: Double { d.object(forKey: "rejoinWindowMs") as? Double ?? 250 }
     var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
@@ -336,7 +342,7 @@ final class CanvasView: MTKView {
         }
     }
     /// Test modes don't touch the saved settings.
-    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock", "--test-hand", "--test-aim"].contains { CommandLine.arguments.contains($0) }
+    let testMode = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll", "--test-draw", "--test-zoomlock", "--test-hand", "--test-aim", "--test-session"].contains { CommandLine.arguments.contains($0) }
     private(set) var camera: Camera {
         didSet {  // every zoom change is logged with its cause, to track down "the lock unlocked"
             if camera.center != oldValue.center || camera.zoom != oldValue.zoom {
@@ -382,7 +388,11 @@ final class CanvasView: MTKView {
     var usingMT = false
     let logger = StrokeLog()
     let input = InputQueue()
-    lazy var recorder = SessionRecorder(dir: (logger.path as NSString).deletingLastPathComponent)
+    lazy var recorder: SessionRecorder = {
+        let r = SessionRecorder(dir: (logger.path as NSString).deletingLastPathComponent)
+        r.clock = { [weak self] in self?.now() ?? CACurrentMediaTime() }
+        return r
+    }()
     func act(_ name: String, _ extra: [String: Any] = [:]) {
         var d = extra; d["k"] = "act"; d["a"] = name
         recorder.record(d, sensorT: frameSensorT)
@@ -792,6 +802,8 @@ final class CanvasView: MTKView {
             var layout = WritingLayout()
             layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
             layout.autoPan = tools.autoPan
+            layout.edge = settings.panEdge
+            layout.legacyStrokeEdge = CommandLine.arguments.contains("--legacy-edge")
             let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width)
             if move == .none { pendingMove = nil }
             else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
@@ -947,6 +959,16 @@ final class CanvasView: MTKView {
     func resetPerf() { perf = Perf(); lastPresented = 0 }
 
     /// Test baseline: same zoom and starting place as writing mode, without writing mode.
+    /// Replay: put the view exactly where a recorded view record says (scrolls/magnify done outside draw mode).
+    func setVisibleForReplay(x: Double, y: Double, w: Double, z: Double) {
+        changing("replay") {
+            var c = camera; c.zoom = z
+            let v = c.visible
+            c.center = CGPoint(x: x + v.width / 2, y: y + v.height / 2)
+            camera = c
+        }
+    }
+
     func setZoomForTest(settingsWritingZoom: Bool) {
         changing("test") { camera.zoom = 3; camera.home(); camera.clamp() }; needsRender = true
     }
@@ -993,8 +1015,9 @@ final class SessionRecorder {
         let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
         path = "\(dir)/session-\(f.string(from: Date())).jsonl"
     }
+    var clock: () -> Double = { CACurrentMediaTime() }   // the canvas clock (virtual in replays)
     func record(_ d: [String: Any], sensorT: Double) {
-        var d = d; d["m"] = CACurrentMediaTime(); d["t"] = sensorT
+        var d = d; d["m"] = clock(); d["t"] = sensorT
         if let data = try? JSONSerialization.data(withJSONObject: d) { buffer.append(data) }
         if CACurrentMediaTime() - lastFlush > 0.5 { flush() }
     }

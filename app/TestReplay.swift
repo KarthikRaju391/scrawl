@@ -359,3 +359,61 @@ enum TestAim {
         done()
     }
 }
+
+/// --test-session <recorded session.jsonl>: re-runs a recorded session through the app logic with a
+/// virtual clock (recorded times), synchronously and fast. Replays touch frames and the things touch
+/// doesn't produce (tool/mode changes, undo/redo/clear, pages, scroll/magnify outside draw mode);
+/// auto-pans, new lines and pinch moves are produced again by the app. The new run is recorded like
+/// any session, so the same analysis tools compare it with the original.
+enum TestSession {
+    static func run(canvas: CanvasView, path: String, done: @escaping () -> Void) {
+        let pad = Multitouch.padMM
+        let rows = (try? String(contentsOfFile: path, encoding: .utf8))?.split(separator: "\n")
+            .compactMap { try? JSONSerialization.jsonObject(with: Data($0.utf8)) as? [String: Any] } ?? []
+        var vclock = rows.first?["m"] as? Double ?? 0
+        canvas.now = { vclock }
+        // Start from the first recorded tool state and view.
+        if let t0 = rows.first(where: { $0["a"] as? String == "tools" }) { apply(tools: t0, canvas) }
+        var drawing = false
+        for r in rows {
+            vclock = r["m"] as? Double ?? vclock
+            canvas.advanceClock(); canvas.flushInputForTest()
+            switch r["k"] as? String {
+            case "touch":
+                guard drawing, let cs = r["c"] as? [[Double]] else { continue }
+                let contacts = cs.map { c in Contact(id: Int32(c[0]), state: Int32(c[1]), norm: CGPoint(x: c[2], y: c[3]),
+                                                     mm: CGPoint(x: c[2] * pad.width, y: c[3] * pad.height), pressure: c[4], size: 0.5, major: 7.5) }
+                canvas.handle(contacts, arrival: vclock, sensorT: r["t"] as? Double ?? 0)
+            case "view":
+                let src = r["src"] as? String ?? ""
+                if ["scroll", "magnify", "test", "zoomToPage", "replay", "unknown"].contains(src) {
+                    canvas.setVisibleForReplay(x: r["x"] as! Double, y: r["y"] as! Double, w: r["w"] as! Double, z: r["z"] as! Double)
+                }
+            case "act":
+                switch r["a"] as? String {
+                case "tools": apply(tools: r, canvas)
+                case "writingMode": canvas.writingMode = r["on"] as? Bool ?? false
+                case "drawMode": drawing = r["on"] as? Bool ?? false; canvas.drawMode = drawing
+                case "undo": canvas.undo()
+                case "redo": canvas.redo()
+                case "clear": canvas.clearPage()
+                case "newPage": canvas.newPage()
+                case "goToPage": canvas.goToPage(r["page"] as? Int ?? 0)
+                default: break
+                }
+            default: break
+            }
+        }
+        vclock += 5; canvas.advanceClock(); canvas.flushInputForTest()
+        canvas.now = { CACurrentMediaTime() }
+        done()
+    }
+    static func apply(tools r: [String: Any], _ canvas: CanvasView) {
+        var t = canvas.tools
+        if let v = r["tool"] as? String, let k = ToolKind(rawValue: v) { t.tool = k }
+        if let v = r["autoPan"] as? Int, let a = AutoPan(rawValue: v) { t.autoPan = a }
+        if let v = r["zoomLocked"] as? Bool { t.zoomLocked = v }
+        if let v = r["lineWidth"] as? Int { t.lineWidthIndex = v }
+        canvas.tools = t
+    }
+}
