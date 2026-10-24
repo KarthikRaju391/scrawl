@@ -16,6 +16,9 @@ final class ContainerView: NSView {
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
         super.init(frame: frame)
+        // The page, toolbar and panels are drawn light in both modes; system controls (the aim checkbox)
+        // must use light-mode colours too, or their labels turn white on the light panel in dark mode.
+        appearance = NSAppearance(named: .aqua)
         wantsLayer = true
         layer?.backgroundColor = NSColor(srgbRed: 0.945, green: 0.953, blue: 0.957, alpha: 1).cgColor
         canvas.wantsLayer = true
