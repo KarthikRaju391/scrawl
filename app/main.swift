@@ -221,6 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         canvas.drawMode = true
         container.toolbar.drawMode = true
+        container.toolbar.isHidden = true; container.toolbar.hidePanel()   // at once, not at the next layout
         updateBanner()
     }
 
@@ -235,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         canvas.drawMode = false
         container.toolbar.drawMode = false
+        container.toolbar.isHidden = false   // at once: a click right after Esc must reach it
         updateBanner()
         if stallNoticePending { stallNoticePending = false; showInfo(firstRun: false) }
     }

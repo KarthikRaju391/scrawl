@@ -53,7 +53,8 @@ extension AppDelegate {
         add("control: new page, pinch to zoom it") { self.page(0); pinch(spread: true) }
         add("control: back to page 1") { self.page(-1) }
         // Lock, then every path.
-        add("LOCK via toolbar button") { click(tb.center(of: .zoomLock)) }
+        // The toolbar is hidden in draw mode (the pointer is frozen there), so toolbar clicks happen outside it.
+        add("LOCK via toolbar button") { self.exitDrawMode(); click(tb.center(of: .zoomLock)); self.enterDrawMode(lock: false) }
         add("pinch out") { pinch(spread: true) }
         add("pinch in") { pinch(spread: false) }
         add("two-finger pan") { pan() }
@@ -75,7 +76,7 @@ extension AppDelegate {
         }
         add("writing off (W)") { key("w", code: 13) }
         add("new page (N)") { key("n", code: 45) }
-        add("previous / next page (toolbar)") { click(tb.center(of: .prevPage)); click(tb.center(of: .nextPage)); click(tb.center(of: .prevPage)) }
+        add("previous / next page (toolbar)") { self.exitDrawMode(); click(tb.center(of: .prevPage)); click(tb.center(of: .nextPage)); click(tb.center(of: .prevPage)); self.enterDrawMode(lock: false) }
         add("Cmd-0 zoom to page") { self.resetZoom() }
         add("leave draw mode (Esc), two-finger scroll") {
             key("\u{1b}", code: 53)
