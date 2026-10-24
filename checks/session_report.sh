@@ -1,8 +1,8 @@
 #!/bin/sh
 # Analyse recorded sessions and render a replay clip around every undo.
-# Usage: checks/session_report.sh [data dir]   (default: ~/code/trackpad-draw-predict/data)
+# Usage: checks/session_report.sh [data dir]   (default: ~/code/trackpad-draw/data)
 cd "$(dirname "$0")/.."
-DIR=${1:-$HOME/code/trackpad-draw-predict/data}
+DIR=${1:-$HOME/code/trackpad-draw/data}
 OUT=$DIR/reports; mkdir -p "$OUT"
 swiftc -O -o build/replay tools/replay.swift 2>/dev/null
 for S in "$DIR"/session-*.jsonl; do

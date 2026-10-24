@@ -1040,7 +1040,7 @@ final class StrokeLog {
     let path: String
 
     init() {
-        let dir = (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw-predict/data")
+        let dir = (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw/data")
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
         path = "\(dir)/strokes-\(f.string(from: Date())).jsonl"

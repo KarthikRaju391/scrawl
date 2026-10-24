@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 OUT=$(mktemp -d /tmp/td-e2e.XXXX)
 IN=$1; shift
 START=$(date +%s)
-TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw Predict.app/Contents/MacOS/TrackpadDraw" --test-replay "$IN" "$@" >/dev/null 2>&1 &
+TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw" --test-replay "$IN" "$@" >/dev/null 2>&1 &
 PID=$!
 sleep 1.5
 WID=$(build/winid $PID)

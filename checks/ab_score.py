@@ -2,7 +2,7 @@
 Each launch logs its hidden condition ("abCondition"); each exported page (page-*.png) belongs to
 the session running when it was exported. Per condition: OCR character accuracy of the pangram pages,
 and undos + eraser strokes per 100 strokes (the "that landed wrong" signal).
-Usage: python3 -I checks/ab_score.py ~/code/trackpad-draw-predict/data"""
+Usage: python3 -I checks/ab_score.py ~/code/trackpad-draw/data"""
 import glob, json, os, re, subprocess, sys
 from datetime import datetime
 d = sys.argv[1]

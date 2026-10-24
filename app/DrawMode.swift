@@ -34,7 +34,7 @@ enum CursorLock {
 }
 
 enum Watchdog {
-    static var logPath: String { (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw-predict/data") + "/watchdog.log" }
+    static var logPath: String { (ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"] ?? NSHomeDirectory() + "/code/trackpad-draw/data") + "/watchdog.log" }
     static var statePath: String { NSTemporaryDirectory() + "trackpad-draw-\(getpid()).locked" }
 
     /// Marker file so the watchdog log can say whether the app died while locked.

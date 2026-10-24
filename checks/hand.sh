@@ -3,7 +3,7 @@
 # Prints placement error of stroke starts vs the intended spot (mm on the pad), by context, and OCR.
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d /tmp/td-hand.XXXX)
-TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw Predict.app/Contents/MacOS/TrackpadDraw" --test-hand /tmp/hershey-dl --rejoin "$1" --seed "$2" --sigma "${3:-1.9}" --no-activate >/dev/null 2>&1 &
+TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw" --test-hand /tmp/hershey-dl --rejoin "$1" --seed "$2" --sigma "${3:-1.9}" --no-activate >/dev/null 2>&1 &
 PID=$!
 for i in $(seq 1 240); do [ -f "$OUT/ui-step.txt" ] && break; sleep 0.5; done
 kill -TERM $PID 2>/dev/null

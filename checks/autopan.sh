@@ -3,7 +3,7 @@
 # letters left to right, continuing just right of its last ink as it appears on screen.
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d /tmp/td-autopan.XXXX)
-TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw Predict.app/Contents/MacOS/TrackpadDraw" --test-autopan --no-activate "$@" >/dev/null 2>&1 &
+TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw" --test-autopan --no-activate "$@" >/dev/null 2>&1 &
 PID=$!; sleep 1.2; WID=$(build/winid $PID); i=0
 while [ ! -f "$OUT/ui-step.txt" ] && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); [ $i = 6 ] && screencapture -x -o -l"$WID" "$OUT/mid.png"; done
 screencapture -x -o -l"$WID" "$OUT/final.png"; kill -TERM $PID

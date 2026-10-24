@@ -2,7 +2,7 @@
 # Aim-first mode end to end (background). Prints PASS/FAIL per case.
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d /tmp/td-aim.XXXX)
-TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw Predict.app/Contents/MacOS/TrackpadDraw" --test-aim --no-activate >/dev/null 2>&1 &
+TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw" --test-aim --no-activate >/dev/null 2>&1 &
 PID=$!
 for i in $(seq 1 60); do [ -f "$OUT/ui-step.txt" ] && break; sleep 0.5; done
 kill -TERM $PID 2>/dev/null
