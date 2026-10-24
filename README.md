@@ -24,10 +24,17 @@ MultitouchSupport framework.
   and whether it was treated as a palm. One session with a resting palm is enough to set the
   thresholds from data.
 - Writing while zoomed in keeps the same on-screen line width, so small handwriting stays crisp.
-- **Writing mode** (W in draw mode, or the cursor button in the toolbar) is auto-pan, nothing
-  else: at any zoom, when a stroke you just finished reaches the right edge of the visible area
-  (its last 15%), the view pans left so that stroke ends in the middle of the screen. You carry on
-  from the middle of the pad. It never pans while a finger is down, and stops at the page's right end.
+- **Pages**: each page is infinitely long downwards. A dashed line marks every screen height (from
+  the aspect ratio of the display the app is on). Writing past one shows a hint: N for a new page,
+  or K to keep writing. Toolbar ‹ › + (or ⌘[ ⌘] ⌘N) move between pages and add one. Pages are
+  in memory only: quitting loses them.
+- **Pan and zoom** work everywhere: in draw mode with two fingers (pan) and pinch (zoom); outside
+  draw mode with the normal two-finger scroll and pinch.
+- **Writing mode** (W in draw mode, or the cursor button in the toolbar; tap it again for line width
+  ½ / ¾ / full page, or Off): at any zoom, when a stroke you just finished reaches the right 15%
+  of the view, the view pans so that stroke ends mid-screen, so you keep writing from the middle of
+  the pad. When the line reaches the chosen width, the view returns to the line's left edge, one
+  line down, with the new line in the middle of the screen. Nothing moves while a finger is down.
 - Toolbar: undo, redo, pen, marker, highlighter, eraser (erases whole strokes), background
   (none/square/dot/ruled), draw mode. Tap the selected tool for sizes and colors.
 - Keys in draw mode: P, M, H, E pick a tool; 1–5 pick a size.

@@ -179,10 +179,11 @@ enum TestStress {
     }
 }
 
-/// --test-autopan [--writing-off]: a simulated writer at zoom 3 writes 40 small loop "letters"
-/// left to right through the real input path. After each letter it looks at where its last ink now
-/// is on the pad and writes the next letter just right of it (as a person following the screen
-/// would). Reports each pan and where the last ink sat on the pad after it.
+/// --test-autopan [--writing-off]: a simulated writer at zoom 3, ½-page line width, writes 70 small
+/// loop "letters" through the real input path. After each letter it looks at where its last ink now
+/// is on the pad and writes the next one just right of it; when the view has jumped to a new line
+/// it starts again at the line's left edge (as a person following the screen would). Then checks
+/// the screen-height hint, a new page and going back.
 enum TestAutoPan {
     static func run(canvas: CanvasView, dir: String, done: @escaping () -> Void) {
         let pad = Multitouch.padMM
@@ -194,8 +195,10 @@ enum TestAutoPan {
                 preciseWait(until: deadline)
                 Multitouch.onFrame?(c, CACurrentMediaTime(), sensorT)
             }
-            var x = 0.45 * pad.width, y = 0.5 * pad.height
-            for k in 0..<40 {
+            var x = 0.10 * pad.width, y = 0.5 * pad.height
+            var lineStartX: Double?   // canvas x of the first letter on this line
+            var newLinesSeen = 0
+            for k in 0..<70 {
                 id += 1
                 for j in 0...24 {  // one loop, ~5 mm wide, ~0.2 s
                     let a = Double(j) / 24 * 2 * .pi
@@ -203,18 +206,35 @@ enum TestAutoPan {
                     emit([Contact(id: id, state: 4, norm: CGPoint(x: p.x / pad.width, y: p.y / pad.height), mm: p, pressure: 25, size: 0.5, major: 7.5)])
                 }
                 emit([])
-                for _ in 0..<35 { emit([]) }  // ~0.28 s gap (lets any pan finish)
-                // Look at the screen: where is the end of the last letter on the pad now?
-                let (pans, end) = DispatchQueue.main.sync { () -> (Int, CGPoint) in
+                for _ in 0..<30 { emit([]) }  // ~0.24 s gap (lets any pan finish)
+                let (pans, lines, end, b) = DispatchQueue.main.sync { () -> (Int, Int, CGPoint, CGRect) in
                     let b = canvas.doc.strokes.last!.bounds
-                    return (canvas.panCount, canvas.padPoint(CGPoint(x: b.maxX, y: b.midY)))
+                    return (canvas.panCount, canvas.newLineCount, canvas.padPoint(CGPoint(x: b.maxX, y: b.midY)), b)
                 }
-                events.append(["letter": Double(k), "pans": Double(pans), "lastInkPadX": end.x])
-                x = end.x * pad.width + 1.5
-                if x > pad.width - 6 { x = pad.width - 6 }  // no room left on the pad
+                if lineStartX == nil { lineStartX = b.minX }
+                events.append(["letter": Double(k), "pans": Double(pans), "newLines": Double(lines), "lastInkPadX": end.x, "lastInkPadY": end.y])
+                if lines > newLinesSeen {  // the view moved to a new line: start at its left edge, middle
+                    newLinesSeen = lines
+                    let start = DispatchQueue.main.sync { canvas.padPoint(CGPoint(x: lineStartX!, y: 0)) }
+                    x = start.x * pad.width; y = 0.5 * pad.height
+                } else {
+                    x = end.x * pad.width + 1.5
+                    if x > pad.width - 6 { x = pad.width - 6 }
+                }
             }
             DispatchQueue.main.async {
-                let r: [String: Any] = ["writing": canvas.writingMode, "events": events, "pans": canvas.panCount, "strokes": canvas.doc.strokes.count]
+                var r: [String: Any] = ["writing": canvas.writingMode, "events": events, "pans": canvas.panCount,
+                                        "newLines": canvas.newLineCount, "strokes": canvas.doc.strokes.count]
+                // Screen-height hint, new page, going back.
+                r["hintBefore"] = canvas.showPageHint
+                let deep = canvas.camera.page.height - canvas.screenUnits * 1.1
+                canvas.testAddStroke([StrokePoint(p: CGPoint(x: 200, y: deep), pressure: 0.5), StrokePoint(p: CGPoint(x: 260, y: deep), pressure: 0.5)])
+                r["hintAfterDeepStroke"] = canvas.showPageHint
+                let firstPageStrokes = canvas.doc.strokes.count
+                canvas.newPage()
+                r["afterNewPage"] = ["pages": canvas.pages.count, "index": canvas.pageIndex, "strokes": canvas.doc.strokes.count, "hint": canvas.showPageHint]
+                canvas.goToPage(0)
+                r["backToFirst"] = ["index": canvas.pageIndex, "strokes": canvas.doc.strokes.count, "expected": firstPageStrokes]
                 try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted]).write(to: URL(fileURLWithPath: dir + "/test-autopan.json"))
                 done()
             }

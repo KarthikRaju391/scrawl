@@ -4,18 +4,20 @@
 import AppKit
 
 final class ToolbarView: NSView {
-    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, draw }
+    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, draw, prevPage, nextPage, newPage }
     var state = ToolState() { didSet { needsDisplay = true; panel.state = state; panel.needsDisplay = true } }
     var drawMode = false { didSet { needsDisplay = true } }
     var writingMode = false { didSet { needsDisplay = true } }
     var onWriting: (() -> Void)?
+    var onPage: ((Int) -> Void)?   // -1 previous, +1 next, 0 new
     var onChange: ((ToolState) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var onDrawMode: (() -> Void)?
     let panel = PanelView()
 
-    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .draw]
+    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .draw, .prevPage, .nextPage, .newPage]
+    private let separatorsAfter = [1, 5, 8]
     private let cell: CGFloat = 44
     static let height: CGFloat = 56
 
@@ -23,19 +25,20 @@ final class ToolbarView: NSView {
         super.init(frame: frame)
         panel.isHidden = true
         panel.onPick = { [weak self] st in self?.state = st; self?.onChange?(st) }
+        panel.onWritingOff = { [weak self] in self?.panel.isHidden = true; self?.onWriting?() }
     }
     required init?(coder: NSCoder) { fatalError() }
     // A click on an unfocused window should still pick the tool, not just focus the window.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     private var pillRect: CGRect {
-        let w = CGFloat(items.count) * cell + 2 * 14 + 2 * 12  // + two separators
+        let w = CGFloat(items.count) * cell + 2 * 14 + CGFloat(separatorsAfter.count) * 12
         return CGRect(x: (bounds.width - w) / 2, y: 6, width: w, height: Self.height - 12)
     }
 
     private func rect(of i: Int) -> CGRect {
         var x = pillRect.minX + 14
-        for k in 0..<i { x += cell; if k == 1 || k == 5 { x += 12 } }
+        for k in 0..<i { x += cell; if separatorsAfter.contains(k) { x += 12 } }
         return CGRect(x: x, y: pillRect.minY, width: cell, height: pillRect.height)
     }
 
@@ -50,6 +53,9 @@ final class ToolbarView: NSView {
         case .background: return "square.grid.3x3"
         case .writing: return "character.cursor.ibeam"
         case .draw: return drawMode ? "hand.draw.fill" : "hand.draw"
+        case .prevPage: return "chevron.left"
+        case .nextPage: return "chevron.right"
+        case .newPage: return "doc.badge.plus"
         }
     }
 
@@ -83,7 +89,7 @@ final class ToolbarView: NSView {
             }
         }
         NSColor(white: 0.88, alpha: 1).setFill()
-        for k in [1, 5] { let r = rect(of: k); NSBezierPath(rect: CGRect(x: r.maxX + 5.5, y: r.minY + 10, width: 1, height: r.height - 20)).fill() }
+        for k in separatorsAfter { let r = rect(of: k); NSBezierPath(rect: CGRect(x: r.maxX + 5.5, y: r.minY + 10, width: 1, height: r.height - 20)).fill() }
     }
 
     override func mouseDown(with e: NSEvent) {
@@ -93,7 +99,11 @@ final class ToolbarView: NSView {
         case .undo: onUndo?()
         case .redo: onRedo?()
         case .draw: onDrawMode?()
-        case .writing: onWriting?()
+        case .writing:
+            if writingMode { togglePanel(.writing, under: rect(of: i)) } else { onWriting?() }
+        case .prevPage: onPage?(-1)
+        case .nextPage: onPage?(1)
+        case .newPage: onPage?(0)
         case .background: togglePanel(.background, under: rect(of: i))
         case .tool(let k):
             if state.tool == k { togglePanel(.tool, under: rect(of: i)) } else {
@@ -128,16 +138,17 @@ final class ToolbarView: NSView {
 
 /// The pop-up above the toolbar: size dots + color swatches for a tool, or background choices.
 final class PanelView: NSView {
-    enum Mode { case tool, background }
+    enum Mode { case tool, background, writing }
     var mode = Mode.tool
     var state = ToolState()
     var onPick: ((ToolState) -> Void)?
+    var onWritingOff: (() -> Void)?
     private let pad: CGFloat = 14, sw: CGFloat = 30
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     var preferredSize: CGSize {
         switch mode {
-        case .background: return CGSize(width: 4 * 64 + 2 * pad, height: 64 + 2 * pad)
+        case .background, .writing: return CGSize(width: 4 * 64 + 2 * pad, height: 64 + 2 * pad)
         case .tool: return CGSize(width: 6 * sw + 5 * 8 + 2 * pad, height: state.tool == .eraser ? sw + 2 * pad : 3 * sw + 2 * 8 + 12 + 2 * pad)
         }
     }
@@ -177,6 +188,25 @@ final class PanelView: NSView {
                     let ring = NSBezierPath(ovalIn: r.insetBy(dx: -1, dy: -1)); ring.lineWidth = 2; selBlue.setStroke(); ring.stroke()
                 }
             }
+        case .writing:  // line width: ½, ¾, full page; or turn writing mode off
+            let names = ["½ page", "¾ page", "Full", "Off"]
+            for i in 0..<4 {
+                let r = bgRect(i), tile = CGRect(x: r.midX - 18, y: r.maxY - 42, width: 36, height: 36)
+                NSColor(white: 0.97, alpha: 1).setFill(); NSBezierPath(roundedRect: tile, xRadius: 6, yRadius: 6).fill()
+                NSColor(white: 0.55, alpha: 1).set()
+                if i < 3 {
+                    let w = (tile.width - 8) * CGFloat(ToolState.lineWidths[i])
+                    for k in 0..<3 { NSBezierPath.fill(CGRect(x: tile.minX + 4, y: tile.minY + 9 + CGFloat(k) * 8, width: w, height: 2)) }
+                } else {
+                    let x = NSBezierPath(); x.lineWidth = 2
+                    x.move(to: CGPoint(x: tile.minX + 11, y: tile.minY + 11)); x.line(to: CGPoint(x: tile.maxX - 11, y: tile.maxY - 11))
+                    x.move(to: CGPoint(x: tile.minX + 11, y: tile.maxY - 11)); x.line(to: CGPoint(x: tile.maxX - 11, y: tile.minY + 11)); x.stroke()
+                }
+                if i < 3 && state.lineWidthIndex == i { let ring = NSBezierPath(roundedRect: tile.insetBy(dx: -2, dy: -2), xRadius: 7, yRadius: 7); ring.lineWidth = 2; selBlue.setStroke(); ring.stroke() }
+                let attr: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor(white: 0.3, alpha: 1)]
+                let str = NSAttributedString(string: names[i], attributes: attr)
+                str.draw(at: CGPoint(x: r.midX - str.size().width / 2, y: r.minY + 2))
+            }
         case .background:
             let names = ["None", "Square", "Dot", "Ruled"]
             for i in 0..<4 {
@@ -213,6 +243,10 @@ final class PanelView: NSView {
         case .background:
             guard let i = (0..<4).first(where: { bgRect($0).contains(p) }) else { return }
             s.background = i
+        case .writing:
+            guard let i = (0..<4).first(where: { bgRect($0).contains(p) }) else { return }
+            if i == 3 { onWritingOff?(); return }
+            s.lineWidthIndex = i
         }
         state = s
         needsDisplay = true

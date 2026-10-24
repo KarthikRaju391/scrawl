@@ -84,8 +84,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onRedo = { [weak self] in self?.canvas.redo() }
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
         tb.onWriting = { [weak self] in self?.toggleWriting() }
+        tb.onPage = { [weak self] d in self?.page(d) }
+        cv.onStatus = { [weak self] in self?.updateBanner() }
 
-        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress"].contains { CommandLine.arguments.contains($0) }
+        let testing = ["--test-replay", "--test-ui", "--test-autopan", "--test-stress", "--test-scroll"].contains { CommandLine.arguments.contains($0) }
         if testing {
             // Test input only: real touches on the trackpad would interleave with the replay.
             mtError = nil
@@ -140,6 +142,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         updateBanner()
     }
 
+    /// -1 previous, +1 next, 0 new page.
+    func page(_ d: Int) {
+        if d == 0 { canvas.newPage() } else { canvas.goToPage(canvas.pageIndex + d) }
+        updateBanner()
+    }
+
     func toggleWriting() {
         canvas.writingMode.toggle()
         container.toolbar.writingMode = canvas.writingMode
@@ -148,12 +156,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func updateBanner() {
         let model = canvas.usingMT ? Settings().widthModel : "speed (MultitouchSupport off: \(mtError ?? ""))"
-        container.banner.stringValue = canvas.writingMode
-            ? "Writing: the view pans by itself when your writing reaches the right edge. W = off, Esc exits."
-            : "Drawing: one finger draws, two fingers pan and pinch. W = writing mode, Esc exits."
-        container.banner.isHidden = !canvas.drawMode
-        container.hint.stringValue = "⌃⌥D to draw with the trackpad  ·  width: \(model)"
-        container.hint.isHidden = canvas.drawMode
+        let pageText = "Page \(canvas.pageIndex + 1) of \(canvas.pages.count)"
+        if canvas.showPageHint {
+            container.banner.stringValue = "\(pageText): you've filled a screen. N = new page, or K to keep writing here."
+            container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.85, green: 0.45, blue: 0.05, alpha: 1).cgColor
+        } else {
+            container.banner.stringValue = canvas.writingMode
+                ? "\(pageText) · Writing: pans by itself at the right edge, new line at the line width. W = off, Esc exits."
+                : "\(pageText) · Drawing: one finger draws, two fingers pan and pinch. W = writing mode, Esc exits."
+            container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
+        }
+        container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
+        container.hint.stringValue = "\(pageText)  ·  ⌃⌥D to draw with the trackpad  ·  width: \(model)"
+        container.hint.isHidden = !container.banner.isHidden
         container.needsLayout = true
     }
 
@@ -168,6 +183,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "h": s.tool = .highlighter
         case "e": s.tool = .eraser
         case "w": toggleWriting(); return true
+        case "n": page(0); return true
+        case "k" where canvas.showPageHint: canvas.dismissPageHint(); return true
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false
         }
@@ -193,12 +210,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         }
+        if a.contains("--test-scroll") {  // outside draw mode: two-finger scroll pans
+            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
+                canvas.setZoomForTest(settingsWritingZoom: true)
+                let before = canvas.camera.center
+                for (dx, dy) in [(Int32(0), Int32(-120)), (Int32(-200), Int32(0))] {  // scroll down, then right
+                    if let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: dy, wheel2: dx, wheel3: 0),
+                       let e = NSEvent(cgEvent: cg) {
+                        canvas.scrollWheel(with: e)
+                    }
+                }
+                let after = canvas.camera.center
+                let r: [String: Any] = ["drawMode": canvas.drawMode, "before": [before.x, before.y], "after": [after.x, after.y]]
+                try? JSONSerialization.data(withJSONObject: r).write(to: URL(fileURLWithPath: dir + "/test-scroll.json"))
+                try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+            }
+        }
         if a.contains("--test-autopan") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
                 NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
+                var t = canvas.tools; t.lineWidthIndex = 0; canvas.tools = t   // ½ page
                 if !a.contains("--writing-off") { toggleWriting() }
                 TestAutoPan.run(canvas: canvas, dir: dir) { [self] in
                     try? canvas.exportPNG(to: URL(fileURLWithPath: dir + "/page.png"), pxPerUnit: 1.5)
@@ -239,6 +274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let view = NSMenu(title: "View")
         view.addItem(withTitle: "Draw Mode (⌃⌥D)", action: #selector(toggleDrawModeAction), keyEquivalent: "").target = self
         view.addItem(withTitle: "Zoom to Whole Page", action: #selector(resetZoom), keyEquivalent: "0").target = self
+        view.addItem(withTitle: "New Page", action: #selector(newPageAction), keyEquivalent: "n").target = self
+        view.addItem(withTitle: "Previous Page", action: #selector(prevPageAction), keyEquivalent: "[").target = self
+        view.addItem(withTitle: "Next Page", action: #selector(nextPageAction), keyEquivalent: "]").target = self
         let exp = view.addItem(withTitle: "Export Page PNG (for OCR check)", action: #selector(exportPNG), keyEquivalent: "e"); exp.keyEquivalentModifierMask = [.command, .shift]; exp.target = self
         viewItem.submenu = view
         NSApp.mainMenu = main
@@ -248,6 +286,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func redoAction() { canvas.redo() }
     @objc func clearPage() { canvas.clearPage() }
     @objc func resetZoom() { canvas.resetZoom() }
+    @objc func newPageAction() { page(0) }
+    @objc func prevPageAction() { page(-1) }
+    @objc func nextPageAction() { page(1) }
     @objc func toggleDrawModeAction() { toggleDrawMode() }
     @objc func exportPNG() {
         let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"

@@ -98,12 +98,16 @@ struct Camera {
         let w = page.width / zoom, h = page.height / zoom
         return CGRect(x: center.x - w / 2, y: center.y - h / 2, width: w, height: h)
     }
+    /// The page is `page.width` wide, its top edge is at y = page.height, and it is infinitely long
+    /// downwards (y keeps decreasing). `page.height` is the visible height at zoom 1.
     mutating func clamp() {
         zoom = min(max(zoom, 1), Self.maxZoom)
         let v = visible
         center.x = min(max(center.x, v.width / 2), page.width - v.width / 2)
-        center.y = min(max(center.y, v.height / 2), page.height - v.height / 2)
+        center.y = min(center.y, page.height - v.height / 2)
     }
+    /// Top-left of the page at the current zoom.
+    mutating func home() { let v = visible; center = CGPoint(x: v.width / 2, y: page.height - v.height / 2) }
     /// Pad position (0...1, y up) -> canvas point. This is the absolute mapping.
     func canvas(fromPad n: CGPoint) -> CGPoint {
         let v = visible
@@ -128,6 +132,8 @@ struct ToolState {
     var colorIndex: [ToolKind: Int] = [.pen: 0, .marker: 7, .highlighter: 4]
     var sizeIndex: [ToolKind: Int] = [.pen: 1, .marker: 2, .highlighter: 2, .eraser: 2]
     var background = 0  // 0 none, 1 square, 2 dot, 3 ruled
+    static let lineWidths = [0.5, 0.75, 1.0]  // writing mode line width, fraction of the page width
+    var lineWidthIndex = 1
 
     var sizePt: Double { Self.sizes[tool]![sizeIndex[tool] ?? 2] }
     var color: NSColor { Self.colors[colorIndex[tool] ?? 0] }
@@ -236,7 +242,12 @@ final class InputQueue: @unchecked Sendable {
 // MARK: - Canvas view
 
 final class CanvasView: MTKView {
-    let doc = Document()
+    private(set) var pages: [Document] = [Document()]
+    private var pageCameras: [Camera] = []
+    private(set) var pageIndex = 0
+    var doc: Document { pages[pageIndex] }
+    /// Called when page, hint or mode status changes (the window updates its labels).
+    var onStatus: (() -> Void)?
     var tools = ToolState() { didSet { needsRender = true } }
     private(set) var camera: Camera
     private var renderer: Renderer!
@@ -272,11 +283,54 @@ final class CanvasView: MTKView {
     var perf = Perf()
     private var lastPresented = 0.0
 
-    // MARK: writing mode = auto-pan (see Writing.swift)
-    var writingMode = false { didSet { needsRender = true } }
-    private let autoPan = AutoPan()
+    // MARK: writing mode (see Writing.swift)
+    var writingMode = false { didSet { lineInk = nil; lineLeft = nil; needsRender = true } }
+    private var lineInk: CGRect?
+    private var lineLeft: Double?
     private var camAnim: (from: CGPoint, to: CGPoint, start: Double)?
     private(set) var panCount = 0
+    private(set) var newLineCount = 0
+
+    // MARK: pages and the screen-height hint
+    /// Height of the display the window is on, in canvas units (page width = display width).
+    var screenUnits: Double {
+        let f = window?.screen?.frame ?? NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1512, height: 982)
+        return camera.page.width * f.height / f.width
+    }
+    /// Screens of this page already filled with writing (shows the "new page?" hint).
+    private(set) var screensFilled = 0
+    var showPageHint: Bool { screensFilled > hintDismissedAt }
+    private var hintDismissedAt = 0
+
+    private func updateScreensFilled() {
+        let lowest = doc.strokes.map(\.bounds.minY).min() ?? camera.page.height
+        let n = Int((camera.page.height - lowest) / screenUnits)
+        if n != screensFilled { screensFilled = n; onStatus?() }
+    }
+
+    func newPage() {
+        endWritingLine()
+        if pageCameras.count < pages.count { pageCameras.append(camera) } else { pageCameras[pageIndex] = camera }
+        pages.append(Document())
+        pageIndex = pages.count - 1
+        camera.home()
+        pageCameras.append(camera)
+        screensFilled = 0; hintDismissedAt = 0
+        needsRender = true; onStatus?()
+    }
+
+    func goToPage(_ i: Int) {
+        guard pages.indices.contains(i), i != pageIndex else { return }
+        endWritingLine()
+        while pageCameras.count < pages.count { pageCameras.append(camera) }
+        pageCameras[pageIndex] = camera
+        pageIndex = i
+        camera = pageCameras[i]
+        screensFilled = 0; hintDismissedAt = 0; updateScreensFilled(); hintDismissedAt = screensFilled
+        needsRender = true; onStatus?()
+    }
+
+    private func endWritingLine() { lineInk = nil; lineLeft = nil }
 
     /// Test hook: where a canvas point currently is on the pad (0...1).
     func padPoint(_ p: CGPoint) -> CGPoint {
@@ -314,6 +368,7 @@ final class CanvasView: MTKView {
 
     override init(frame: NSRect, device: MTLDevice?) {
         camera = Camera(page: Self.pageUnits)
+        camera.home()
         super.init(frame: frame, device: device ?? MTLCreateSystemDefaultDevice())
         guard let r = Renderer(view: self) else { fatalError("Metal unavailable") }
         renderer = r
@@ -411,8 +466,26 @@ final class CanvasView: MTKView {
     override func touchesCancelled(with e: NSEvent) { nsTouchFrame(e) }
     // In draw mode physical clicks land on the frozen cursor over this view: swallow them.
     override func mouseDown(with e: NSEvent) { if !drawMode { super.mouseDown(with: e) } }
-    override func scrollWheel(with e: NSEvent) { if !drawMode { super.scrollWheel(with: e) } }
-    override func magnify(with e: NSEvent) {}
+    // Outside draw mode the usual trackpad gestures pan (two-finger scroll) and zoom (pinch).
+    // In draw mode the same gestures come from MultitouchSupport instead, and these are ignored.
+    override func scrollWheel(with e: NSEvent) {
+        guard !drawMode else { return }
+        let k = 1 / (ptPerUnit * camera.zoom)
+        camera.center.x -= e.scrollingDeltaX * k
+        camera.center.y += e.scrollingDeltaY * k
+        camera.clamp(); endWritingLine(); needsRender = true
+    }
+    override func magnify(with e: NSEvent) {
+        guard !drawMode else { return }
+        let p = convert(e.locationInWindow, from: nil)
+        let pad = CGPoint(x: p.x / bounds.width, y: p.y / bounds.height)
+        let anchor = camera.canvas(fromPad: pad)
+        camera.zoom *= 1 + e.magnification
+        camera.zoom = min(max(camera.zoom, 1), Camera.maxZoom)
+        let v = camera.visible
+        camera.center = CGPoint(x: anchor.x - pad.x * v.width + v.width / 2, y: anchor.y - pad.y * v.height + v.height / 2)
+        camera.clamp(); endWritingLine(); needsRender = true
+    }
 
     /// Is this contact where macOS currently sees a resting touch? (fresh within 0.25 s, 6% of the pad)
     private func appleResting(_ c: Contact) -> Bool {
@@ -448,6 +521,7 @@ final class CanvasView: MTKView {
             let v = self.camera.visible
             self.camera.center = CGPoint(x: anchor.x - now.x * v.width + v.width / 2, y: anchor.y - now.y * v.height + v.height / 2)
             self.camera.clamp()
+            self.endWritingLine()  // moved by hand: the next stroke starts a new line where it lands
         }
     }
 
@@ -491,10 +565,19 @@ final class CanvasView: MTKView {
         let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
         doc.add(s)
-        // Writing mode: the stroke reached the right edge of the view -> pan, now that the finger is up.
-        if writingMode, let c = autoPan.afterStroke(s.bounds, visible: camera.visible, page: camera.page) {
-            panCount += 1
-            slideCamera(to: c)
+        updateScreensFilled()
+        // Writing mode, now that the finger is up: pan along the line, or start the next line.
+        if writingMode {
+            if lineLeft == nil { lineLeft = s.bounds.minX }
+            let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
+            lineInk = line
+            var layout = WritingLayout()
+            layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
+            switch layout.after(stroke: s.bounds, line: line, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
+            case .none: break
+            case .pan(let c): panCount += 1; slideCamera(to: c)
+            case .newLine(let c): newLineCount += 1; lineInk = nil; slideCamera(to: c)
+            }
         }
     }
 
@@ -511,7 +594,29 @@ final class CanvasView: MTKView {
     private func render(predictAhead: Double) {
         let cpu0 = CACurrentMediaTime()
         let vis = camera.visible
-        var items: [Renderer.DrawItem] = doc.strokes.compactMap { s in
+        var items: [Renderer.DrawItem] = []
+        // Dashed line at every screen height down the page: where a screen's worth of writing ends.
+        do {
+            let k = 1 / (ptPerUnit * camera.zoom), su = screenUnits
+            var verts: [SIMD2<Float>] = []
+            var n = max(1, Int(((camera.page.height - vis.maxY) / su).rounded(.down)))
+            while camera.page.height - Double(n) * su >= vis.minY {
+                let y = camera.page.height - Double(n) * su
+                if y <= vis.maxY {
+                    var x = max(vis.minX, 0)
+                    while x < min(vis.maxX, camera.page.width) {
+                        let r = CGRect(x: x, y: y - 0.75 * k, width: 6 * k, height: 1.5 * k)
+                        let a = SIMD2<Float>(Float(r.minX), Float(r.minY)), b = SIMD2<Float>(Float(r.maxX), Float(r.minY))
+                        let c = SIMD2<Float>(Float(r.maxX), Float(r.maxY)), d = SIMD2<Float>(Float(r.minX), Float(r.maxY))
+                        verts += [a, b, c, a, c, d]
+                        x += 12 * k
+                    }
+                }
+                n += 1
+            }
+            if !verts.isEmpty { items.append(.init(mesh: Mesh(), verts: verts, color: premul(SIMD4(0.55, 0.6, 0.68, 0.6)))) }
+        }
+        items += doc.strokes.compactMap { s in
             guard s.bounds.intersects(vis) else { return nil }  // off-screen (most of the page when zoomed in)
             if s.mesh.buffer == nil { s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit)) }
             return .init(mesh: s.mesh, verts: nil, color: premul(s.color))
@@ -560,34 +665,37 @@ final class CanvasView: MTKView {
 
     // MARK: commands
 
-    func undo() { doc.undo(); needsRender = true }
+    func undo() { doc.undo(); endWritingLine(); updateScreensFilled(); needsRender = true }
     func redo() { doc.redo(); needsRender = true }
-    func clearPage() { doc.clear(); needsRender = true }
+    func clearPage() { doc.clear(); endWritingLine(); updateScreensFilled(); needsRender = true }
+    /// Dismiss the "new page?" hint until another screen fills up.
+    func dismissPageHint() { hintDismissedAt = screensFilled; onStatus?() }
     /// Test: add a finished stroke as if drawn at the current zoom.
     func testAddStroke(_ pts: [StrokePoint], tool: ToolKind = .pen) {
         let s = Stroke(tool: tool, color: SIMD4(0, 0, 0, 1), size: tools.sizePt / (ptPerUnit * camera.zoom), points: pts, maxStep: smoothStep)
         doc.add(s)
+        updateScreensFilled()
     }
     func resetPerf() { perf = Perf(); lastPresented = 0 }
 
     /// Test baseline: same zoom and starting place as writing mode, without writing mode.
     func setZoomForTest(settingsWritingZoom: Bool) {
         camera.zoom = 3
-        let v = camera.visible
-        camera.center = CGPoint(x: v.width / 2, y: camera.page.height - v.height / 2)
-        camera.clamp(); needsRender = true
+        camera.home(); camera.clamp(); needsRender = true
     }
 
     func resetZoom() { camera.zoom = 1; camera.clamp(); needsRender = true }
 
     /// Full page to PNG at `scale` px per canvas unit (CPU, same union fill as the GPU path).
     func exportPNG(to url: URL, pxPerUnit: Double = 4) throws {
-        let w = Int(camera.page.width * pxPerUnit), h = Int(camera.page.height * pxPerUnit)
+        let lowest = min(doc.strokes.map(\.bounds.minY).min() ?? 0, 0) - 20
+        let w = Int(camera.page.width * pxPerUnit), h = Int((camera.page.height - lowest) * pxPerUnit)
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
         ctx.setFillColor(.white)
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
         ctx.scaleBy(x: pxPerUnit, y: pxPerUnit)
+        ctx.translateBy(x: 0, y: -lowest)
         for s in doc.strokes {
             ctx.setFillColor(CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: CGFloat(s.color.w)))
             ctx.addPath(strokePath(s.points, size: s.size, brush: Brush.of(s.tool)))
