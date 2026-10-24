@@ -364,7 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func windowWillClose(_ n: Notification) { exitDrawMode(); NSApp.terminate(nil) }
-    func applicationWillTerminate(_ n: Notification) { exitDrawMode() }
+    func applicationWillTerminate(_ n: Notification) { exitDrawMode(); canvas.recorder.flush() }
 }
 
 let app = NSApplication.shared

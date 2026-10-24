@@ -81,7 +81,9 @@ extension AppDelegate {
             key("\u{1b}", code: 53)
             if let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: -80, wheel2: -60, wheel3: 0), let e = NSEvent(cgEvent: cg) { self.canvas.scrollWheel(with: e) }
         }
-        add("undo, redo, clear page") { self.canvas.undo(); self.canvas.redo(); self.canvas.clearPage(); self.canvas.undo() }
+        add("draw a stroke, then undo it") { self.enterDrawMode(lock: false); stroke(from: 0.3, to: 0.6, y: 0.4) }
+        add("undo") { self.canvas.undo() }
+        add("redo, clear page, undo the clear") { self.canvas.redo(); self.canvas.clearPage(); self.canvas.undo() }
         add("saved state reloads locked") {}
         // Unlock: Z in draw mode, then pinch must zoom again.
         add("UNLOCK via Z key") { self.enterDrawMode(lock: false); key("z", code: 6) }
