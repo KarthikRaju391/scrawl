@@ -1,4 +1,4 @@
-# Release checklist: Scrawl 1.0.0
+# Release checklist: Scrawl 0.1.0
 
 Distribution: a GitHub release with an ad-hoc-signed DMG (Karthik, 2026-10-24). No Developer ID and no
 notarization, so first-open needs the Gatekeeper steps in the README and the release notes.
@@ -11,11 +11,11 @@ The name and bundle ID are settled. A quick search on 2026-10-25 found other Mac
 - [Scrawl by schristoph](https://schristoph.online/blog/scrawl/): an open-source (MIT) macOS menu-bar overlay for drawing on top of any app. It's the closest in purpose.
 - [Scrawl by Liip AG](https://apps.apple.com/us/app/scrawl/id1444724045): an iPhone drawing game.
 
-This isn't a trademark search. Worth a look before publishing. Still open: the license, `data/`, publishing, and later a Developer ID.
+This isn't a trademark search. Worth a look before publishing. Still open: `data/`, publishing, and later a Developer ID.
 
 | decision | current setting | where to change |
 |---|---|---|
-| License | MIT, copyright Karthik Raju (the default unless you say otherwise) | `LICENSE` |
+| License | **Decided: MIT**, copyright 2026 Karthik Raju | `LICENSE` |
 | App name | **Decided: "Scrawl"** (2026-10-25). The repo and source keep "trackpad-draw". | `release.conf` `APP_NAME` |
 | Bundle ID | **Decided: `com.karthikraju.scrawl`** | `release.conf` `BUNDLE_ID`. On first launch, Scrawl moves any "Trackpad Draw" pages and logs folders to the new names and copies settings from the old bundle ID. The welcome window shows once. |
 | Recorded handwriting in `data/` | 59 MB of your strokes and sessions are in the repo; the replay tests need them | Before making the repo public: keep them, or have them removed from the history first (removing them later doesn't erase them from a public history). |

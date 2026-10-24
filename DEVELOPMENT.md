@@ -8,7 +8,7 @@
     scripts/release.sh              # release build + DMG + zip + SHA256SUMS.txt in dist/<version>/
 
 Only the Command Line Tools are needed. The name, bundle ID, version, minimum macOS and update URL
-live in `release.conf`. The build number is the git commit count.
+live in `release.conf`. The build number (`CFBundleVersion`) is `BUILD_NUMBER` in `release.conf`, currently 1.
 
 Development builds write touch diagnostics to `data/` in this repo. Release builds write nothing
 there unless Help › Record Touch Diagnostics is on, and then they write to `~/Library/Logs/Scrawl`.

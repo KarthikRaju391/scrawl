@@ -74,6 +74,7 @@ extension AppDelegate {
         Write and sketch with a finger on your trackpad.
         Uses Apple's private MultitouchSupport framework for touch pressure, with the public touch API as a fallback.
         Your pages stay on this Mac.
+        MIT License.
         """
         return [.applicationName: AppInfo.name, .applicationVersion: AppInfo.version, .version: "build \(AppInfo.build)",
                 .credits: NSAttributedString(string: credits, attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])]

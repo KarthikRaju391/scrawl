@@ -1,6 +1,8 @@
 # Changelog
 
-## 1.0.0 (unreleased, 2026-10-25)
+## 0.1.0 (unreleased, 2026-10-25)
+
+Licensed under the MIT License.
 
 First public release. Scrawl was called Trackpad Draw during development. On first launch it moves the
 old pages and settings over.

@@ -5,7 +5,7 @@ mode that pans along your line.
 
 ## Install
 
-1. Download `Scrawl-1.0.0.dmg` below, open it, and drag **Scrawl** into **Applications**.
+1. Download `Scrawl-0.1.0.dmg` below, open it, and drag **Scrawl** into **Applications**.
 2. This build isn't notarized by Apple, so macOS asks before the first open:
    - **macOS 14:** Control-click the app in Applications, choose **Open**, then **Open** again.
    - **macOS 15 and later:** open it once, then go to **System Settings › Privacy & Security**,
@@ -15,7 +15,7 @@ mode that pans along your line.
 The app asks for no permissions. Your pages stay on your Mac, and the only network request is
 **Check for Updates**, when you choose it.
 
-## What's in 1.0.0
+## What's in 0.1.0
 
 - Finger drawing with pressure. A public-API fallback keeps drawing working if the private touch
   framework is unavailable.

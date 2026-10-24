@@ -8,7 +8,7 @@ set -e
 cd "$(dirname "$0")"
 . ./release.conf
 CONFIG=${CONFIG:-dev}
-BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+BUILD=${BUILD_NUMBER:-1}
 if [ "$CONFIG" = release ]; then APP="build/release/$APP_NAME.app"; else APP="build/$APP_NAME.app"; fi
 FRAMEWORKS="-framework AppKit -framework Metal -framework MetalKit -framework QuartzCore -framework Carbon"
 rm -rf "$APP"

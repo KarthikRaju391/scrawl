@@ -96,4 +96,4 @@ See [DEVELOPMENT.md](DEVELOPMENT.md). You need only the Command Line Tools, not 
 
 ## License
 
-See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE). Copyright 2026 Karthik Raju.

@@ -27,7 +27,7 @@ echo "$ents" | grep -qE "<dict/>|<dict></dict>" && pass "no entitlements (no san
 codesign --verify --strict --deep "$APPDIR" && pass "signature verifies (ad-hoc: $(echo "$sig" | grep -c 'Signature=adhoc') )" || fail "codesign verify"
 spctl -a -t exec "$APPDIR" 2>/dev/null && fail "Gatekeeper accepted an un-notarized app?" || pass "Gatekeeper rejects it as expected without a Developer ID (users see the Open Anyway prompt)"
 plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$APPDIR/Contents/Info.plist"; }
-[ "$(plist CFBundleShortVersionString)" = "$VERSION" ] && [ "$(plist CFBundleIdentifier)" = "$BUNDLE_ID" ] && [ "$(plist LSMinimumSystemVersion)" = "$MIN_MACOS" ] \
+[ "$(plist CFBundleShortVersionString)" = "$VERSION" ] && [ "$(plist CFBundleVersion)" = "$BUILD_NUMBER" ] && [ "$(plist CFBundleIdentifier)" = "$BUNDLE_ID" ] && [ "$(plist LSMinimumSystemVersion)" = "$MIN_MACOS" ] \
     && pass "Info.plist: $(plist CFBundleName) $(plist CFBundleShortVersionString) build $(plist CFBundleVersion), $(plist CFBundleIdentifier), macOS $(plist LSMinimumSystemVersion)+" || fail "Info.plist"
 [ -f "$APPDIR/Contents/Resources/AppIcon.icns" ] && [ "$(plist CFBundleIconFile)" = AppIcon ] && pass "app icon" || fail "icon"
 
