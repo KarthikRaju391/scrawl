@@ -105,7 +105,8 @@ enum TestUI {
             ("7-square", { click(toolbar.center(of: .background)); click(toolbar.panel.centerOfBackground(1)); toolbar.hidePanel() }),
             ("8-writing-on", { click(toolbar.center(of: .writing)) }),
             ("9-writing-panel", { click(toolbar.center(of: .writing)) }),
-            ("10-full-width", { click(toolbar.panel.centerOfBackground(2)) }),
+            ("10-full-width", { click(toolbar.panel.centerOfWriting(2)) }),
+            ("10b-centred", { click(toolbar.panel.centerOfWriting(4)) }),
             ("11-settings", { toolbar.hidePanel(); click(toolbar.center(of: .settings)) }),
         ]
         var i = 0
@@ -206,13 +207,26 @@ enum TestAutoPan {
             }
             var x = 0.15 * pad.width
             let y = 0.5 * pad.height
+            let centred = DispatchQueue.main.sync { canvas.tools.panStyle == .keepCentred }
+            var seenPans = 0, seenLines = 0
+            var lineStart: Double?
             for k in 0..<90 {
                 touches.append(x / pad.width)
                 stroke((0...24).map { j in let a = Double(j) / 24 * 2 * .pi
                     return CGPoint(x: x + 2.5 - 2.5 * cos(a) + Double(j) / 24 * 2.5, y: y + 2.5 * sin(a)) })
                 x += 7.5                                   // next letter starts where this one ended
                 if k % 6 == 5 { stroke([CGPoint(x: x - 1, y: y + 6), CGPoint(x: x - 0.8, y: y + 6.2)]) }  // a dot by the lift
-                if x / pad.width > 0.8 { x = (0.12 + rng.next() * 0.12) * pad.width }  // carriage return
+                if centred {
+                    // Centred mode: the writer watches the screen. After a pan (or new line) it carries
+                    // on from where its last letter now appears; otherwise it continues from the lift.
+                    let (pans, lines, end) = DispatchQueue.main.sync { () -> (Int, Int, CGPoint) in
+                        let b = canvas.doc.strokes.filter { $0.bounds.width > 8 }.last!.bounds
+                        return (canvas.panCount, canvas.newLineCount, canvas.padPoint(CGPoint(x: b.maxX, y: b.midY)))
+                    }
+                    if lines > seenLines { seenLines = lines; x = Double(DispatchQueue.main.sync { canvas.padPoint(CGPoint(x: lineStart ?? 0, y: 0)).x }) * pad.width }
+                    else if pans > seenPans { seenPans = pans; x = end.x * pad.width + 1.5 }
+                    if lineStart == nil { lineStart = DispatchQueue.main.sync { Double(canvas.doc.strokes.first!.bounds.minX) } }
+                } else if x / pad.width > 0.8 { x = (0.12 + rng.next() * 0.12) * pad.width }  // carriage return
             }
             DispatchQueue.main.async {
                 canvas.flushInputForTest()
@@ -224,7 +238,7 @@ enum TestAutoPan {
                 }
                 let lines = Set(letters.map { Int(($0.midY / 10).rounded()) }).count
                 var r: [String: Any] = ["writing": canvas.writingMode, "strokes": canvas.doc.strokes.count, "letters": letters.count,
-                                        "returns": canvas.reanchorCount, "newLines": canvas.newLineCount, "overlapsWithPreviousLetter": overlaps,
+                                        "returns": canvas.reanchorCount, "pans": canvas.panCount, "newLines": canvas.newLineCount, "overlapsWithPreviousLetter": overlaps,
                                         "lettersLeftOfPrevious": backwards, "lineRows": lines, "touchX": touches]
                 r["hintBefore"] = canvas.showPageHint
                 let deep = canvas.camera.page.height - canvas.screenUnits * 1.1

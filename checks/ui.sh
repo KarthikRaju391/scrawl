@@ -2,7 +2,7 @@
 # Toolbar/panel/background walk-through with real NSEvent clicks; one screenshot per step.
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d /tmp/td-ui.XXXX)
-TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw" --test-ui >/dev/null 2>&1 &
+TRACKPAD_DRAW_DATA=$OUT "build/Trackpad Draw.app/Contents/MacOS/TrackpadDraw" --test-ui --no-activate >/dev/null 2>&1 &
 PID=$!
 sleep 1; WID=$(build/winid $PID)
 last=""

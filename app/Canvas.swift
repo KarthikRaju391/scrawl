@@ -142,6 +142,7 @@ struct ToolState {
     var background = 0  // 0 none, 1 square, 2 dot, 3 ruled
     static let lineWidths = [0.5, 0.75, 1.0]  // writing mode line width, fraction of the page width
     var lineWidthIndex = 1
+    var panStyle = PanStyle.followFinger
 
     var sizePt: Double { Self.sizes[tool]![sizeIndex[tool] ?? 2] }
     var color: NSColor { Self.colors[colorIndex[tool] ?? 0] }
@@ -259,7 +260,12 @@ final class CanvasView: MTKView {
     var doc: Document { pages[pageIndex] }
     /// Called when page, hint or mode status changes (the window updates its labels).
     var onStatus: (() -> Void)?
-    var tools = ToolState() { didSet { needsRender = true } }
+    var tools = ToolState() {
+        didSet {
+            if tools.panStyle != oldValue.panStyle || tools.lineWidthIndex != oldValue.lineWidthIndex { endWritingLine() }
+            needsRender = true
+        }
+    }
     private(set) var camera: Camera
     private var renderer: Renderer!
     private let gestures = GestureEngine()
@@ -352,7 +358,7 @@ final class CanvasView: MTKView {
     /// the finger is just after the line's end (or at the next line's start).
     private func reanchorIfReturning(_ c: Contact) {
         reanchor = nil
-        guard writingMode, let lift = lastLiftPad, let line = lineInk, let left = lineLeft else { return }
+        guard writingMode, tools.panStyle == .followFinger, let lift = lastLiftPad, let line = lineInk, let left = lineLeft else { return }
         var r = Reanchor(); r.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
         guard r.isReturn(down: c.norm, lastLift: lift) else { return }
         let gap = 3 * camera.page.width / camera.zoom / Multitouch.padMM.width  // 3 mm on the pad, in canvas units
@@ -641,6 +647,19 @@ final class CanvasView: MTKView {
                 return
             }
             reanchor = nil
+            if tools.panStyle == .keepCentred {
+                if lineLeft == nil { lineLeft = s.bounds.minX }
+                let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
+                lineInk = line
+                var layout = WritingLayout()
+                layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
+                switch layout.after(stroke: s.bounds, line: line, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width) {
+                case .none: break
+                case .pan(let c): panCount += 1; slideCamera(to: c)
+                case .newLine(let c): newLineCount += 1; lineInk = nil; slideCamera(to: c)
+                }
+                return
+            }
             if lineLeft == nil { lineLeft = s.bounds.minX }   // kept across new lines: lines align left
             lineInk = lineInk.map { $0.union(s.bounds) } ?? s.bounds
             var r = Reanchor(); r.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]

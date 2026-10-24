@@ -31,7 +31,10 @@ MultitouchSupport framework.
 - **Pan and zoom** work everywhere: in draw mode with two fingers (pan) and pinch (zoom); outside
   draw mode with the normal two-finger scroll and pinch.
 - **Writing mode** (W in draw mode, or the cursor button; tap it again for line width ½ / ¾ /
-  full page, or Off): the page follows your finger. Carry on from where you lifted and nothing
+  full page, pan style, or Off). Two pan styles:
+  - *Keep centred*: when a stroke you finish reaches the right 15% of the view, the view pans so
+    it ends mid-screen and you continue from the middle of the pad.
+  - *Follow finger* (default): the page follows your finger. Carry on from where you lifted and nothing
   moves (plain absolute mapping, which suits dots and crossbars). When you come back well to the left
   (≥ 15% of the pad width, your "carriage return"), the page shifts at that moment so the spot
   under your finger is just after the end of your line, wherever you chose to land. Once a line

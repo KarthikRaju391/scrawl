@@ -248,7 +248,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if !a.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
-                var t = canvas.tools; t.lineWidthIndex = 0; canvas.tools = t   // ½ page
+                var t = canvas.tools; t.lineWidthIndex = 0   // ½ page
+                if a.contains("--centred") { t.panStyle = .keepCentred }
+                canvas.tools = t
                 if !a.contains("--writing-off") { toggleWriting() }
                 TestAutoPan.run(canvas: canvas, dir: dir) { [self] in
                     try? canvas.exportPNG(to: URL(fileURLWithPath: dir + "/page.png"), pxPerUnit: 1.5)
@@ -259,7 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if a.contains("--test-ui") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-                NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil)
+                if !a.contains("--no-activate") { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
                 TestUI.run(window: window, toolbar: container.toolbar, dir: dir) { [self] in
                     // One wavy stroke through the real input path, without locking the cursor.
                     enterDrawMode(lock: false)
