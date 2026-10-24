@@ -5,7 +5,13 @@ notarization, so first-open needs the Gatekeeper steps in the README and the rel
 
 ## Karthik decides before publishing
 
-The name and bundle ID are settled. Still open: the license, `data/`, publishing, and later a Developer ID.
+The name and bundle ID are settled. A quick search on 2026-10-25 found other Mac apps called Scrawl:
+- [Scrawl by Cocoatype](https://apps.apple.com/us/app/scrawl/id1249895598?mt=12): an iCloud notes app on the Mac App Store, last updated 2021.
+- [Scrawl by Kit Langton](https://scrawl.kitlangton.com/): screen capture for AI coding agents, macOS 15+.
+- [Scrawl by schristoph](https://schristoph.online/blog/scrawl/): an open-source (MIT) macOS menu-bar overlay for drawing on top of any app. It's the closest in purpose.
+- [Scrawl by Liip AG](https://apps.apple.com/us/app/scrawl/id1444724045): an iPhone drawing game.
+
+This isn't a trademark search. Worth a look before publishing. Still open: the license, `data/`, publishing, and later a Developer ID.
 
 | decision | current setting | where to change |
 |---|---|---|
