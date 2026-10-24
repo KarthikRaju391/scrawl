@@ -154,7 +154,8 @@ final class PanelView: NSView {
     // Settings mode: real sliders (applied to the next stroke; stored in defaults).
     private lazy var smoothSlider = makeSlider(min: 0, max: 100, key: "smoothing", scale: 100, fallback: Smoothing.defaultValue * 100)
     private lazy var predictSlider = makeSlider(min: 0, max: 24, key: "predictMs", scale: 1, fallback: 12)
-    private let smoothLabel = NSTextField(labelWithString: ""), predictLabel = NSTextField(labelWithString: "")
+    private lazy var edgeSlider = makeSlider(min: 0, max: 10, key: "edgeGuard", scale: 100, fallback: Settings.defaultEdgeGuard * 100)
+    private let smoothLabel = NSTextField(labelWithString: ""), predictLabel = NSTextField(labelWithString: ""), edgeLabel = NSTextField(labelWithString: "")
     private lazy var aimBox: NSButton = {
         let b = NSButton(checkboxWithTitle: "Aim first (A): a light touch shows where you'll write; press to ink", target: self, action: #selector(aimToggled))
         b.font = .systemFont(ofSize: 11); return b
@@ -170,12 +171,13 @@ final class PanelView: NSView {
     }
     @objc private func sliderChanged(_ s: NSSlider) {
         if s === smoothSlider { UserDefaults.standard.set(s.doubleValue / 100, forKey: "smoothing") }
+        else if s === edgeSlider { UserDefaults.standard.set(s.doubleValue.rounded() / 100, forKey: "edgeGuard") }
         else { UserDefaults.standard.set(s.doubleValue.rounded(), forKey: "predictMs") }
         updateSettingsLabels()
     }
     private func resetDefaults() {
-        UserDefaults.standard.removeObject(forKey: "smoothing"); UserDefaults.standard.removeObject(forKey: "predictMs")
-        smoothSlider.doubleValue = Smoothing.defaultValue * 100; predictSlider.doubleValue = 12
+        for k in ["smoothing", "predictMs", "edgeGuard"] { UserDefaults.standard.removeObject(forKey: k) }
+        smoothSlider.doubleValue = Smoothing.defaultValue * 100; predictSlider.doubleValue = 12; edgeSlider.doubleValue = Settings.defaultEdgeGuard * 100
         updateSettingsLabels()
     }
     private func updateSettingsLabels() {
@@ -183,21 +185,27 @@ final class PanelView: NSView {
         let p = predictSlider.doubleValue.rounded()
         predictLabel.stringValue = p == 0 ? "Prediction off   ← never overshoots · keeps up →" :
             String(format: "Prediction %.0f ms   ← never overshoots · keeps up →", p)
+        let e = edgeSlider.doubleValue.rounded()
+        edgeLabel.stringValue = e == 0 ? "Edge guard off   ← off · ignore more of the pad's edges →" :
+            String(format: "Edge guard %.0f%%   ← off · ignore more of the pad's edges →", e)
     }
     private func layoutSettings() {
         let show = mode == .settings
-        for v in [smoothSlider, predictSlider, smoothLabel, predictLabel, aimBox] as [NSView] {
+        for v in [smoothSlider, predictSlider, edgeSlider, smoothLabel, predictLabel, edgeLabel, aimBox] as [NSView] {
             if v.superview == nil { addSubview(v) }
             v.isHidden = !show
         }
         guard show else { return }
-        for l in [smoothLabel, predictLabel] { l.font = .systemFont(ofSize: 11); l.textColor = NSColor(white: 0.3, alpha: 1); l.lineBreakMode = .byTruncatingTail }
+        for l in [smoothLabel, predictLabel, edgeLabel] { l.font = .systemFont(ofSize: 11); l.textColor = NSColor(white: 0.3, alpha: 1); l.lineBreakMode = .byTruncatingTail }
         let w = bounds.width - 2 * pad
         smoothLabel.frame = CGRect(x: pad, y: bounds.height - pad - 16, width: w, height: 16)
         smoothSlider.frame = CGRect(x: pad, y: bounds.height - pad - 40, width: w, height: 22)
         predictLabel.frame = CGRect(x: pad, y: bounds.height - pad - 66, width: w, height: 16)
         predictSlider.frame = CGRect(x: pad, y: bounds.height - pad - 90, width: w, height: 22)
-        aimBox.frame = CGRect(x: pad, y: bounds.height - pad - 118, width: w, height: 20)
+        edgeLabel.frame = CGRect(x: pad, y: bounds.height - pad - 116, width: w, height: 16)
+        edgeSlider.frame = CGRect(x: pad, y: bounds.height - pad - 140, width: w, height: 22)
+        edgeSlider.numberOfTickMarks = 11; edgeSlider.allowsTickMarkValuesOnly = true
+        aimBox.frame = CGRect(x: pad, y: bounds.height - pad - 168, width: w, height: 20)
         aimBox.state = state.aimFirst ? .on : .off
         updateSettingsLabels()
     }
@@ -210,7 +218,7 @@ final class PanelView: NSView {
         switch mode {
         case .background: return CGSize(width: 4 * 64 + 2 * pad, height: 64 + 2 * pad)
         case .writing: return CGSize(width: 7 * 64 + 2 * 12 + 2 * pad, height: 64 + 2 * pad)
-        case .settings: return CGSize(width: 400, height: 172)
+        case .settings: return CGSize(width: 420, height: 222)
         case .tool: return CGSize(width: 6 * sw + 5 * 8 + 2 * pad, height: state.tool == .eraser ? sw + 2 * pad : 3 * sw + 2 * 8 + 12 + 2 * pad)
         }
     }

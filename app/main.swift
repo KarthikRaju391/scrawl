@@ -346,6 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-edge") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestEdge.run(app: self) } }
         if a.contains("--test-mapping") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMapping.run(app: self) } }
         if a.contains("--test-about") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestAbout.run(app: self) } }
         if let i = a.firstIndex(of: "--test-input"), i + 1 < a.count {

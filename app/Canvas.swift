@@ -47,6 +47,15 @@ struct Settings {
         if let i = a.firstIndex(of: "--pan-edge"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
         return d.object(forKey: "panEdge") as? Double ?? 0.70
     }
+    /// Edge guard: touches that start within this fraction of the pad from any edge are ignored (a resting
+    /// palm or thumb). 0 = off; `--edge-guard` overrides (replays of old sessions use 0). The inner area
+    /// maps to the whole writing area.
+    static let defaultEdgeGuard = 0.05
+    var edgeGuard: Double {
+        let a = CommandLine.arguments
+        if let i = a.firstIndex(of: "--edge-guard"), i + 1 < a.count, let v = Double(a[i + 1]) { return min(max(v, 0), 0.2) }
+        return min(max(d.object(forKey: "edgeGuard") as? Double ?? Self.defaultEdgeGuard, 0), 0.2)
+    }
     var rejoinRadiusMM: Double { d.object(forKey: "rejoinRadiusMM") as? Double ?? 3.5 }
     var rejoinWindowMs: Double { d.object(forKey: "rejoinWindowMs") as? Double ?? 250 }
     var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
@@ -136,6 +145,17 @@ struct Camera {
     static let maxZoom = 12.0
 
     init(page: CGSize) { self.page = page; center = CGPoint(x: page.width / 2, y: page.height / 2) }
+    /// The edge guard's band (fraction of the pad per side). The pad inside it maps onto the whole view;
+    /// a stroke that started inside and runs into the band keeps going past the view's edge.
+    nonisolated(unsafe) static var margin = 0.0
+    static func active(_ n: CGPoint) -> CGPoint {
+        let m = margin, k = 1 / (1 - 2 * m)
+        return CGPoint(x: (n.x - m) * k, y: (n.y - m) * k)
+    }
+    static func pad(fromActive a: CGPoint) -> CGPoint {
+        let m = margin
+        return CGPoint(x: a.x * (1 - 2 * m) + m, y: a.y * (1 - 2 * m) + m)
+    }
 
     var visible: CGRect {
         let w = page.width / zoom, h = page.height / zoom
@@ -154,16 +174,16 @@ struct Camera {
     mutating func navigate(from prev: CGPoint, to now: CGPoint, ratio: Double, zoomLocked: Bool) {
         let anchor = canvas(fromPad: prev)
         if !zoomLocked { zoom = min(max(zoom * ratio, 1), Self.maxZoom) }
-        let v = visible
-        center = CGPoint(x: anchor.x - now.x * v.width + v.width / 2, y: anchor.y - now.y * v.height + v.height / 2)
+        let v = visible, a = Self.active(now)
+        center = CGPoint(x: anchor.x - a.x * v.width + v.width / 2, y: anchor.y - a.y * v.height + v.height / 2)
         clamp()
     }
 
     /// Top-left of the page at the current zoom.
     mutating func home() { let v = visible; center = CGPoint(x: v.width / 2, y: page.height - v.height / 2) }
     /// Pad position (0...1, y up) -> canvas point. This is the absolute mapping.
-    func canvas(fromPad n: CGPoint) -> CGPoint {
-        let v = visible
+    func canvas(fromPad p: CGPoint) -> CGPoint {
+        let v = visible, n = Self.active(p)
         return CGPoint(x: v.minX + n.x * v.width, y: v.minY + n.y * v.height)
     }
 }
@@ -224,6 +244,10 @@ final class GestureEngine {
     private(set) var mode = Mode.idle
     var drawingId: Int32? { if case let .drawing(id, _) = mode { return id }; return nil }
     private var palm = Set<Int32>()
+    /// Contacts that touched down in the edge band: ignored until they lift (never draw, pan or pinch).
+    private(set) var edgeIgnored = Set<Int32>()
+    var edgeGuard: () -> Double = { Settings.defaultEdgeGuard }
+    static func inBand(_ n: CGPoint, _ g: Double) -> Bool { g > 0 && (n.x < g || n.x > 1 - g || n.y < g || n.y > 1 - g) }
     /// Extra palm signal (macOS resting-touch classification), checked per contact per frame.
     var isPalm: (Contact) -> Bool = { _ in false }
     /// Called once per contact when it lifts: (id, was classified palm, drew a stroke).
@@ -242,7 +266,7 @@ final class GestureEngine {
 
     func reset() {
         if case .drawing = mode { onEnd?(false) }
-        mode = .idle; palm.removeAll(); navPrev = nil; drewIds.removeAll(); seen.removeAll()
+        mode = .idle; palm.removeAll(); edgeIgnored.removeAll(); navPrev = nil; drewIds.removeAll(); seen.removeAll()
     }
 
     /// Contacts already on the pad when draw mode starts (a resting palm) never draw.
@@ -253,13 +277,17 @@ final class GestureEngine {
         let down = contacts.filter(\.isDown)
         let ids = Set(down.map(\.id))
         for id in seen.subtracting(ids) { onContactEnd?(id, palm.contains(id), drewIds.contains(id)) }
+        // Edge guard: only where a contact first touches down counts; moving into the band later is fine.
+        let g = edgeGuard()
+        for c in down where !seen.contains(c.id) && Self.inBand(c.norm, g) { edgeIgnored.insert(c.id) }
+        edgeIgnored = edgeIgnored.intersection(ids)
         seen = ids
         drewIds = drewIds.intersection(ids)
         palm = palm.intersection(ids)
         if palmRejection {
             for c in down where c.major > settings.palmMajor || c.size > settings.palmSize || isPalm(c) { palm.insert(c.id) }
         }
-        let fingers = down.filter { !palm.contains($0.id) }.sorted { $0.id < $1.id }
+        let fingers = down.filter { !palm.contains($0.id) && !edgeIgnored.contains($0.id) }.sorted { $0.id < $1.id }
 
         switch mode {
         case .idle:
@@ -405,7 +433,8 @@ final class CanvasView: MTKView {
     private var activity: NSObjectProtocol?
     var usingMT = false
     /// Edge guard: fraction of the pad along each edge where new touches are ignored (0 = off).
-    var edgeGuardFraction: Double { 0 }
+    var edgeGuardFraction: Double { Camera.margin }
+    private var edgeGuardObserver: Any?
     let logger = StrokeLog()
     let input = InputQueue()
     lazy var recorder: SessionRecorder = {
@@ -491,7 +520,7 @@ final class CanvasView: MTKView {
     /// Test hook: where a canvas point currently is on the pad (0...1).
     func padPoint(_ p: CGPoint) -> CGPoint {
         let v = camera.visible
-        return CGPoint(x: (p.x - v.minX) / v.width, y: (p.y - v.minY) / v.height)
+        return Camera.pad(fromActive: CGPoint(x: (p.x - v.minX) / v.width, y: (p.y - v.minY) / v.height))
     }
 
     private func slideCamera(to c: CGPoint, src: String = "autopan") {
@@ -717,6 +746,13 @@ final class CanvasView: MTKView {
     private var contactStats: [Int32: (maxSize: Double, maxMajor: Double, resting: Bool, start: Double)] = [:]
 
     private func wireGestures() {
+        Camera.margin = Settings().edgeGuard
+        gestures.edgeGuard = { Camera.margin }
+        // The Edge guard slider writes the default; pick it up for the next touch.
+        edgeGuardObserver = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
+            let g = Settings().edgeGuard
+            if g != Camera.margin { Camera.margin = g }
+        }
         gestures.isPalm = { [weak self] c in
             guard let self else { return false }
             let r = self.appleResting(c)
