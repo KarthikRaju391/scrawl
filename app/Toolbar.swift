@@ -4,7 +4,7 @@
 import AppKit
 
 final class ToolbarView: NSView {
-    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, draw, prevPage, nextPage, newPage }
+    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, settings, draw, prevPage, nextPage, newPage }
     var state = ToolState() { didSet { needsDisplay = true; panel.state = state; panel.needsDisplay = true } }
     var drawMode = false { didSet { needsDisplay = true } }
     var writingMode = false { didSet { needsDisplay = true } }
@@ -16,8 +16,8 @@ final class ToolbarView: NSView {
     var onDrawMode: (() -> Void)?
     let panel = PanelView()
 
-    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .draw, .prevPage, .nextPage, .newPage]
-    private let separatorsAfter = [1, 5, 8]
+    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .settings, .draw, .prevPage, .nextPage, .newPage]
+    private let separatorsAfter = [1, 5, 9]
     private let cell: CGFloat = 44
     static let height: CGFloat = 56
 
@@ -52,6 +52,7 @@ final class ToolbarView: NSView {
         case .tool(.eraser): return "eraser"
         case .background: return "square.grid.3x3"
         case .writing: return "character.cursor.ibeam"
+        case .settings: return "slider.horizontal.3"
         case .draw: return drawMode ? "hand.draw.fill" : "hand.draw"
         case .prevPage: return "chevron.left"
         case .nextPage: return "chevron.right"
@@ -74,6 +75,7 @@ final class ToolbarView: NSView {
             case .tool(let k): selected = state.tool == k; if k != .eraser { tint = ToolState.colors[state.colorIndex[k] ?? 0] }
             case .draw: selected = drawMode
             case .writing: selected = writingMode
+            case .settings: selected = !panel.isHidden && panel.mode == .settings
             case .background: selected = !panel.isHidden && panel.mode == .background
             default: selected = false
             }
@@ -101,6 +103,7 @@ final class ToolbarView: NSView {
         case .draw: onDrawMode?()
         case .writing:
             if writingMode { togglePanel(.writing, under: rect(of: i)) } else { onWriting?() }
+        case .settings: togglePanel(.settings, under: rect(of: i))
         case .prevPage: onPage?(-1)
         case .nextPage: onPage?(1)
         case .newPage: onPage?(0)
@@ -138,17 +141,65 @@ final class ToolbarView: NSView {
 
 /// The pop-up above the toolbar: size dots + color swatches for a tool, or background choices.
 final class PanelView: NSView {
-    enum Mode { case tool, background, writing }
+    enum Mode { case tool, background, writing, settings }
     var mode = Mode.tool
     var state = ToolState()
     var onPick: ((ToolState) -> Void)?
     var onWritingOff: (() -> Void)?
     private let pad: CGFloat = 14, sw: CGFloat = 30
+
+    // Settings mode: real sliders (applied to the next stroke; stored in defaults).
+    private lazy var smoothSlider = makeSlider(min: 0, max: 100, key: "smoothing", scale: 100, fallback: Smoothing.defaultValue * 100)
+    private lazy var predictSlider = makeSlider(min: 0, max: 24, key: "predictMs", scale: 1, fallback: 12)
+    private let smoothLabel = NSTextField(labelWithString: ""), predictLabel = NSTextField(labelWithString: "")
+    private var resetRect: CGRect { CGRect(x: bounds.width - pad - 70, y: 8, width: 70, height: 20) }
+
+    private func makeSlider(min: Double, max: Double, key: String, scale: Double, fallback: Double) -> NSSlider {
+        let v = (UserDefaults.standard.object(forKey: key) as? Double).map { $0 * scale } ?? fallback
+        let sl = NSSlider(value: v, minValue: min, maxValue: max, target: self, action: #selector(sliderChanged(_:)))
+        sl.isContinuous = true
+        return sl
+    }
+    @objc private func sliderChanged(_ s: NSSlider) {
+        if s === smoothSlider { UserDefaults.standard.set(s.doubleValue / 100, forKey: "smoothing") }
+        else { UserDefaults.standard.set(s.doubleValue.rounded(), forKey: "predictMs") }
+        updateSettingsLabels()
+    }
+    private func resetDefaults() {
+        UserDefaults.standard.removeObject(forKey: "smoothing"); UserDefaults.standard.removeObject(forKey: "predictMs")
+        smoothSlider.doubleValue = Smoothing.defaultValue * 100; predictSlider.doubleValue = 12
+        updateSettingsLabels()
+    }
+    private func updateSettingsLabels() {
+        smoothLabel.stringValue = String(format: "Smoothing %.0f%%   ← exact · steadier →", smoothSlider.doubleValue)
+        let p = predictSlider.doubleValue.rounded()
+        predictLabel.stringValue = p == 0 ? "Prediction off   ← never overshoots · keeps up →" :
+            String(format: "Prediction %.0f ms   ← never overshoots · keeps up →", p)
+    }
+    private func layoutSettings() {
+        let show = mode == .settings
+        for v in [smoothSlider, predictSlider, smoothLabel, predictLabel] as [NSView] {
+            if v.superview == nil { addSubview(v) }
+            v.isHidden = !show
+        }
+        guard show else { return }
+        for l in [smoothLabel, predictLabel] { l.font = .systemFont(ofSize: 11); l.textColor = NSColor(white: 0.3, alpha: 1); l.lineBreakMode = .byTruncatingTail }
+        let w = bounds.width - 2 * pad
+        smoothLabel.frame = CGRect(x: pad, y: bounds.height - pad - 16, width: w, height: 16)
+        smoothSlider.frame = CGRect(x: pad, y: bounds.height - pad - 40, width: w, height: 22)
+        predictLabel.frame = CGRect(x: pad, y: bounds.height - pad - 66, width: w, height: 16)
+        predictSlider.frame = CGRect(x: pad, y: bounds.height - pad - 90, width: w, height: 22)
+        updateSettingsLabels()
+    }
+    override var isHidden: Bool { didSet { if !isHidden { layoutSettings() } } }
+    override func layout() { super.layout(); layoutSettings() }
+    override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); layoutSettings() }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     var preferredSize: CGSize {
         switch mode {
         case .background, .writing: return CGSize(width: 4 * 64 + 2 * pad, height: 64 + 2 * pad)
+        case .settings: return CGSize(width: 340, height: 150)
         case .tool: return CGSize(width: 6 * sw + 5 * 8 + 2 * pad, height: state.tool == .eraser ? sw + 2 * pad : 3 * sw + 2 * 8 + 12 + 2 * pad)
         }
     }
@@ -167,8 +218,15 @@ final class PanelView: NSView {
         let box = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 14, yRadius: 14)
         NSColor.white.setFill(); box.fill()
         NSColor(white: 0.86, alpha: 1).setStroke(); box.stroke()
+        if mode == .settings {
+            let attr: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1)]
+            let str = NSAttributedString(string: "Defaults", attributes: attr)
+            str.draw(at: CGPoint(x: resetRect.maxX - str.size().width, y: resetRect.minY + 3))
+            return
+        }
         let selBlue = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1)
         switch mode {
+        case .settings: break  // sliders are subviews
         case .tool:
             let sizes = ToolState.sizes[state.tool]!
             let color = state.tool == .eraser ? NSColor(white: 0.35, alpha: 1) : state.color
@@ -243,6 +301,9 @@ final class PanelView: NSView {
         case .background:
             guard let i = (0..<4).first(where: { bgRect($0).contains(p) }) else { return }
             s.background = i
+        case .settings:
+            if resetRect.contains(p) { resetDefaults() }
+            return
         case .writing:
             guard let i = (0..<4).first(where: { bgRect($0).contains(p) }) else { return }
             if i == 3 { onWritingOff?(); return }

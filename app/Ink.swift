@@ -40,6 +40,23 @@ struct OneEuro2D {
     }
 }
 
+// MARK: - Smoothing control (one 0...1 knob -> One Euro settings)
+
+/// Maps the Smoothing slider (0 = raw finger, 1 = heaviest) to One Euro parameters, log-interpolated
+/// through three anchors. Higher minCutoff = ink settles faster when the finger stops (time
+/// constant 1/(2*pi*minCutoff)) but a still finger wobbles more; higher beta = less lag while moving.
+enum Smoothing {
+    static let anchors: [(s: Double, minCutoff: Double, beta: Double)] = [(0, 30, 4), (0.5, 4, 1), (1, 0.5, 0.1)]
+    static let defaultValue = 0.5
+    static func params(_ s: Double) -> (minCutoff: Double, beta: Double) {
+        let s = min(max(s, 0), 1)
+        let (a, b) = s <= 0.5 ? (anchors[0], anchors[1]) : (anchors[1], anchors[2])
+        let u = (s - a.s) / (b.s - a.s)
+        func lerpLog(_ x: Double, _ y: Double) -> Double { exp(log(x) + (log(y) - log(x)) * u) }
+        return (lerpLog(a.minCutoff, b.minCutoff), lerpLog(a.beta, b.beta))
+    }
+}
+
 // MARK: - Width models (swappable; tune after the guided probe run)
 
 /// One input sample from a finger. `mm` is pad position in millimetres (filter space).
@@ -236,6 +253,7 @@ struct StrokeBuilder {
     }
 
     mutating func add(_ s: InputSample) {
+        lastRaw = s.mm
         var f = filter.filter(s.mm, t: s.t)
         if let l = lastFiltered {
             let t = 0.15 + (1 - streamline) * 0.85
@@ -247,7 +265,7 @@ struct StrokeBuilder {
         lastFiltered = f
         lastT = s.t
         recent.append((s.t, f))
-        if recent.count > 3 { recent.removeFirst() }
+        if recent.count > 5 { recent.removeFirst() }
         let c = toCanvas(f)
         // Same point again (finger still): update its pressure instead of stacking duplicates.
         if let lp = points.last, hypot(c.x - lp.p.x, c.y - lp.p.y) < 1e-9 {
@@ -257,16 +275,32 @@ struct StrokeBuilder {
         }
     }
 
-    /// Point extrapolated `ahead` seconds along the filtered velocity, to hide a frame of lag.
+    /// The finger lifted: end the stroke exactly where it last was, not where the smoothed line had
+    /// got to (otherwise the end falls short or keeps bending towards it).
+    private(set) var lastRaw: CGPoint?
+    mutating func finish() {
+        guard let raw = lastRaw, let last = points.last else { return }
+        let c = toCanvas(raw)
+        if hypot(c.x - last.p.x, c.y - last.p.y) > 1e-6 { points.append(StrokePoint(p: c, pressure: last.pressure)) }
+    }
+
+    /// Point extrapolated `ahead` seconds along the recent velocity, to hide display latency.
+    /// Damped when slowing down or turning, where straight-line extrapolation shoots off the path:
+    /// on Karthik's strokes this cut the tip's worst-case stray (p95) from 17 to 11 pt at 24 ms
+    /// with the same median lag (tools/predict_damped.py).
     func predicted(ahead: Double) -> StrokePoint? {
-        // Velocity from the last ~2 frames of filtered output. (The One Euro derivative is
-        // smoothed at 1 Hz and lags badly on curves: it pointed >60 degrees off in a third of frames.)
-        guard let l = lastFiltered, points.count > 2, recent.count == 3, recent[2].t > recent[0].t else { return nil }
-        let dt = recent[2].t - recent[0].t
-        let v = CGPoint(x: (recent[2].p.x - recent[0].p.x) / dt, y: (recent[2].p.y - recent[0].p.y) / dt)
-        let speed = hypot(v.x, v.y)
+        guard ahead > 0, let l = lastFiltered, points.count > 2, recent.count == 5,
+              recent[4].t > recent[2].t, recent[2].t > recent[0].t else { return nil }
+        let dt = recent[4].t - recent[2].t, dt0 = recent[2].t - recent[0].t
+        let v = CGPoint(x: (recent[4].p.x - recent[2].p.x) / dt, y: (recent[4].p.y - recent[2].p.y) / dt)
+        let v0 = CGPoint(x: (recent[2].p.x - recent[0].p.x) / dt0, y: (recent[2].p.y - recent[0].p.y) / dt0)
+        let speed = hypot(v.x, v.y), speed0 = hypot(v0.x, v0.y)
         guard speed > 20 else { return nil }  // mm/s; don't predict slow or still fingers
-        let cap = min(ahead, 0.025)
-        return StrokePoint(p: toCanvas(CGPoint(x: l.x + v.x * cap, y: l.y + v.y * cap)), pressure: lastPressure)
+        var a = min(ahead, 0.025)
+        if speed < speed0 { a *= (speed / speed0) * (speed / speed0) }                // slowing: predict less
+        let cosTurn = (v.x * v0.x + v.y * v0.y) / max(speed * speed0, 1e-9)
+        a *= max(0, (cosTurn - 0.7) / 0.3)                                              // turning > ~45 deg: none
+        guard a > 0 else { return nil }
+        return StrokePoint(p: toCanvas(CGPoint(x: l.x + v.x * a, y: l.y + v.y * a)), pressure: lastPressure)
     }
 }

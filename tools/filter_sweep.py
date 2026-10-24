@@ -30,22 +30,27 @@ def wobble(pts):
     acc = [math.hypot(c[0] - 2 * b[0] + a[0], c[1] - 2 * b[1] + a[1]) for a, b, c in zip(pts, pts[1:], pts[2:])]
     return math.sqrt(sum(v * v for v in acc) / max(len(acc), 1))
 
-strokes = []
-for p in sys.argv[1:]:
-    for l in open(p):
-        s = json.loads(l)
-        if s.get('kind') != 'contact' and s.get('committed') and len(s['samples']) > 20:
-            strokes.append([(r[0], r[1], r[2]) for r in s['samples']])
-raw_w = sum(wobble([(x, y) for _, x, y in s]) for s in strokes) / len(strokes)
-print(f"{len(strokes)} strokes; raw wobble {raw_w * PT_PER_MM:.2f} pt RMS second difference")
-def q(v, p): v = sorted(v); return v[min(len(v) - 1, int(p * (len(v) - 1)))]
-import os
-grid = [(1.0, 0.05, 0.25), (1.0, 0.5, 0.0), (1.0, 1.0, 0.0), (1.5, 1.0, 0.0), (1.5, 2.0, 0.0), (2.0, 1.0, 0.0), (2.0, 2.0, 0.0), (1e9, 0, 0.0)]
-for mc, beta, sl in grid:
-    lags = []; w = 0
-    for s in strokes:
-        f = one_euro(s, mc, beta, sl)
-        lags += [math.hypot(a[0] - x, a[1] - y) for a, (_, x, y) in zip(f, s)]
-        w += wobble(f)
-    name = "no filter" if mc > 1e8 else f"minCutoff {mc:g} beta {beta:g} streamline {sl:g}"
-    print(f"{name:42s} lag p50 {q(lags, .5) * PT_PER_MM:5.1f} pt  p95 {q(lags, .95) * PT_PER_MM:5.1f} pt   wobble {w / len(strokes) * PT_PER_MM:.2f} pt")
+def main():
+    strokes = []
+    for p in sys.argv[1:]:
+        for l in open(p):
+            s = json.loads(l)
+            if s.get('kind') != 'contact' and s.get('committed') and len(s['samples']) > 20:
+                strokes.append([(r[0], r[1], r[2]) for r in s['samples']])
+    raw_w = sum(wobble([(x, y) for _, x, y in s]) for s in strokes) / len(strokes)
+    print(f"{len(strokes)} strokes; raw wobble {raw_w * PT_PER_MM:.2f} pt RMS second difference")
+    def q(v, p): v = sorted(v); return v[min(len(v) - 1, int(p * (len(v) - 1)))]
+    import os
+    grid = [(1.0, 0.05, 0.25), (1.0, 0.5, 0.0), (1.0, 1.0, 0.0), (1.5, 1.0, 0.0), (1.5, 2.0, 0.0), (2.0, 1.0, 0.0), (2.0, 2.0, 0.0), (1e9, 0, 0.0)]
+    for mc, beta, sl in grid:
+        lags = []; w = 0
+        for s in strokes:
+            f = one_euro(s, mc, beta, sl)
+            lags += [math.hypot(a[0] - x, a[1] - y) for a, (_, x, y) in zip(f, s)]
+            w += wobble(f)
+        name = "no filter" if mc > 1e8 else f"minCutoff {mc:g} beta {beta:g} streamline {sl:g}"
+        print(f"{name:42s} lag p50 {q(lags, .5) * PT_PER_MM:5.1f} pt  p95 {q(lags, .95) * PT_PER_MM:5.1f} pt   wobble {w / len(strokes) * PT_PER_MM:.2f} pt")
+
+
+if __name__ == "__main__":
+    main()

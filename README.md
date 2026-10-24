@@ -35,6 +35,11 @@ MultitouchSupport framework.
   of the view, the view pans so that stroke ends mid-screen, so you keep writing from the middle of
   the pad. When the line reaches the chosen width, the view returns to the line's left edge, one
   line down, with the new line in the middle of the screen. Nothing moves while a finger is down.
+- **Feel (⚙︎ in the toolbar)**: *Smoothing* (← follows the finger exactly · steadier →) and
+  *Prediction* (← never overshoots · keeps up →). They apply to the next stroke and are remembered;
+  Defaults resets them (50%, 12 ms). Measured on Karthik's strokes: prediction makes the tip keep
+  up (20 → 10 pt behind the finger at 24 ms) but it shoots off at turns and stops; it's damped when
+  slowing or turning. Every stroke ends exactly where the finger lifted.
 - Toolbar: undo, redo, pen, marker, highlighter, eraser (erases whole strokes), background
   (none/square/dot/ruled), draw mode. Tap the selected tool for sizes and colors.
 - Keys in draw mode: P, M, H, E pick a tool; 1–5 pick a size.
@@ -46,11 +51,10 @@ MultitouchSupport framework.
 |---|---|---|
 | `widthModel` | `mt-pressure` | `mt-pressure` (per-finger force), `speed` (fallback), `contact-size` |
 | `inputSource` | `mt` | `nstouch` forces the public-API path (no pressure, so speed width) |
-| `oneEuroMinCutoff` / `oneEuroBeta` | 1.0 / 0.05 | jitter vs lag |
+| `smoothing` / `predictMs` | 0.5 / 12 | the ⚙︎ sliders (`oneEuroMinCutoff` / `oneEuroBeta` override smoothing) |
 | `inkThreshold` | 0 (off) | Inklet-style hover: ink only starts once MT pressure reaches this |
 | `palmMajorAxis` / `palmTotal` | 11 / 1.4 | contacts above either value are ignored as palms |
 | `padFlipY` | false | set true if strokes come out upside down (unverified pad y direction) |
-| `predictMs` | 16 | how far ahead the predicted tip point is drawn |
 
 The pressure range in `MTPressureModel` (`lo` 4, `hi` 70) is a guess from passive data. Retune
 it after `probe/run-guided.sh` (see PHASE1.md).

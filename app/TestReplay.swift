@@ -106,6 +106,7 @@ enum TestUI {
             ("8-writing-on", { click(toolbar.center(of: .writing)) }),
             ("9-writing-panel", { click(toolbar.center(of: .writing)) }),
             ("10-full-width", { click(toolbar.panel.centerOfBackground(2)) }),
+            ("11-settings", { toolbar.hidePanel(); click(toolbar.center(of: .settings)) }),
         ]
         var i = 0
         func next() {

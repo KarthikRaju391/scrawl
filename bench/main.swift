@@ -179,6 +179,7 @@ do {
 }
 
 gestureChecks(check)
+smoothingTable(check)
 meshEquivalence(check, strokesPath: ProcessInfo.processInfo.environment["STROKES"])
 writingChecks(check)
 

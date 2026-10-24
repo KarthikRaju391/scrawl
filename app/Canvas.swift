@@ -12,14 +12,17 @@ struct Settings {
     let d = UserDefaults.standard
     var widthModel: String { d.string(forKey: "widthModel") ?? "mt-pressure" }  // mt-pressure | speed | contact-size
     var inputSource: String { d.string(forKey: "inputSource") ?? "mt" }        // mt | nstouch
-    var minCutoff: Double { d.object(forKey: "oneEuroMinCutoff") as? Double ?? 1.0 }
-    // beta 1.0 (was 0.05): replaying Karthik's real strokes, the ink trailed the finger by a median
-    // 47 pt (p95 122 pt) at writing zoom; beta 1.0 cuts that to 7 pt (p95 21 pt). minCutoff, which
-    // sets still-finger smoothing, stays at 1. See tools/filter_sweep.py.
-    var beta: Double { d.object(forKey: "oneEuroBeta") as? Double ?? 1.0 }
+    /// Smoothing slider (0...1); oneEuroMinCutoff / oneEuroBeta, if set, override it.
+    var smoothing: Double { d.object(forKey: "smoothing") as? Double ?? Smoothing.defaultValue }
+    var minCutoff: Double { d.object(forKey: "oneEuroMinCutoff") as? Double ?? Smoothing.params(smoothing).minCutoff }
+    // Default (smoothing 0.5) = minCutoff 4, beta 1. History: beta 0.05 left the ink a median 47 pt
+    // behind at writing zoom; beta 1 cut it to 7 pt. minCutoff 1 then made the ink creep ~0.6 s
+    // after the finger stopped; 4 settles ~4x faster. See tools/filter_sweep.py, bench "settle".
+    var beta: Double { d.object(forKey: "oneEuroBeta") as? Double ?? Smoothing.params(smoothing).beta }
     var palmMajor: Double { d.object(forKey: "palmMajorAxis") as? Double ?? 11.0 }
     var palmSize: Double { d.object(forKey: "palmTotal") as? Double ?? 1.4 }
-    var predictMs: Double { d.object(forKey: "predictMs") as? Double ?? 16 }
+    /// Prediction slider, 0...24 ms (0 = off). Default 12: middle of the lag/overshoot trade-off.
+    var predictMs: Double { d.object(forKey: "predictMs") as? Double ?? 12 }
     /// Inklet-style hover: a lighter touch shows the finger ring without inking; ink starts once
     /// MT pressure reaches this (raw units). 0 = off. Only meaningful with MultitouchSupport.
     var inkThreshold: Double { d.object(forKey: "inkThreshold") as? Double ?? 0 }
@@ -406,7 +409,8 @@ final class CanvasView: MTKView {
         if camAnim != nil { stepSlide(); needsRender = true }
         guard needsRender else { return }
         needsRender = false
-        predictAhead = max(l.targetTimestamp - CACurrentMediaTime(), 0) + settings.predictMs / 1000
+        // Prediction slider at 0 = draw only where the finger has been (no look-ahead at all).
+        predictAhead = settings.predictMs <= 0 ? 0 : max(l.targetTimestamp - CACurrentMediaTime(), 0) + settings.predictMs / 1000
         // MTKView.draw() calls draw(_:) and then releases currentDrawable. Rendering outside it
         // (paused view) kept re-presenting the first drawable: nothing new ever reached the screen.
         draw()
@@ -558,7 +562,8 @@ final class CanvasView: MTKView {
 
     private func endStroke(_ commit: Bool) {
         defer { builder = nil; needsRender = true }
-        guard let b = builder else { return }
+        guard var b = builder else { return }
+        b.finish()
         logger.end(committed: commit)
         if liveTool == .eraser { doc.dropEmptyUndo(); return }
         guard commit, !b.points.isEmpty else { return }
