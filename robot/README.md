@@ -38,9 +38,9 @@ with two fingers.
 
 | Bug | Commit before the fix | What the robot sees |
 |---|---|---|
-| The eraser erased when a pan started | `433b915` (fixed in `9fc7ed6`) | See `docs/robot-report.md` |
-| Writing jittered while autosave encoded on the main thread | `004c6bb` (fixed in `51326ef`) | See `docs/robot-report.md` |
-| The page moved to a new line in the middle of a word | `8548c11` (fixed in `494c47d`) | See `docs/robot-report.md` |
+| The eraser erased when a pan started | `433b915` (fixed in `9fc7ed6`) | FAIL: erased a stroke (7 → 6); main 7 → 7 |
+| Writing jittered while autosave encoded on the main thread | `004c6bb` (fixed in `51326ef`) | FAIL: stalls up to 299 ms; main 25 ms |
+| The page moved to a new line in the middle of a word | `8548c11` (fixed in `494c47d`) | FAIL: moved inside 5 words; main 0 |
 
 ## What it can't cover: Karthik's hand-test list
 

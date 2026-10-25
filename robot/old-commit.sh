@@ -12,6 +12,7 @@ grep -v "robot:modern" app/Robot.swift > "$W/app/Robot.swift"
 python3 - "$W/app/main.swift" <<'PY'
 import sys, re
 p = sys.argv[1]; s = open(p).read()
+if "--test-robot" in s: sys.exit(0)   # this commit already has the hook
 hook = '        #if !RELEASE\n        if let i = CommandLine.arguments.firstIndex(of: "--test-robot"), i + 1 < CommandLine.arguments.count { let r = Robot(app: self, dir: CommandLine.arguments[i + 1]); robot = r; r.start() }\n        #endif\n'
 m = re.search(r"func startTestReplayIfAsked\(\) \{\n", s)
 assert m, "no startTestReplayIfAsked"
@@ -28,5 +29,6 @@ PY
 # Old build scripts list the bench's excluded files; keep the robot out of the bench too.
 sed -i '' 's/-e main.swift/-e main.swift -e Robot.swift/' "$W/build.sh"
 (cd "$W" && ./build.sh >/dev/null 2>"$W/build.err" || { tail -20 "$W/build.err"; exit 1; })
-python3 robot/robot.py --app "$W/build/Scrawl.app/Contents/MacOS/TrackpadDraw" --out "build/robot-$C" --label "$C" ${ONLY:+--only $ONLY} || true
+APP=$(ls -d "$W"/build/*.app | head -1)   # older builds were called "Trackpad Draw.app"
+python3 robot/robot.py --app "$APP/Contents/MacOS/TrackpadDraw" --out "build/robot-$C" --label "$C" ${ONLY:+--only $ONLY} || true
 git worktree remove --force "$W" >/dev/null 2>&1 || true

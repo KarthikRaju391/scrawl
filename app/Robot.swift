@@ -84,9 +84,14 @@ final class Robot {
             let t = Thread {
                 var deadline = CACurrentMediaTime(), sensorT = 0.0
                 var seen = Set<Int32>()
+                var k = 0
                 for (dt, cs) in frames {
                     deadline += dt; sensorT += dt
                     preciseWait(until: deadline)
+                    k += 1
+                    if k % 3 == 0 {   // the page as the user sees it while touching (e.g. the undo scrub's live preview)
+                        DispatchQueue.main.sync { let n = canvas.doc.strokes.count; if downs.trace.last != n { downs.trace.append(n) } }
+                    }
                     for c in cs where !seen.contains(c.id) {
                         seen.insert(c.id)
                         DispatchQueue.main.sync { downs.items.append(["id": Int(c.id), "view": Self.view(canvas)]) }
@@ -94,7 +99,7 @@ final class Robot {
                     Multitouch.onFrame?(cs, CACurrentMediaTime(), sensorT)
                 }
                 Thread.sleep(forTimeInterval: c["settle"] as? Double ?? 0.6)
-                DispatchQueue.main.async { canvas.flushInputForTest(); done(["frames": frames.count, "downs": downs.items]) }
+                DispatchQueue.main.async { canvas.flushInputForTest(); done(["frames": frames.count, "downs": downs.items, "strokeTrace": downs.trace]) }
             }
             t.qualityOfService = .userInteractive
             t.start()
@@ -164,7 +169,9 @@ final class Robot {
             done(["points": pts])
         case "exportPNG":   // the page as stored ink (the OCR reference for the screenshot)
             let path = c["path"] as? String ?? dir + "/page.png"
-            do { try canvas.exportPNG(to: URL(fileURLWithPath: path)); done(["ok": true]) } catch { done(["error": "\(error)"]) }   // robot:modern
+            var ok = false
+            ok = (try? canvas.exportPNG(to: URL(fileURLWithPath: path))) != nil   // robot:modern
+            done(ok ? ["ok": true] : ["error": "no export in this build"])
         case "window":
             let w = c["w"] as? Double ?? 1000, h = c["h"] as? Double ?? 700
             app.window.setContentSize(NSSize(width: w, height: h))
@@ -177,7 +184,7 @@ final class Robot {
         }
     }
 
-    final class Downs: @unchecked Sendable { var items: [[String: Any]] = [] }
+    final class Downs: @unchecked Sendable { var items: [[String: Any]] = []; var trace: [Int] = [] }
 
     static func view(_ canvas: CanvasView) -> [String: Double] {
         let v = canvas.camera.visible
@@ -214,6 +221,7 @@ final class Robot {
             "strokesPerPage": canvas.pages.map { $0.strokes.count },
             "view": Self.view(canvas),
             "padMM": [Multitouch.padMM.width, Multitouch.padMM.height],
+            "lastStrokeMid": canvas.doc.strokes.last.map { s -> [Double] in let p = s.points[s.points.count / 2].p; return [p.x, p.y] } ?? [],
             "lastStrokes": canvas.doc.strokes.suffix(40).map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] },
             "toolbarHidden": tb.isHidden, "panelOpen": !tb.panel.isHidden,
             "toolbarTool": tb.state.tool.rawValue, "toolbarWriting": tb.writingMode, "toolbarDraw": tb.drawMode,

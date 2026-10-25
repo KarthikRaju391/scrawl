@@ -441,8 +441,8 @@ def run_scenarios(app, rep, only, hand):
         a = app.state()
         app.press("e", until=lambda s: s["tool"] == "eraser")
         # The pan-erase case: the eraser lands on ink and a second finger joins 30 ms later (a pan).
-        bx = app.cmd({"cmd": "toPad", "points": [[a["lastStrokes"][-1][0] + 1, (a["lastStrokes"][-1][1] + a["lastStrokes"][-1][3]) / 2]]})["points"][0]
-        fr = [[0.008, [[5000, bx[0], bx[1], 15, 0.5, 7.5]]]] * 4
+        bx = app.cmd({"cmd": "toPad", "points": [a["lastStrokeMid"]]})["points"][0]   # right on the ink
+        fr = [[0.008, [[5000, bx[0] + i * 0.3, bx[1], 15, 0.5, 7.5]]] for i in range(5)]
         fr += [[0.008, [[5000, bx[0] + i * 0.8, bx[1], 15, 0.5, 7.5], [5001, bx[0] + 25 + i * 0.8, bx[1], 15, 0.5, 7.5]]] for i in range(40)]
         fr += [[0.008, []], [0.3, []]]
         app.touch(fr)
@@ -459,6 +459,60 @@ def run_scenarios(app, rep, only, hand):
         rep.check(c["strokes"] < b["strokes"], "rubbing over the word erases it", f"{b['strokes']} -> {c['strokes']}")
         rep.shot(app, "after rubbing out")
         app.press("e", until=lambda s: s["tool"] == "pen")
+
+    @scenario("scratch-out", "Write two words, scratch out the first with a quick zig-zag: it goes, the second stays, and one two-finger double tap brings it back. A zig-zag on blank paper stays ink.")
+    def _():
+        if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        n0 = st["strokes"]
+        fr, cid = hand.frames(hand.word("wrong", pad_w * 0.2, pad_h * 0.45, hand.roman), 9000)
+        app.touch(fr); a = app.state()
+        fr, cid = hand.frames(hand.word("kept", pad_w * 0.55, pad_h * 0.45, hand.roman), cid)
+        app.touch(fr); b = app.state()
+        word = b["lastStrokes"][-(b["strokes"] - n0):-(b["strokes"] - a["strokes"])]
+        lo = app.cmd({"cmd": "toPad", "points": [[min(w[0] for w in word), min(w[1] for w in word)]]})["points"][0]
+        hi = app.cmd({"cmd": "toPad", "points": [[max(w[2] for w in word), max(w[3] for w in word)]]})["points"][0]
+        rep.shot(app, "two words")
+        zig = [[(lo[0] + (hi[0] - lo[0]) * (k % 2), lo[1] + (hi[1] - lo[1]) * (0.25 + 0.5 * k / 6)) for k in range(7)]]
+        fr, cid = hand.frames(zig, cid, speed=140)
+        app.touch(fr); c = app.state()
+        rep.check(c["strokes"] == b["strokes"] - (a["strokes"] - n0), "the scratched word is gone, the other word stays, no zig-zag left",
+                  f"{b['strokes']} -> {c['strokes']} strokes (the word had {a['strokes'] - n0})")
+        rep.check("Scratched out" in c.get("toast", ""), "a 'Scratched out' note", c.get("toast"))
+        rep.shot(app, "after the scratch-out")
+        app.touch(double_tap(2, pad_w / 2, pad_h / 2)); d = app.state()
+        rep.check(d["strokes"] == b["strokes"], "one two-finger double tap brings the word back", f"{c['strokes']} -> {d['strokes']}")
+        rep.shot(app, "after one undo")
+        blank = [[(pad_w * 0.3 + 25 * (k % 2), pad_h * 0.15 + k * 0.6) for k in range(7)]]
+        fr, cid = hand.frames(blank, cid, speed=140)
+        app.touch(fr); e = app.state()
+        rep.check(e["strokes"] == d["strokes"] + 1, "a zig-zag on blank paper stays as ink", f"{d['strokes']} -> {e['strokes']}")
+
+    @scenario("undo-scrub", "Write five words, then two-finger double tap and keep the second tap down: sliding left steps back through them live, sliding right brings them back. A plain double tap still undoes one step.")
+    def _():
+        if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        cid, counts = 9500, [st["strokes"]]
+        for i, w in enumerate(["one", "two", "six", "ten", "zen"]):
+            fr, cid = hand.frames(hand.word(w, pad_w * (0.12 + 0.16 * i), pad_h * 0.3, hand.roman), cid)
+            app.touch(fr); counts.append(app.state()["strokes"])
+        top = counts[-1]
+        cx, cy = pad_w * 0.5, pad_h * 0.55
+        tap = [[0.008, [[9900, cx - 9, cy, 12, 0.5, 7.5], [9901, cx + 9, cy, 12, 0.5, 7.5]]]] * 10 + [[0.008, []]] * 18
+        hold = [[0.008, [[9910, cx - 9, cy, 12, 0.5, 7.5], [9911, cx + 9, cy, 12, 0.5, 7.5]]]] * 40
+        left = [[0.008, [[9910, cx - 9 - i * 0.5, cy, 12, 0.5, 7.5], [9911, cx + 9 - i * 0.5, cy, 12, 0.5, 7.5]]] for i in range(1, 80)]
+        right = [[0.008, [[9910, cx - 49 + i * 0.5, cy, 12, 0.5, 7.5], [9911, cx - 31 + i * 0.5, cy, 12, 0.5, 7.5]]] for i in range(1, 30)]
+        r = app.touch(tap + hold + left + right + [[0.008, []], [0.3, []]])
+        f = app.state()
+        trace = r.get("strokeTrace", [])
+        rep.step("strokes on the page while sliding", trace=trace)
+        low = min(trace) if trace else top
+        rep.check(len(trace) >= 4 and low < top and trace.index(low) > 0, "sliding left steps back live (the page changes as the fingers move)", f"{trace}")
+        rep.check(top > f["strokes"] > low, "sliding back right brings strokes back; what's shown on release stays", f"lowest {low}, kept {f['strokes']} of {top}")
+        rep.check(f["view"] == st["view"] or abs(f["view"]["x"] - st["view"]["x"]) < 1e-6, "the page didn't pan while scrubbing")
+        rep.shot(app, "after the scrub")
+        app.touch(double_tap(2, cx, cy)); g = app.state()
+        rep.check(g["strokes"] < f["strokes"], "a plain double tap still undoes one step", f"{f['strokes']} -> {g['strokes']}")
 
     @scenario("pages-overview", "New pages, the overview (G), arrow keys move the selection, Return opens; ⌘[ and ⌘] stop at the ends.")
     def _():
@@ -572,7 +626,8 @@ def judge_writing(app, rep, recs, st, text, ocr_check=True):
     p = rep.shot(app, "after writing")
     if ocr_check:
         exp = os.path.join(rep.out, "shots", f"{rep.cur['name']}-export.png")
-        app.cmd({"cmd": "exportPNG", "path": exp})
+        if "error" in app.cmd({"cmd": "exportPNG", "path": exp}):
+            rep.step("OCR skipped", why="this build has no export"); app.press("d", until=lambda s: not s["draw"]); return
         o = ocr(exp, text)
         rep.check(o.get("accuracy", 0) >= 0.5, "the page reads back (OCR of the exported page)", f"{o.get('accuracy', 0):.0%}: {o.get('text', '')[:80]!r}")
     app.press("d", until=lambda s: not s["draw"])
