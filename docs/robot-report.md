@@ -4,28 +4,45 @@
 writes `build/robot/report.html`, with a screenshot for every step. This page records the run that
 proved it catches real bugs.
 
-## Main (7789f1e + fixes): 51 of 51 checks pass
+## Main, build 2: 115 of 115 checks pass
 
-The run covers 20 scenarios in about 13 minutes, in the background:
-- toggles from keys and the toolbar;
-- writing mode at zoom 1 and 3, in every line width and pan mode;
-- double-tap undo and redo;
-- the eraser, including a pan that starts on ink;
-- pages and the overview;
-- four window shapes;
-- a 9,000-stroke notebook;
-- a recorded session;
-- quit and relaunch.
+30 scenarios, 11 minutes, all in the background. Each feature in this round was proven the same way: its
+scenario fails on the build before it and passes after.
 
-| Measure | Main |
+| Feature | Before | After |
+|---|---|---|
+| Scratch-out and undo scrub | 4/8 | 8/8 |
+| Writing flow: words still visible after a pan (left mode) | 1 | 2–3 |
+| Writing flow: largest pan jump | 81% of the view | 47% |
+| Writing flow: lines in view after a new line, with two written | 1 | 2 |
+| Pan right by hand, then write (the parked pan bug) | page jumps back to the margin (x 800 → 8) | stays |
+| Page map | 2/6 | 6/6 |
+| Draw mode starts where you last wrote | 2/3 | 3/3 |
+| Quiet draw mode | 0/5 (the banner never faded) | 5/5 |
+| Toolbar and Settings | 1/5 | 6/6 |
+| Tips and the practice page | 0/5 | 6/6 |
+| Haptics, pending-move chevron, undo fade | 0/3 | 3/3 |
+| Overview crop, titles, search, copy, share | 0/7 | 7/7 |
+| Usage counts | n/a (new) | 4/4 |
+
+The run also covers toggles from keys and the toolbar, writing mode in every width and pan mode, double-tap
+undo/redo, the eraser and a pan starting on it, pages and the overview, four window shapes, a 9,000-stroke
+notebook, Karthik's recorded touch frames, and quit and relaunch.
+
+| Measure | Before this round | Now |
+|---|---|---|
+| Page moves inside a word | 0 | 0 |
+| Longest main-thread stall writing on a 9,000-stroke notebook | 25 ms | 26 ms (0 over 50 ms) |
+| Ink jitter (checks/jitter.sh) | 0.66 pt | 0.59 pt |
+| Strokes kept replaying 45 s of Karthik's touches | 60 (session kept 59) | 60 |
+
+| | |
 |---|---|
-| Page moves inside a word (11 writing runs, 7–18 words each) | 0 |
-| Longest main-thread stall while writing on a 9,000-stroke notebook | 25 ms (0 over 50 ms) |
-| Strokes kept when replaying 45 s of Karthik's touches (palms included) | 60 (the session kept 59) |
-| Strokes back after quit and relaunch | all, on every page |
-| Key press to visible change, seen from outside | 120–250 ms (upper bound, see below) |
-
-![Writing mode at zoom 3 on main](robot/main-write-zoom3.jpg)
+| ![a word, then a zig-zag over it](robot/scratch-before.jpg) | ![scratched out](robot/scratch-after.jpg) |
+| ![writing at zoom 3](robot/main-write-zoom3.jpg) | ![page map, top right](robot/page-map.jpg) |
+| ![draw mode: capsule and frame](robot/draw-mode-capsule.jpg) | ![the regrouped toolbar](robot/toolbar.jpg) |
+| ![overview with handwriting titles](robot/overview-titles.jpg) | ![searching handwriting](robot/overview-search.jpg) |
+| ![practice page](robot/practice.jpg) | ![Settings](robot/settings.jpg) |
 
 ## The same robot on old commits with known bugs
 
