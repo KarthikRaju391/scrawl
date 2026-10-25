@@ -12,6 +12,7 @@ final class ContainerView: NSView {
     let toolbar = ToolbarView(frame: .zero)
     let banner = NSTextField(labelWithString: "")
     let hint = NSTextField(labelWithString: "")
+    let toast = NSTextField(labelWithString: "")
 
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
@@ -35,6 +36,11 @@ final class ContainerView: NSView {
         banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
         banner.layer?.cornerRadius = 10
         hint.textColor = NSColor(white: 0.45, alpha: 1)
+        toast.identifier = NSUserInterfaceItemIdentifier("toast")
+        toast.alignment = .center; toast.font = .systemFont(ofSize: 13, weight: .semibold); toast.textColor = .white
+        toast.wantsLayer = true; toast.layer?.backgroundColor = NSColor(white: 0.15, alpha: 0.85).cgColor; toast.layer?.cornerRadius = 12
+        toast.isHidden = true
+        addSubview(toast)
         hint.wantsLayer = true
         hint.layer?.backgroundColor = NSColor(white: 1, alpha: 0.85).cgColor
         hint.layer?.cornerRadius = 9
@@ -69,6 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var mtError: String?
     var notebookStatus = ""
     var previousCrash = false
+    var toastFade: DispatchWorkItem?
     var gallery: GalleryView?
     var galleryReturnsToDraw = false
     var transitionView: NSView?
@@ -140,6 +147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onPage = { [weak self] d in self?.page(d) }
         tb.onGallery = { [weak self] in self?.toggleGallery() }
         cv.onStatus = { [weak self] in self?.updateBanner() }
+        cv.onDocChanged = { [weak self] in self?.updateUndoState() }
+        cv.onTapCommand = { [weak self] text in self?.updateUndoState(); self?.showToast(text) }
 
         // Input: MultitouchSupport (pressure) unless turned off (Help menu, or --input-nstouch), else the
         // public NSTouch path. Tests never start MT: real touches would interleave with the test input.
@@ -253,7 +262,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// Prev is dimmed on the first page, Next on the last (it never creates a page; the + button and N do).
+    func updateUndoState() { container.toolbar.canUndo = canvas.doc.canUndo; container.toolbar.canRedo = canvas.doc.canRedo }
+
+    /// A short message in the middle of the top edge ("Undo", "Redo"), fading out.
+    func showToast(_ text: String) {
+        let t = container.toast
+        t.stringValue = text; t.sizeToFit()
+        t.frame = CGRect(x: container.bounds.midX - (t.frame.width + 28) / 2, y: container.bounds.height - 64, width: t.frame.width + 28, height: 24)
+        toastFade?.cancel(); t.alphaValue = 1; t.isHidden = false
+        let w = DispatchWorkItem { [weak t] in NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; t?.animator().alphaValue = 0 }, completionHandler: { t?.isHidden = true }) }
+        toastFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: w)
+    }
+
     func updatePageArrows() {
+        updateUndoState()
         container.toolbar.canGoBack = canvas.pageIndex > 0
         container.toolbar.canGoForward = canvas.pageIndex < canvas.pages.count - 1
     }
@@ -384,6 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-taps") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestTaps.run(app: self) } }
         if a.contains("--test-tooldraw") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestToolDraw.run(app: self) } }
         if a.contains("--test-gallery-speed") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGallerySpeed.run(app: self) } }
         if let i = a.firstIndex(of: "--test-meta"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMeta.run(a[i + 1], app: self) } }

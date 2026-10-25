@@ -11,7 +11,11 @@ final class ToolbarView: NSView {
     /// Page arrows: dimmed and inert when there is no page that way (first / last page).
     var canGoBack = false { didSet { if canGoBack != oldValue { needsDisplay = true } } }
     var canGoForward = false { didSet { if canGoForward != oldValue { needsDisplay = true } } }
-    func isEnabled(_ item: Item) -> Bool { item == .prevPage ? canGoBack : item == .nextPage ? canGoForward : true }
+    var canUndo = false { didSet { if canUndo != oldValue { needsDisplay = true } } }
+    var canRedo = false { didSet { if canRedo != oldValue { needsDisplay = true } } }
+    func isEnabled(_ item: Item) -> Bool {
+        switch item { case .prevPage: return canGoBack; case .nextPage: return canGoForward; case .undo: return canUndo; case .redo: return canRedo; default: return true }
+    }
     var onWriting: (() -> Void)?
     var onPage: ((Int) -> Void)?   // -1 previous, +1 next, 0 new
     var onChange: ((ToolState) -> Void)?

@@ -192,6 +192,7 @@ displayChecks(check)
 migrationChecks(check)
 aimRemovedChecks(check)
 metaChecks(check)
+tapReplayChecks(check)
 
 // Prediction must point ahead along the motion: sine path like the UI test, at several phases.
 do {

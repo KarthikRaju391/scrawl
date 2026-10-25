@@ -37,7 +37,9 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   trackpad (apart from a thin edge band, below) maps without distortion to the largest trackpad-shaped area
   in the window, centred. In draw mode a faint outline shows that area, and you pan to reach the rest. The pointer freezes and hides. **Esc** gives the pointer back. So do ⌃⌥D,
   switching apps, the display sleeping, and quitting.
-- **One finger** draws. **Two fingers** pan, and pinching zooms. Blue rings show where your fingers
+- **One finger** draws. **Two fingers** pan, and pinching zooms. In draw mode, a **two-finger double
+  tap** undoes and a **three-finger double tap** redoes (a short "Undo" / "Redo" shows). Outside draw mode
+  a two-finger tap stays your normal right-click. Blue rings show where your fingers
   are, since there's no pointer.
 - **Tools:** M marker, H highlighter, E eraser; press the same key again to go back to the pen.
   Picking a tool outside draw mode (key or toolbar) turns draw mode on, so you can use it straight away.

@@ -128,6 +128,8 @@ final class Document {
     static let maxUndo = 100
     func snapshot() { version += 1; undoStack.append(strokes); if undoStack.count > Self.maxUndo { undoStack.removeFirst() }; redoStack.removeAll() }
     var undoStackForSave: [[Stroke]] { undoStack }
+    var canUndo: Bool { !undoStack.isEmpty }
+    var canRedo: Bool { !redoStack.isEmpty }
     var redoStackForSave: [[Stroke]] { redoStack }
     func restore(strokes: [Stroke], undo: [[Stroke]], redo: [[Stroke]]) { let e = edited; version += 1; edited = e; self.strokes = strokes; undoStack = undo; redoStack = redo }
     func add(_ s: Stroke) { snapshot(); strokes.append(s) }
@@ -143,6 +145,8 @@ final class Document {
     func replaceLast(_ s: Stroke) { guard !strokes.isEmpty else { return }; version += 1; strokes[strokes.count - 1] = s }
     func undo() { guard let s = undoStack.popLast() else { return }; version += 1; redoStack.append(strokes); strokes = s }
     func redo() { guard let s = redoStack.popLast() else { return }; version += 1; undoStack.append(strokes); strokes = s }
+    /// Put back the state saved by the last snapshot and forget that step (a cancelled eraser gesture).
+    func rollbackLastSnapshot() { guard let s = undoStack.popLast() else { return }; if s.count != strokes.count || !zip(s, strokes).allSatisfy({ $0 === $1 }) { version += 1 }; strokes = s }
     func dropEmptyUndo() { if let last = undoStack.last, last.count == strokes.count, zip(last, strokes).allSatisfy({ $0 === $1 }) { undoStack.removeLast() } }
 }
 
@@ -370,7 +374,13 @@ final class CanvasView: MTKView {
     var pageCamerasForSave: [Camera] { pageCameras }
     lazy var autosaver = Autosaver(canvas: self)
     /// Something in the notebook changed: save it shortly.
-    func markDirty() { if AppPaths.persists { autosaver.changed() } }
+    func markDirty() { if AppPaths.persists { autosaver.changed() }; onDocChanged?() }
+    /// After any change to the page (the toolbar dims undo / redo when there's nothing to undo / redo).
+    var onDocChanged: (() -> Void)?
+    /// A two-finger (undo) or three-finger (redo) double tap was recognised: "Undo", "Redo", "Nothing to undo"...
+    var onTapCommand: ((String) -> Void)?
+    private var taps = MultiTapDetector()
+    private var tapViewAnchor: Camera?
 
     func restorePages(_ docs: [Document], cameras: [Camera], index: Int, nextStrokeId: Int) {
         pages = docs; pageCameras = cameras; pageIndex = index
@@ -694,8 +704,22 @@ final class CanvasView: MTKView {
         contacts = cs.filter(\.isDown)
         // Only fingers the edge guard counts: a palm resting on the edge must neither cancel nor hold
         // back a pending page move.
-        countedContacts = contacts.filter { !gestures.ignoresAtEdge($0) }.count
+        let counted = contacts.filter { !gestures.ignoresAtEdge($0) }
+        countedContacts = counted.count
         if countedContacts > 0 { finishSlide(); cancelPendingMove() }
+        // Multi-finger taps: the view at the start of each touch episode, to undo any nudge a tap gave it.
+        if !counted.isEmpty && tapViewAnchor == nil { tapViewAnchor = camera }
+        if let ev = taps.frame(counted, t: arrival) {
+            if let c = tapViewAnchor { changing("tap") { camera = c } }   // a tap is not a pan or a pinch
+            switch ev {
+            case .doubleTap(2):
+                act("gestureUndo"); let could = doc.canUndo; undo(); onTapCommand?(could ? "Undo" : "Nothing to undo")
+            case .doubleTap(3):
+                act("gestureRedo"); let could = doc.canRedo; redo(); onTapCommand?(could ? "Redo" : "Nothing to redo")
+            default: break
+            }
+        }
+        if counted.isEmpty { tapViewAnchor = nil }
         gestures.frame(cs, t: arrival)
         needsRender = true
     }
@@ -765,6 +789,8 @@ final class CanvasView: MTKView {
     override func touchesCancelled(with e: NSEvent) { nsTouchFrame(e) }
     // In draw mode physical clicks land on the frozen cursor over this view: swallow them.
     override func mouseDown(with e: NSEvent) { if !drawMode { super.mouseDown(with: e) } }
+    // A two-finger tap is also the system's right-click; in draw mode it lands on the frozen pointer here.
+    override func rightMouseDown(with e: NSEvent) { if !drawMode { super.rightMouseDown(with: e) } }
     // Outside draw mode the usual trackpad gestures pan (two-finger scroll) and zoom (pinch).
     // In draw mode the same gestures come from MultitouchSupport instead, and these are ignored.
     override func scrollWheel(with e: NSEvent) {
@@ -903,7 +929,11 @@ final class CanvasView: MTKView {
         b.finish()
         logger.end(committed: commit)
         act("strokeEnd", ["committed": commit, "index": commit ? doc.strokes.count : -1, "snapX": strokeOffset.x, "snapY": strokeOffset.y])
-        if liveTool == .eraser { doc.dropEmptyUndo(); return }
+        if liveTool == .eraser {
+            // Cancelled (it became a two- or three-finger gesture: a pan, pinch or tap): nothing it erased stays erased.
+            if commit { doc.dropEmptyUndo() } else { doc.rollbackLastSnapshot(); markDirty() }
+            return
+        }
         guard commit, !b.points.isEmpty else { return }
         if liveTool != .eraser, let raw = b.lastRaw {
             // Direction the stroke was heading at the end: last raw point vs the one ~1.5 mm earlier.

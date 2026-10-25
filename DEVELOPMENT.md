@@ -40,6 +40,7 @@ the pointer or the trackpad, so they're safe to run while you use the Mac. The s
 | `checks/keys.sh` | Every mode key pressed twice; toolbar in sync |
 | `checks/zoomlock.sh`, `autopan.sh`, `ui.sh` | zoom lock on every path, writing-mode panning, toolbar clicks |
 | `checks/gallery.sh` | Pages overview:<br>• open/close round trips<br>• transition rects (cell ↔ canvas)<br>• thumbnails vs page contents, caching<br>• 40 pages scrolling, the New page tile<br>• persistence across a restart, screenshots |
+| `checks/taps.sh` | Two-/three-finger double taps:<br>• one undo or redo each<br>• single, slow and moving taps, pans and pinches do nothing<br>• no ink, the view stays put<br>• writing mode<br>• eraser (including the rollback fix)<br>Bench: the detector, and a replay of all recorded sessions (no false double taps; looser rules fail it) |
 | `checks/meta.sh` | Page dates:<br>• created/edited on a controlled clock<br>• survive a restart<br>• an old-format notebook opens with "date unknown"<br>• the tile and the label text, with screenshots |
 | `checks/page.sh` | page bounds: off-page grey desk with a shadowed edge, page top at the window top (screenshots) |
 | `checks/e2e.sh <strokes.jsonl>` | Recorded strokes replayed through the trackpad callback in the real app. Checks:<br>• ink on screen<br>• frames<br>• latency |

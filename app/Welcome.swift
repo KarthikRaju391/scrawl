@@ -39,6 +39,8 @@ enum HelpText {
         ("Esc", "Leave draw mode (the pointer comes back)"),
         ("One finger", "Draw"),
         ("Two fingers", "Pan; pinch to zoom"),
+        ("2-finger double tap", "Undo (in draw mode)"),
+        ("3-finger double tap", "Redo (in draw mode)"),
         ("M  H  E", "Marker, highlighter, eraser; press again for the pen"),
         ("P", "Pen; on the pen, back to the last other tool"),
         ("1 – 5", "Pen size"),
