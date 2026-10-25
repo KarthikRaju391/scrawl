@@ -83,6 +83,8 @@ struct NotebookFile: Codable {
         var zoom: Double
         var centerX: Double
         var centerY: Double
+        var created: Double?         // seconds since 1970; absent in notebooks saved before 0.1.0
+        var edited: Double?
     }
     struct StrokeFile: Codable {
         var id: Int
@@ -109,6 +111,12 @@ struct NotebookFile: Codable {
     static func decode(_ d: Data) throws -> NotebookFile { try PropertyListDecoder().decode(NotebookFile.self, from: d) }
 }
 
+/// Page dates for display: the system's medium date style, local time zone ("Oct 25, 2026").
+enum PageDate {
+    static let formatter: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .none; return f }()
+    static func short(_ d: Date?) -> String { d.map { formatter.string(from: $0) } ?? "date unknown" }
+}
+
 extension Document {
     /// Undo history, for saving (oldest first).
     var history: (undo: [[Stroke]], redo: [[Stroke]]) { (undoStackForSave, redoStackForSave) }
@@ -129,7 +137,8 @@ extension CanvasView {
             for s in doc.strokes { table[s.id] = s }
             for list in h.undo + h.redo { for s in list { table[s.id] = s } }
             f.pages.append(.init(strokes: doc.strokes.map(\.id), undo: h.undo.map { $0.map(\.id) }, redo: h.redo.map { $0.map(\.id) },
-                                 zoom: cam.zoom, centerX: cam.center.x, centerY: cam.center.y))
+                                 zoom: cam.zoom, centerX: cam.center.x, centerY: cam.center.y,
+                                 created: doc.created?.timeIntervalSince1970, edited: doc.edited?.timeIntervalSince1970))
         }
         f.strokes = table.values.sorted { $0.id < $1.id }.map {
             .init(id: $0.id, tool: $0.tool.rawValue, color: [$0.color.x, $0.color.y, $0.color.z, $0.color.w], size: $0.size, points: NotebookFile.pack($0.points))
@@ -151,11 +160,13 @@ extension CanvasView {
         for p in f.pages {
             let d = Document()
             d.restore(strokes: list(p.strokes), undo: p.undo.map(list), redo: p.redo.map(list))
+            d.created = p.created.map(Date.init(timeIntervalSince1970:))
+            d.edited = p.edited.map(Date.init(timeIntervalSince1970:))
             docs.append(d)
             var c = camera; c.zoom = p.zoom; c.center = CGPoint(x: p.centerX, y: p.centerY); c.clamp()
             cams.append(c)
         }
-        restorePages(docs.isEmpty ? [Document()] : docs, cameras: cams, index: min(max(f.pageIndex, 0), max(docs.count - 1, 0)),
+        restorePages(docs.isEmpty ? [Document.new()] : docs, cameras: cams, index: min(max(f.pageIndex, 0), max(docs.count - 1, 0)),
                      nextStrokeId: max(f.nextStrokeId, (f.strokes.map(\.id).max() ?? 0) + 1))
     }
 

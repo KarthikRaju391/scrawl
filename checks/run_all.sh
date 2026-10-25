@@ -16,6 +16,7 @@ suites=(
   "page-edges|checks/page.sh"
   "gallery|checks/gallery.sh"
   "page-arrows|checks/arrows.sh"
+  "page-dates|checks/meta.sh"
   "zoomlock|checks/zoomlock.sh"
   "autopan-centre|checks/autopan.sh --autopan centre"
   "autopan-left|checks/autopan.sh --autopan left"

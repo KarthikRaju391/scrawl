@@ -18,6 +18,8 @@ old pages and settings over.
 - Return in writing mode starts the next line.
 - The page arrows dim when there's no page that way: Prev on the first page, Next on the last. ⌘[ and ⌘]
   do nothing then too.
+- Page dates: each page stores when it was created and last edited. The created date shows on its
+  overview tile and on the open page, in the system's date format.
 - Pages overview (G or the toolbar's grid button): thumbnails of every page, growing into the page when
   opened and shrinking back into the grid with G.
 - The page's bounds are obvious. Anything off the page (beside it, above its top) is a plain grey desk with a

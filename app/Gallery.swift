@@ -134,6 +134,9 @@ final class GalleryView: NSView {
     }
     func cellIndex(at gridPoint: CGPoint) -> Int? { (0..<cellCount).first { cellRectInGrid($0).insetBy(dx: -4, dy: -4).contains(gridPoint) } }
 
+    /// The text under tile i: "Page 3  ·  Oct 25, 2026" (created date), "New page" for the last tile.
+    func tileLabel(_ i: Int) -> String { i < pages.count ? "Page \(i + 1)  ·  \(PageDate.short(pages[i].created))" : "New page" }
+
     fileprivate func clicked(_ i: Int) { if i < pages.count { onOpen?(i) } else { onNewPage?() } }
 
     fileprivate func drawGrid(_ dirty: CGRect) {
@@ -160,7 +163,7 @@ final class GalleryView: NSView {
                     NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).setStroke()
                     let p = NSBezierPath(roundedRect: r.insetBy(dx: -3, dy: -3), xRadius: 8, yRadius: 8); p.lineWidth = 3; p.stroke()
                 }
-                labelText = "Page \(i + 1)"
+                labelText = tileLabel(i)
             } else {
                 NSColor(white: 0.55, alpha: 1).setStroke()
                 let p = NSBezierPath(roundedRect: r.insetBy(dx: 1, dy: 1), xRadius: 6, yRadius: 6); p.lineWidth = 1.5

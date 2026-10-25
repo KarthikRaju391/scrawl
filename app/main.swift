@@ -294,7 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         container.hint.stringValue = previousCrash && notebookStatus.hasPrefix("loaded")
             ? "\(AppInfo.name) closed unexpectedly last time. Your pages were restored from the last autosave."
-            : "\(pageText)  ·  ⌃⌥D to draw with the trackpad\(input)"
+            : "\(pageText)  ·  created \(PageDate.short(canvas.doc.created))  ·  ⌃⌥D to draw with the trackpad\(input)"
         container.hint.isHidden = !container.banner.isHidden
         container.needsLayout = true
     }
@@ -375,6 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if let i = a.firstIndex(of: "--test-meta"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMeta.run(a[i + 1], app: self) } }
         if let i = a.firstIndex(of: "--test-arrows"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestArrows.run(a[i + 1], app: self) } }
         if let i = a.firstIndex(of: "--test-gallery"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGallery.run(a[i + 1], app: self) } }
         if a.contains("--test-page") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPage.run(app: self) } }

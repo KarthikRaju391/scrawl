@@ -111,17 +111,25 @@ final class Stroke {
 }
 
 final class Document {
+    /// A page made now (not one being loaded).
+    static func new() -> Document { let d = Document(); d.created = clock(); d.edited = d.created; return d }
+
     private(set) var strokes: [Stroke] = []
     private var undoStack: [[Stroke]] = []
     private var redoStack: [[Stroke]] = []
     /// Bumped on every change to the page's contents (the gallery re-renders a thumbnail only then).
-    private(set) var version = 0
+    private(set) var version = 0 { didSet { edited = Self.clock() } }
+    /// When the page was made, and last changed (stroke, erase, undo, redo, clear). Pages saved before
+    /// 0.1.0 had no dates and keep `created == nil` ("date unknown"); loading never changes either date.
+    var created: Date?
+    var edited: Date?
+    nonisolated(unsafe) static var clock: () -> Date = { Date() }
 
     static let maxUndo = 100
     func snapshot() { version += 1; undoStack.append(strokes); if undoStack.count > Self.maxUndo { undoStack.removeFirst() }; redoStack.removeAll() }
     var undoStackForSave: [[Stroke]] { undoStack }
     var redoStackForSave: [[Stroke]] { redoStack }
-    func restore(strokes: [Stroke], undo: [[Stroke]], redo: [[Stroke]]) { version += 1; self.strokes = strokes; undoStack = undo; redoStack = redo }
+    func restore(strokes: [Stroke], undo: [[Stroke]], redo: [[Stroke]]) { let e = edited; version += 1; edited = e; self.strokes = strokes; undoStack = undo; redoStack = redo }
     func add(_ s: Stroke) { snapshot(); strokes.append(s) }
     /// Eraser: removes without a new undo step (one step per eraser gesture, taken at its start).
     func remove(where pred: (Stroke) -> Bool) -> Bool {
@@ -357,7 +365,7 @@ final class InputQueue: @unchecked Sendable {
 // MARK: - Canvas view
 
 final class CanvasView: MTKView {
-    private(set) var pages: [Document] = [Document()]
+    private(set) var pages: [Document] = [Document.new()]
     private var pageCameras: [Camera] = []
     var pageCamerasForSave: [Camera] { pageCameras }
     lazy var autosaver = Autosaver(canvas: self)
@@ -491,7 +499,7 @@ final class CanvasView: MTKView {
         act("newPage", ["pages": pages.count + 1])
         endWritingLine()
         if pageCameras.count < pages.count { pageCameras.append(camera) } else { pageCameras[pageIndex] = camera }
-        pages.append(Document())
+        pages.append(Document.new())
         pageIndex = pages.count - 1
         changing("newPage") { camera.home() }
         pageCameras.append(camera)

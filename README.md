@@ -56,6 +56,9 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 - **Pages overview (G, or the grid button):** every page as a thumbnail. Click one to open it: it grows
   from its spot in the grid to fill the window. G from a page shrinks it back. The "+ New page" tile is
   last. Opening the overview leaves draw mode, and opening a page puts you back in it.
+- **Page dates:** every page remembers when it was created (shown under its tile in the overview and in
+  the small label at the top of the open page) and when it was last edited. Pages from before this
+  version show "date unknown".
 - **Export:** ⌘E saves every page as one PDF (vector, sharp at any size), and ⇧⌘E saves the current
   page as a PNG.
 - **Help › Scrawl Help** (⌘?) lists every shortcut.
