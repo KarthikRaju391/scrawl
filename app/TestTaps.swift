@@ -26,7 +26,7 @@ enum TestTaps {
         func stroke(y: Double) { nextId += 1; let id = nextId; for k in 0...30 { frame([(id, 30 + Double(k), y)]) }; idle(0.05) }
         func state(_ at: String) -> [String: Any] {
             let v = canvas.camera.visible
-            let toast = app.container.subviews.compactMap { $0 as? NSTextField }.first { $0.identifier?.rawValue == "toast" }
+            let toast = app.container.subviews.compactMap { $0 as? PillLabel }.first { $0.identifier?.rawValue == "toast" }
             return ["at": at, "strokes": canvas.doc.strokes.count, "viewX": v.minX, "viewY": v.minY, "zoom": canvas.camera.zoom,
                     "undoEnabled": tb.isEnabled(.undo), "redoEnabled": tb.isEnabled(.redo),
                     "toast": (toast?.isHidden == false) ? (toast?.stringValue ?? "") : ""]

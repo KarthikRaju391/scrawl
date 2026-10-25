@@ -10,9 +10,9 @@ if let i = CommandLine.arguments.firstIndex(of: "--watchdog"), i + 1 < CommandLi
 final class ContainerView: NSView {
     let canvas: CanvasView
     let toolbar = ToolbarView(frame: .zero)
-    let banner = NSTextField(labelWithString: "")
-    let hint = NSTextField(labelWithString: "")
-    let toast = NSTextField(labelWithString: "")
+    let banner = PillLabel()
+    let hint = PillLabel()
+    let toast = PillLabel()
 
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
@@ -27,23 +27,19 @@ final class ContainerView: NSView {
         addSubview(toolbar)
         addSubview(toolbar.panel)
         for l in [banner, hint] {
-            l.alignment = .center
             l.font = .systemFont(ofSize: 12, weight: .medium)
             addSubview(l)
         }
         banner.textColor = .white
-        banner.wantsLayer = true
-        banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
-        banner.layer?.cornerRadius = 10
+        banner.fillColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1)
         hint.textColor = NSColor(white: 0.45, alpha: 1)
+        hint.fillColor = NSColor(white: 1, alpha: 0.85)
+        hint.paddingX = 12
         toast.identifier = NSUserInterfaceItemIdentifier("toast")
-        toast.alignment = .center; toast.font = .systemFont(ofSize: 13, weight: .semibold); toast.textColor = .white
-        toast.wantsLayer = true; toast.layer?.backgroundColor = NSColor(white: 0.15, alpha: 0.85).cgColor; toast.layer?.cornerRadius = 12
+        toast.font = .systemFont(ofSize: 13, weight: .semibold); toast.textColor = .white
+        toast.fillColor = NSColor(white: 0.15, alpha: 0.85)
         toast.isHidden = true
         addSubview(toast)
-        hint.wantsLayer = true
-        hint.layer?.backgroundColor = NSColor(white: 1, alpha: 0.85).cgColor
-        hint.layer?.cornerRadius = 9
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -56,10 +52,8 @@ final class ContainerView: NSView {
         toolbar.frame = CGRect(x: 0, y: 6, width: bounds.width, height: ToolbarView.height)
         toolbar.isHidden = canvas.drawMode
         if canvas.drawMode { toolbar.hidePanel() }
-        banner.sizeToFit()
-        banner.frame = CGRect(x: bounds.midX - (banner.frame.width + 28) / 2, y: bounds.height - 28, width: banner.frame.width + 28, height: 20)
-        hint.sizeToFit()
-        hint.frame = CGRect(x: bounds.midX - (hint.frame.width + 24) / 2, y: bounds.height - 27, width: hint.frame.width + 24, height: 18)
+        banner.frame = CGRect(x: bounds.midX - banner.fittingWidth / 2, y: bounds.height - 28, width: banner.fittingWidth, height: 20)
+        hint.frame = CGRect(x: bounds.midX - hint.fittingWidth / 2, y: bounds.height - 27, width: hint.fittingWidth, height: 18)
         canvas.setNeedsRender()
     }
 }
@@ -267,8 +261,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// A short message in the middle of the top edge ("Undo", "Redo"), fading out.
     func showToast(_ text: String) {
         let t = container.toast
-        t.stringValue = text; t.sizeToFit()
-        t.frame = CGRect(x: container.bounds.midX - (t.frame.width + 28) / 2, y: container.bounds.height - 64, width: t.frame.width + 28, height: 24)
+        t.stringValue = text
+        t.frame = CGRect(x: container.bounds.midX - t.fittingWidth / 2, y: container.bounds.height - 64, width: t.fittingWidth, height: 24)
         toastFade?.cancel(); t.alphaValue = 1; t.isHidden = false
         let w = DispatchWorkItem { [weak t] in NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; t?.animator().alphaValue = 0 }, completionHandler: { t?.isHidden = true }) }
         toastFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: w)
@@ -299,12 +293,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let pageText = "Page \(canvas.pageIndex + 1) of \(canvas.pages.count)"
         if canvas.showPageHint {
             container.banner.stringValue = "\(pageText): you've filled a screen. N = new page, or K to keep writing here."
-            container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.85, green: 0.45, blue: 0.05, alpha: 1).cgColor
+            container.banner.fillColor = NSColor(srgbRed: 0.85, green: 0.45, blue: 0.05, alpha: 1)
         } else {
             container.banner.stringValue = canvas.writingMode
                 ? "\(pageText) · Writing: pans at the right edge, next line at the line width\(canvas.tools.zoomLocked ? " · zoom locked" : ""). W = off, Esc exits."
                 : "\(pageText) · Drawing: one finger draws, two fingers pan\(canvas.tools.zoomLocked ? " (zoom locked, L unlocks)" : " and pinch"). W = writing, Esc exits."
-            container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
+            container.banner.fillColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1)
         }
         container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
         // In draw mode the banner sits on the writing area: show it when it changes, then fade it out
@@ -415,6 +409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-toast") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestToast.run(app: self) } }
         if a.contains("--test-arrowkeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestArrowKeys.run(app: self) } }
         if a.contains("--test-taps") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestTaps.run(app: self) } }
         if a.contains("--test-tooldraw") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestToolDraw.run(app: self) } }
