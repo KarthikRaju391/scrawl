@@ -172,6 +172,7 @@ enum TestStress {
                 "strokes": canvas.doc.strokes.count,
                 "vertsP50": q(pf.verts.map(Double.init), 0.5), "vertsMax": pf.verts.max() ?? 0,
                 "cpuP50": q(pf.cpu, 0.5), "cpuP95": q(pf.cpu, 0.95), "cpuMax": pf.cpu.max() ?? 0,
+                "buildP95": q(pf.build, 0.95), "ownP95": q(zip(pf.cpu, pf.drawableWait).map { $0 - $1 }, 0.95), "ownMax": zip(pf.cpu, pf.drawableWait).map { $0 - $1 }.max() ?? 0, "drawableWaitP50": q(pf.drawableWait, 0.5), "drawableWaitP95": q(pf.drawableWait, 0.95),
                 "gpuP50": q(pf.gpu, 0.5), "gpuP95": q(pf.gpu, 0.95), "gpuMax": pf.gpu.max() ?? 0,
                 "frames": pf.gaps.count + 1, "gapP50": q(pf.gaps, 0.5), "gapP95": q(pf.gaps, 0.95), "gapMax": pf.gaps.max() ?? 0,
                 "gapsOver12_5ms": pf.gaps.filter { $0 > 12.5 }.count,

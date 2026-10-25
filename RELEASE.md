@@ -62,7 +62,7 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 - [x] **Privacy.**
   - No network at launch (lsof, from the DMG build).
   - Crash notes and diagnostics stay in `~/Library/Logs/Scrawl`.
-- [x] **Performance.** Render time per frame with 2,000 and 3,000 strokes (release build), p95: 5.4 ms on AC power, under the 120 Hz budget of 8.3 ms. On battery the same build measures 9.4 ms, because macOS slows the main thread. That still fits a 60 Hz frame, but a full page may drop some frames at 120 Hz on battery. The check uses the 8.3 ms bar on AC and 16.7 ms on battery, and prints which one applied.
+- [x] **Performance.** With 2,000 and 3,000 strokes on the page (release build), Scrawl's own work per frame is about 0.1–0.4 ms (building plus encoding), far under the 120 Hz budget of 8.3 ms. An earlier version of this note blamed battery power for some 9.4 ms readings. That was wrong. The measurement included the wait for a drawable from the window server, which is 8–9 ms for a test window sitting behind other windows (it gets one per display refresh) and less when the window is visible. The check now counts only Scrawl's own time and reports the wait separately. Presented-frame timing of a frontmost window still needs `checks/e2e.sh --test-front` while nobody is using the Mac.
 - [x] **Any window shape, and paper everywhere.**
   - The window resizes freely: tall beside another app, wide, or full screen.
   - The paper fills the window with no grey margins.

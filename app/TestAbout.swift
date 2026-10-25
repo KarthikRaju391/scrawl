@@ -9,8 +9,8 @@ enum TestAbout {
         var r: [String: Any] = ["version": AppInfo.version, "build": AppInfo.build, "bundleId": Bundle.main.bundleIdentifier ?? "",
                                 "config": AppInfo.info("TDBuildConfig"), "diagnosticsEnabled": Diagnostics.enabled,
                                 "updateURL": UpdateChecker.url?.absoluteString ?? "",
-                                "welcomeWouldShow": !UserDefaults.standard.bool(forKey: "welcomed"),
-                                "migrationRanInTest": UserDefaults.standard.object(forKey: Migration.doneKey) != nil || !app.migrationNotes.isEmpty]
+                                "welcomeWouldShow": freshInstallWelcomes(),
+                                "migrationRanInTest": !app.migrationNotes.isEmpty]
         var menus: [[String: Any]] = []
         for top in NSApp.mainMenu?.items ?? [] {
             for i in top.submenu?.items ?? [] where !i.isSeparatorItem {
@@ -40,6 +40,20 @@ enum TestAbout {
             }
             finish()
         }
+    }
+    /// A fresh install: empty settings, after the migration copied a previous install's settings.
+    static func freshInstallWelcomes() -> Bool {
+        let suite = "scrawl.test.fresh.\(getpid())"
+        guard let d = UserDefaults(suiteName: suite) else { return false }
+        d.removePersistentDomain(forName: suite)
+        let tmp = NSTemporaryDirectory() + "scrawl-fresh-\(getpid())"
+        try? FileManager.default.createDirectory(atPath: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: tmp) }
+        Migration.run(supportBase: tmp, logsBase: tmp, newFolder: "Scrawl", defaults: d,
+                      ownDomain: "com.karthikraju.scrawl", readDomain: { _ in ["welcomed": true, "smoothing": 0.6] })
+        let shows = AppDelegate.shouldWelcome(d) && d.double(forKey: "smoothing") == 0.6
+        d.removePersistentDomain(forName: suite)
+        return shows
     }
     static func modString(_ m: NSEvent.ModifierFlags) -> String {
         (m.contains(.control) ? "⌃" : "") + (m.contains(.option) ? "⌥" : "") + (m.contains(.shift) ? "⇧" : "") + (m.contains(.command) ? "⌘" : "")

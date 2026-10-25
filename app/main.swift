@@ -60,6 +60,8 @@ final class ContainerView: NSView {
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     static let padAspect = CanvasView.pageUnits.width / CanvasView.pageUnits.height
+    /// First run under this bundle ID (the migration never copies "welcomed").
+    static func shouldWelcome(_ d: UserDefaults) -> Bool { !d.bool(forKey: "welcomed") }
     var window: NSWindow!
     var container: ContainerView!
     var canvas: CanvasView { container.canvas }
@@ -164,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         notebookStatus = canvas.loadNotebookFromDisk()
         updateBanner()
         startTestReplayIfAsked()
-        if !canvas.testMode && !UserDefaults.standard.bool(forKey: "welcomed") { showInfo(firstRun: true) }
+        if !canvas.testMode && Self.shouldWelcome(.standard) { showInfo(firstRun: true) }
         if UserDefaults.standard.string(forKey: "rejoinMode") == "ab" {   // record the hidden condition
             canvas.logger.event(["what": "abCondition", "rejoin": Settings.abCondition])
         }

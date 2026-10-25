@@ -190,10 +190,14 @@ final class Renderer {
     struct DrawItem { var mesh: Mesh; var verts: [SIMD2<Float>]?; var color: SIMD4<Float> }
 
     /// `items` in paint order. `verts` (instead of a mesh) is for small per-frame geometry.
+    /// Time the last frame waited for a drawable from the window server (not our work).
+    private(set) var lastDrawableWaitMs = 0.0
     func render(in view: MTKView, visible: CGRect, background: Int, spacing: Double, pxPerUnit: Double,
                 items: [DrawItem], presented: ((Double) -> Void)?, gpuMs: ((Double) -> Void)? = nil) {
+        let w0 = CACurrentMediaTime()
         guard let rpd = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let cb = queue.makeCommandBuffer() else { return }
+        lastDrawableWaitMs = (CACurrentMediaTime() - w0) * 1000
         encode(cb, rpd, visible: visible, background: background, spacing: spacing, pxPerUnit: pxPerUnit, items: items)
         if let presented { drawable.addPresentedHandler { d in presented(d.presentedTime) } }
         if let gpuMs { cb.addCompletedHandler { cb in gpuMs((cb.gpuEndTime - cb.gpuStartTime) * 1000) } }

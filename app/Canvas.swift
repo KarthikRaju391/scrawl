@@ -457,7 +457,7 @@ final class CanvasView: MTKView {
     private(set) var renderCount = 0
 
     /// Frame timing for tests: CPU ms in render(), GPU ms, gaps between presented frames (ms), vertices.
-    struct Perf { var cpu: [Double] = []; var gpu: [Double] = []; var gaps: [Double] = []; var verts: [Int] = []; var ticks = 0; var ticksIdle = 0; var tickMaxGap = 0.0; var lastTick = 0.0; var inputsPerTick: [Int] = []; var inputsSinceTick = 0 }
+    struct Perf { var cpu: [Double] = []; var build: [Double] = []; var drawableWait: [Double] = []; var gpu: [Double] = []; var gaps: [Double] = []; var verts: [Int] = []; var ticks = 0; var ticksIdle = 0; var tickMaxGap = 0.0; var lastTick = 0.0; var inputsPerTick: [Int] = []; var inputsSinceTick = 0 }
     var perf = Perf()
     private var lastPresented = 0.0
 
@@ -1079,6 +1079,7 @@ final class CanvasView: MTKView {
             outlineDrawn = padRect
         }
         renderedRect = vis
+        perf.build.append((CACurrentMediaTime() - cpu0) * 1000)
         renderer.render(in: self, visible: vis, background: tools.background,
                         spacing: 48, pxPerUnit: ptPerUnit * camera.zoom * Double(window?.backingScaleFactor ?? 2),
                         items: items, presented: { [weak self] t in
@@ -1092,6 +1093,7 @@ final class CanvasView: MTKView {
                             }
                         }, gpuMs: { [weak self] ms in DispatchQueue.main.async { self?.perf.gpu.append(ms) } })
         perf.cpu.append((CACurrentMediaTime() - cpu0) * 1000)
+        perf.drawableWait.append(renderer.lastDrawableWaitMs)
         perf.verts.append(items.reduce(0) { $0 + $1.mesh.count + ($1.verts?.count ?? 0) })
     }
 
