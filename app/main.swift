@@ -376,6 +376,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// The last tool other than the pen (marker, highlighter or eraser), for P on the pen.
     private(set) var lastOtherTool: ToolKind?
+    var robot: AnyObject?   // the robot user's hook (Robot.swift, dev builds only)
     func noteTool(_ t: ToolKind) { if t != .pen { lastOtherTool = t } }
 
     // MARK: test mode (see TestReplay.swift)
@@ -416,6 +417,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        #if !RELEASE
+        if let i = a.firstIndex(of: "--test-robot"), i + 1 < a.count { let r = Robot(app: self, dir: a[i + 1]); robot = r; r.start() }   // robot/robot.py
+        #endif
         if a.contains("--test-modes") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestModes.run(app: self) } }
         if a.contains("--test-jitter") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestJitter.run(app: self) } }
         if a.contains("--test-gallerykeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryKeys.run(app: self) } }
