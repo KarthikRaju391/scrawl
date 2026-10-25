@@ -76,3 +76,6 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Props: allow-listed keys only, values only numbers, true/false or ≤ 32-character words: ink, text, search queries and file names can't get in by mistake.
 - Notice: new users see it in the welcome window with a switch; people updating get a one-time sheet (Keep On / Turn Off). Settings has the switch; off clears the queue and stops writing and sending at once.
 - Robot: the expected events land in the local log, nothing written ("secret") appears, and a session turned off writes nothing more. Timing unchanged: main-thread stalls 26 ms (25 before), ink jitter 0.59 pt (0.66 at the jitter fix).
+
+## Release
+- Still 0.1.0 (never published), build 2: everything here ships as the first public version; Karthik has build 1 installed, so the build number moves.
