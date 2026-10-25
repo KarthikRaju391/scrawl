@@ -27,6 +27,10 @@ old pages and settings over.
 - Edge guard: touches that start within 5% of the trackpad's edges are ignored, so a resting palm or
   thumb no longer draws, pans or zooms. The inner 90% covers the whole writing area. You can change it
   under ⚙︎ › Edge guard, and 0 turns it off.
+- Arrow keys pan the page (Shift: a screen at a time) and choose a page in the pages overview (Return / Space
+  opens it).
+- Fix: shortcut letters typed into a text field (e.g. the export save panel's file name) no longer act as
+  shortcuts.
 - Two-finger double tap = undo, three-finger double tap = redo (draw mode, also in writing mode), with a
   short "Undo" / "Redo" notice. The toolbar's undo / redo dim when there's nothing to undo / redo.
 - Fix: with the eraser, a two-finger pan or pinch that started on ink could erase a bit of it.

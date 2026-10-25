@@ -328,6 +328,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Returns true if the key was handled.
     func key(_ e: NSEvent) -> Bool {
+        // Keys meant for a text field (a save panel's file name, any other window) are not shortcuts.
+        if e.window !== window || window.firstResponder is NSText { return false }
+        let arrow: (Int, Int)? = [123: (-1, 0), 124: (1, 0), 125: (0, 1), 126: (0, -1)][e.keyCode]
+        let plainOrShift = e.modifierFlags.intersection([.command, .control, .option]).isEmpty
+        if galleryShown, let a = arrow, plainOrShift { gallery?.moveSelection(dx: a.0, dy: a.1); return true }
+        if galleryShown, e.keyCode == 36 || e.keyCode == 76 || e.keyCode == 49 { openSelectedTile(); return true }   // Return, Enter, Space
+        if !galleryShown, let a = arrow, plainOrShift {
+            canvas.panByArrow(dx: a.0, dy: a.1, screen: e.modifierFlags.contains(.shift)); return true
+        }
         if galleryShown {   // the page overview: G or Esc goes back to the current page; other keys do nothing
             if e.keyCode == 53 || e.charactersIgnoringModifiers?.lowercased() == "g" { TransitionTiming.inputAt = CACurrentMediaTime(); openPage(canvas.pageIndex) }
             return e.modifierFlags.intersection([.command, .control, .option]).isEmpty
@@ -406,6 +415,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-arrowkeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestArrowKeys.run(app: self) } }
         if a.contains("--test-taps") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestTaps.run(app: self) } }
         if a.contains("--test-tooldraw") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestToolDraw.run(app: self) } }
         if a.contains("--test-gallery-speed") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGallerySpeed.run(app: self) } }

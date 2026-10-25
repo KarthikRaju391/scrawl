@@ -135,9 +135,12 @@ final class GalleryView: NSView {
     private(set) var pages: [Document] = []
     private(set) var pageSize = CGSize(width: 1600, height: 984)
     private(set) var current = 0
+    /// The tile the arrow keys have selected (Return / Space opens it).
+    var selected = -1
 
     func reload(pages: [Document], pageSize: CGSize, current: Int) {
         self.pages = pages; self.pageSize = pageSize; self.current = current
+        selected = current   // the selection starts on the current page
         thumbnails.keep(pages)
         needsLayout = true; layoutSubtreeIfNeeded()
         grid.needsDisplay = true
@@ -181,6 +184,21 @@ final class GalleryView: NSView {
     /// The text under tile i: "Page 3  ·  Oct 25, 2026" (created date), "New page" for the last tile.
     func tileLabel(_ i: Int) -> String { i < pages.count ? "Page \(i + 1)  ·  \(PageDate.short(pages[i].created))" : "New page" }
 
+    /// Arrow keys: ← → previous / next tile (continuing across rows), ↑ ↓ a row; no wrap-around. ↓ into a
+    /// shorter last row from a column past its end goes to the last tile. The selection scrolls into view.
+    func moveSelection(dx: Int, dy: Int) {
+        let cols = columns, last = cellCount - 1
+        var i = min(max(selected, 0), last)
+        if dx != 0 { i = min(max(i + dx, 0), last) }
+        if dy < 0, i - cols >= 0 { i -= cols }
+        if dy > 0 {
+            if i + cols <= last { i += cols } else if i / cols < last / cols { i = last }
+        }
+        selected = i
+        grid.scrollToVisible(cellRectInGrid(i).insetBy(dx: 0, dy: -Self.gap))
+        grid.needsDisplay = true
+    }
+
     fileprivate func clicked(_ i: Int) { if i < pages.count { onOpen?(i) } else { onNewPage?() } }
 
     fileprivate func drawGrid(_ dirty: CGRect) {
@@ -217,6 +235,10 @@ final class GalleryView: NSView {
                 let plus = NSAttributedString(string: "+", attributes: [.font: NSFont.systemFont(ofSize: 40, weight: .light), .foregroundColor: NSColor(white: 0.45, alpha: 1)])
                 plus.draw(at: CGPoint(x: r.midX - plus.size().width / 2, y: r.midY - plus.size().height / 2))
                 labelText = "New page"
+            }
+            if i == selected {   // the arrow-key selection: an orange ring outside the tile (and outside the current page's blue one)
+                NSColor(srgbRed: 0.96, green: 0.55, blue: 0.10, alpha: 1).setStroke()
+                let p = NSBezierPath(roundedRect: r.insetBy(dx: -8, dy: -8), xRadius: 11, yRadius: 11); p.lineWidth = 2.5; p.stroke()
             }
             let l = NSAttributedString(string: labelText, attributes: [.font: NSFont.systemFont(ofSize: 12, weight: i == current ? .semibold : .regular),
                                                                        .foregroundColor: NSColor(white: 0.3, alpha: 1)])

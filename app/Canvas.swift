@@ -667,6 +667,16 @@ final class CanvasView: MTKView {
     override func draw(_ dirtyRect: NSRect) { render(predictAhead: predictAhead) }
 
     func setNeedsRender() { needsRender = true }
+
+    /// Arrow keys: pan by 10% of the view (a whole view with `screen`), like scrolling a document (→ shows what's
+    /// to the right, ↓ what's further down). Clamped like any pan (page sides and top); never a new line or a
+    /// page change: a pending writing-mode move is dropped.
+    func panByArrow(dx: Int, dy: Int, screen: Bool) {
+        cancelPendingMove(); finishSlide()
+        let v = camera.visible, f = screen ? 1.0 : 0.1
+        changing("arrow") { camera.center.x += Double(dx) * f * v.width; camera.center.y -= Double(dy) * f * v.height; camera.clamp() }
+        needsRender = true
+    }
     /// While the pages overview covers the canvas (and during its transitions): no frames. Each frame waits
     /// on the window server for a drawable, which stalled the transition's animation by ~40 ms.
     var renderingPaused = false { didSet { if !renderingPaused { needsRender = true } } }

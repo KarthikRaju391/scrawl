@@ -14,6 +14,7 @@ suites=(
   "keys|checks/keys.sh"
   "tool-enters-draw|checks/tooldraw.sh"
   "tap-gestures|checks/taps.sh"
+  "arrow-keys|checks/arrowkeys.sh"
   "newline|checks/newline.sh"
   "page-edges|checks/page.sh"
   "gallery|checks/gallery.sh"

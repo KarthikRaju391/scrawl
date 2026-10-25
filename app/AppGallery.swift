@@ -37,6 +37,12 @@ extension AppDelegate {
         lastTransition["stepsMs"] = ms
     }
 
+    /// Return / Space in the overview: open the selected tile (a page, or "+ New page").
+    func openSelectedTile() {
+        guard let g = gallery, galleryShown else { return }
+        if g.selected >= 0 && g.selected < canvas.pages.count { openPage(g.selected) } else if g.selected == canvas.pages.count { openNewPage() }
+    }
+
     /// Page i grows from its cell to the full canvas.
     func openPage(_ i: Int) {
         guard let g = gallery, galleryShown, transitionView == nil, canvas.pages.indices.contains(i) else { return }

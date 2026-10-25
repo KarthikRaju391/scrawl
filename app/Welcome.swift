@@ -50,6 +50,7 @@ enum HelpText {
         ("N", "New page (K keeps writing on this one)"),
         ("G", "Pages overview on / off: click a page to open it"),
         ("⌘[  ⌘]", "Previous / next page"),
+        ("← → ↑ ↓", "Pan the page (Shift: a whole screen); in the pages overview, choose a page, Return opens it"),
         ("⌘Z  ⇧⌘Z", "Undo / redo"),
         ("⌘0", "Zoom to the whole page"),
         ("⌃⌘F", "Full screen"),
