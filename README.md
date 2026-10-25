@@ -35,8 +35,7 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 - **⌃⌥D** (or **D** when the app is in front) starts drawing, and pressing it again stops.
   The paper fills the window, whatever its shape, and full screen works too (green button or ⌃⌘F). The
   trackpad (apart from a thin edge band, below) maps without distortion to the largest trackpad-shaped area
-  in the window, centred. In draw mode a faint outline shows that area, and you pan to reach the rest. The pointer freezes and hides, and the
-  whole trackpad becomes the visible part of the page. **Esc** gives the pointer back. So do ⌃⌥D,
+  in the window, centred. In draw mode a faint outline shows that area, and you pan to reach the rest. The pointer freezes and hides. **Esc** gives the pointer back. So do ⌃⌥D,
   switching apps, the display sleeping, and quitting.
 - **One finger** draws. **Two fingers** pan, and pinching zooms. Blue rings show where your fingers
   are, since there's no pointer.
@@ -48,7 +47,8 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   or thumb doesn't draw, pan or zoom. A stroke that starts inside can still run to the edge. Change
   it under ⚙︎ › Edge guard (0 turns it off).
 - **Writing mode (W):** pans along the line as you write, and goes to the start of the next line
-  when the line is full. The page waits until your finger has been up for 0.4 s, so it never moves
+  when the line is full,
+  back at the left margin (Return does it by hand). The page waits until your finger has been up for 0.4 s, so it never moves
   in the middle of a word. Choose the line width (½, ¾, full) and how it pans in the panel.
 - **Aim first (A):** touch lightly to see where you are (an orange ring), then press to start the
   ink. Useful for maths and diagrams.
