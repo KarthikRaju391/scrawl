@@ -20,26 +20,40 @@ func tapReplayChecks(_ check: (Bool, String) -> Void) {
     var stag = MultiTapDetector()
     _ = stag.frame(Array(fingers(2).prefix(1)), t: 0); _ = stag.frame(fingers(2), t: 0.1)
     check(stag.frame([], t: 0.15) == nil, "detector: fingers landing 100 ms apart are not a tap")
-    // Replay.
+    // Replay, timed by the trackpad's own sensor timestamps (the recorded handling times can bunch up).
+    // Sessions from before the gestures existed must give none; sessions recorded with them must give
+    // exactly the gesture undos / redos the app logged.
     let files = (try? FileManager.default.contentsOfDirectory(atPath: "data"))?.filter { $0.hasPrefix("session-2026") && $0.hasSuffix(".jsonl") }.sorted() ?? []
-    var frames = 0, singles = 0, doubles = [Int: Int]()
+    var frames = 0, singles = 0, falseDoubles = [Int: Int](), matched = 0, mismatched: [String] = [], before = 0, withGestures = 0
     for f in files {
         guard let text = try? String(contentsOfFile: "data/" + f, encoding: .utf8) else { continue }
         var det = MultiTapDetector()
         var banned = Set<Int32>(), seen = Set<Int32>()
-        for line in text.split(separator: "\n") where line.contains("\"touch\"") {
-            guard let d = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], let cs = d["c"] as? [[Double]], let m = d["m"] as? Double else { continue }
+        var replayed = [Int: Int](), logged = [Int: Int]()
+        for line in text.split(separator: "\n") {
+            if line.contains("\"gestureUndo\"") { logged[2, default: 0] += 1; continue }
+            if line.contains("\"gestureRedo\"") { logged[3, default: 0] += 1; continue }
+            guard line.contains("\"touch\""), let d = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  let cs = d["c"] as? [[Double]], let t = d["t"] as? Double else { continue }
             frames += 1
             let contacts = cs.map { Contact(id: Int32($0[0]), state: 4, norm: CGPoint(x: $0[2], y: $0[3]), mm: CGPoint(x: $0[2] * 124.8, y: $0[3] * 76.8), pressure: $0[4], size: 0.5, major: 7.5) }
             for c in contacts where !seen.contains(c.id) && GestureEngine.inBand(c.norm, Settings.defaultEdgeGuard) { banned.insert(c.id) }
             let ids = Set(contacts.map(\.id)); seen = ids; banned = banned.intersection(ids)
-            switch det.frame(contacts.filter { !banned.contains($0.id) }, t: m) {
-            case .doubleTap(let n): doubles[n, default: 0] += 1
+            switch det.frame(contacts.filter { !banned.contains($0.id) }, t: t) {
+            case .doubleTap(let n): replayed[n, default: 0] += 1
             case .tap: singles += 1
             case nil: break
             }
         }
+        if logged.isEmpty {
+            before += 1
+            for (n, k) in replayed { falseDoubles[n, default: 0] += k }
+        } else {
+            withGestures += 1
+            if replayed == logged { matched += replayed.values.reduce(0, +) } else { mismatched.append("\(f): replayed \(replayed), app logged \(logged)") }
+        }
     }
-    check(files.count >= 7 && frames > 10_000 && doubles.isEmpty,
-          "replay of \(files.count) recorded sessions (\(frames) touch frames): no false double tap (\(singles) multi-finger touches counted as single taps, which do nothing; doubles: \(doubles))")
+    check(before >= 7 && frames > 10_000 && falseDoubles.isEmpty,
+          "replay of \(before) sessions recorded before the gestures (\(frames) touch frames in all): no false double tap (\(singles) multi-finger touches counted as single taps, which do nothing; doubles: \(falseDoubles))")
+    check(mismatched.isEmpty, "sessions recorded with the gestures (\(withGestures)): the replay finds exactly the \(matched) undos / redos the app made\(mismatched.isEmpty ? "" : ": \(mismatched)")")
 }
