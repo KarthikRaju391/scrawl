@@ -45,6 +45,7 @@ extension AppDelegate {
             item("Draw Mode  (⌃⌥D, Esc to leave)", #selector(toggleDrawModeAction)),   // the global hotkey owns ⌃⌥D
             item("Writing Mode  (W)", #selector(toggleWritingAction)),
             item("Zoom Lock  (L)", #selector(toggleZoomLockAction)),
+            item("Page Map", #selector(togglePageMapAction)),
             .separator(),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.control, .command], target: window),
             item("Pages Overview  (G)", #selector(toggleGalleryAction)),
@@ -127,6 +128,7 @@ extension AppDelegate {
         if item.action == #selector(toggleDrawModeAction) { item.state = canvas.drawMode ? .on : .off }
         if item.action == #selector(toggleWritingAction) { item.state = canvas.writingMode ? .on : .off }
         if item.action == #selector(toggleZoomLockAction) { item.state = canvas.tools.zoomLocked ? .on : .off }
+        if item.action == #selector(togglePageMapAction) { item.state = PageMapView.enabled ? .on : .off }
         let tools: [Selector: ToolKind] = [#selector(penAction): .pen, #selector(markerAction): .marker, #selector(highlighterAction): .highlighter, #selector(eraserAction): .eraser]
         if let a = item.action, let k = tools[a] { item.state = canvas.tools.tool == k ? .on : .off }
         if item.action == #selector(prevPageAction) { return canvas.pageIndex > 0 && !galleryShown }

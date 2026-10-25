@@ -13,6 +13,7 @@ final class ContainerView: NSView {
     let banner = PillLabel()
     let hint = PillLabel()
     let toast = PillLabel()
+    let pageMap = PageMapView()
 
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
@@ -40,6 +41,9 @@ final class ContainerView: NSView {
         toast.fillColor = NSColor(white: 0.15, alpha: 0.85)
         toast.isHidden = true
         addSubview(toast)
+        pageMap.canvas = canvas
+        pageMap.isHidden = true
+        addSubview(pageMap)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -49,6 +53,12 @@ final class ContainerView: NSView {
         // exactly this rectangle, so there are no margins. The toolbar and labels float on top; the toolbar
         // hides in draw mode (keys work there; the pointer is frozen so it couldn't be clicked anyway).
         canvas.frame = bounds
+        pageMap.isHidden = !pageMap.wanted
+        if !pageMap.isHidden {
+            let h = pageMap.preferredHeight
+            pageMap.frame = CGRect(x: bounds.width - PageMapView.width - 12, y: bounds.height - h - 12, width: PageMapView.width, height: h)
+            pageMap.refresh()
+        }
         toolbar.frame = CGRect(x: 0, y: 6, width: bounds.width, height: ToolbarView.height)
         toolbar.isHidden = canvas.drawMode
         if canvas.drawMode { toolbar.hidePanel() }
@@ -138,7 +148,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onPage = { [weak self] d in self?.page(d) }
         tb.onGallery = { [weak self] in self?.toggleGallery() }
         cv.onStatus = { [weak self] in self?.updateBanner() }
-        cv.onDocChanged = { [weak self] in self?.updateUndoState() }
+        cv.onDocChanged = { [weak self] in self?.updateUndoState(); self?.container.pageMap.refresh() }
+        cv.onViewChange = { [weak self] in
+            guard let self else { return }
+            let m = self.container.pageMap
+            if m.isHidden == m.wanted { self.container.needsLayout = true }
+            if !m.isHidden { m.needsDisplay = true }
+        }
+        cv.onTouching = { [weak self] down in
+            guard let m = self?.container.pageMap, !m.isHidden else { return }
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.15; m.animator().alphaValue = down ? 0.35 : 1 }
+            if !down { m.refresh() }
+        }
         cv.onTapCommand = { [weak self] text in self?.updateUndoState(); self?.showToast(text) }
 
         // Input: MultitouchSupport (pressure) unless turned off (Help menu, or --input-nstouch), else the
@@ -420,6 +441,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         #if !RELEASE
         if let i = a.firstIndex(of: "--test-robot"), i + 1 < a.count { let r = Robot(app: self, dir: a[i + 1]); robot = r; r.start() }   // robot/robot.py
         #endif
+        if a.contains("--test-pan") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPan.run(app: self) } }
         if a.contains("--test-modes") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestModes.run(app: self) } }
         if a.contains("--test-jitter") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestJitter.run(app: self) } }
         if a.contains("--test-gallerykeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryKeys.run(app: self) } }
@@ -544,6 +566,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func nextPageAction() { page(1) }
     @objc func toggleDrawModeAction() { apply(.draw, from: "menu") }
     @objc func toggleZoomLockAction() { apply(.zoomLock, from: "menu") }
+    @objc func togglePageMapAction() {
+        PageMapView.enabled.toggle()
+        if !canvas.testMode { UserDefaults.standard.set(PageMapView.enabled, forKey: "pageMap") }
+        container.needsLayout = true
+    }
     @objc func penAction() { apply(.tool(.pen), from: "menu") }
     @objc func markerAction() { apply(.tool(.marker), from: "menu") }
     @objc func highlighterAction() { apply(.tool(.highlighter), from: "menu") }

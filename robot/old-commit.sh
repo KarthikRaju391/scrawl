@@ -8,7 +8,16 @@ C=$1; ONLY=$2
 W=/tmp/scrawl-robot-$C
 rm -rf "$W"; git worktree remove --force "$W" 2>/dev/null || true
 git worktree add --detach "$W" "$C" >/dev/null
-grep -v "robot:modern" app/Robot.swift > "$W/app/Robot.swift"
+# Lines marked "robot:needs <text>" go when the old sources don't have <text> (a feature added later).
+python3 - app/Robot.swift "$W" > "$W/app/Robot.swift" <<'PY'
+import sys, re, glob
+src, w = sys.argv[1], sys.argv[2]
+old = "".join(open(f).read() for f in glob.glob(w + "/app/*.swift") if not f.endswith("/Robot.swift"))
+for line in open(src).read().split("\n")[:-1] if open(src).read().endswith("\n") else open(src).read().split("\n"):
+    m = re.search(r"// robot:needs (.+)$", line)
+    if m and m.group(1).strip() not in old: continue
+    print(line)
+PY
 python3 - "$W/app/main.swift" <<'PY'
 import sys, re
 p = sys.argv[1]; s = open(p).read()
@@ -28,7 +37,7 @@ open(c, "w").write(t.replace('"--test-zoomlock"]', '"--test-zoomlock", "--test-r
 PY
 # Old build scripts list the bench's excluded files; keep the robot out of the bench too.
 sed -i '' 's/-e main.swift/-e main.swift -e Robot.swift/' "$W/build.sh"
-(cd "$W" && ./build.sh >/dev/null 2>"$W/build.err" || { tail -20 "$W/build.err"; exit 1; })
+(cd "$W" && ./build.sh > "$W/build.err" 2>&1) || { grep error "$W/build.err" | head -20; echo "BUILD FAILED"; exit 1; }
 APP=$(ls -d "$W"/build/*.app | head -1)   # older builds were called "Trackpad Draw.app"
 python3 robot/robot.py --app "$APP/Contents/MacOS/TrackpadDraw" --out "build/robot-$C" --label "$C" ${ONLY:+--only $ONLY} || true
 git worktree remove --force "$W" >/dev/null 2>&1 || true

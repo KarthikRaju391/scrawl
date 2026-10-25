@@ -10,7 +10,8 @@
 //          pointer from the person using the Mac
 //   state  what the user would see: modes, tool, page, view, toast, panel, overview selection, frame timing
 //   window resize the window; quit (the normal quit path, which saves)
-// Lines marked "robot:modern" use features newer than some old commits; robot/adapt.sh drops them there.
+// A line marked "robot:needs <text>" uses a feature newer than some old commits: robot/old-commit.sh drops it
+// when the old commit's app/ sources don't contain <text>.
 #if !RELEASE
 import AppKit
 import QuartzCore
@@ -108,7 +109,7 @@ final class Robot {
             let how = c["how"] as? String ?? "plain"
             let tb = app.container.toolbar
             guard let item, var p = tb.center(of: item) else { done(["error": "no such item"]); return }
-            if how == "chevron", let q = tb.chevron(of: item) { p = q }   // robot:modern
+            if how == "chevron", let q = tb.chevron(of: item) { p = q }   // robot:needs func chevron(of
             let types: [NSEvent.EventType] = how == "right" ? [.rightMouseDown, .rightMouseUp] : [.leftMouseDown, .leftMouseUp]
             gapsMark = canvas.perf.gaps.count; stepStart = CACurrentMediaTime()
             for t in types {
@@ -129,12 +130,16 @@ final class Robot {
             for top in NSApp.mainMenu?.items ?? [] {
                 for i in top.submenu?.items ?? [] where i.action == sel {
                     var enabled = true
-                    enabled = app.validateMenuItem(i)   // robot:modern
+                    enabled = app.validateMenuItem(i)   // robot:needs func validateMenuItem
                     if enabled { NSApp.sendAction(sel, to: i.target, from: i) }
                     done(["ok": true]); return
                 }
             }
             done(["error": "no menu item"])
+        case "clickMap":   // a click (or a drag, with "to") on the page map at fractions of its size
+            var ok = false
+            ok = clickMap(c)   // robot:needs class PageMapView
+            done(ok ? ["ok": true] : ["error": "no page map"])
         case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
@@ -160,7 +165,7 @@ final class Robot {
             let v = canvas.camera.visible
             let pts = (c["points"] as? [[Double]] ?? []).map { q -> [Double] in
                 var n = CGPoint(x: q[0] / Multitouch.padMM.width, y: q[1] / Multitouch.padMM.height)
-                n = Camera.active(n)   // robot:modern
+                n = Camera.active(n)   // robot:needs static func active(
                 return [v.minX + n.x * v.width, v.minY + n.y * v.height]
             }
             done(["points": pts])
@@ -170,7 +175,7 @@ final class Robot {
         case "exportPNG":   // the page as stored ink (the OCR reference for the screenshot)
             let path = c["path"] as? String ?? dir + "/page.png"
             var ok = false
-            ok = (try? canvas.exportPNG(to: URL(fileURLWithPath: path))) != nil   // robot:modern
+            ok = (try? canvas.exportPNG(to: URL(fileURLWithPath: path))) != nil   // robot:needs func exportPNG
             done(ok ? ["ok": true] : ["error": "no export in this build"])
         case "window":
             let w = c["w"] as? Double ?? 1000, h = c["h"] as? Double ?? 700
@@ -184,6 +189,19 @@ final class Robot {
         }
     }
 
+    private func clickMap(_ c: [String: Any]) -> Bool {   // robot:needs class PageMapView
+        let m = app.container.pageMap   // robot:needs class PageMapView
+        guard !m.isHidden else { return false }   // robot:needs class PageMapView
+        var pts = [CGPoint(x: c["x"] as? Double ?? 0.5, y: c["y"] as? Double ?? 0.5)]   // robot:needs class PageMapView
+        if let to = c["to"] as? [Double] { pts.append(CGPoint(x: to[0], y: to[1])) }   // robot:needs class PageMapView
+        for (i, f) in pts.enumerated() {   // robot:needs class PageMapView
+            let p = m.convert(CGPoint(x: f.x * m.bounds.width, y: f.y * m.bounds.height), to: nil)   // robot:needs class PageMapView
+            if let e = NSEvent.mouseEvent(with: i == 0 ? .leftMouseDown : .leftMouseDragged, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: app.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { app.window.sendEvent(e) }   // robot:needs class PageMapView
+        }   // robot:needs class PageMapView
+        if let e = NSEvent.mouseEvent(with: .leftMouseUp, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: app.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { app.window.sendEvent(e) }   // robot:needs class PageMapView
+        return true   // robot:needs class PageMapView
+    }   // robot:needs class PageMapView
+
     final class Downs: @unchecked Sendable { var items: [[String: Any]] = []; var trace: [Int] = [] }
 
     static func view(_ canvas: CanvasView) -> [String: Double] {
@@ -195,7 +213,7 @@ final class Robot {
     static func padMM(_ canvas: CanvasView, _ p: CGPoint) -> [Double] {
         let v = canvas.camera.visible
         var n = CGPoint(x: (p.x - v.minX) / v.width, y: (p.y - v.minY) / v.height)
-        n = Camera.pad(fromActive: n)   // robot:modern
+        n = Camera.pad(fromActive: n)   // robot:needs static func pad(fromActive
         return [n.x * Multitouch.padMM.width, n.y * Multitouch.padMM.height]
     }
 
@@ -205,7 +223,7 @@ final class Robot {
         case "pen": return .tool(.pen); case "marker": return .tool(.marker); case "highlighter": return .tool(.highlighter); case "eraser": return .tool(.eraser)
         case "background": return .background; case "writing": return .writing; case "zoomLock": return .zoomLock; case "settings": return .settings
         case "draw": return .draw; case "prevPage": return .prevPage; case "nextPage": return .nextPage; case "newPage": return .newPage
-        case "gallery": return .gallery   // robot:modern
+        case "gallery": return .gallery   // robot:needs case gallery
         default: return nil
         }
     }
@@ -221,6 +239,7 @@ final class Robot {
             "strokesPerPage": canvas.pages.map { $0.strokes.count },
             "view": Self.view(canvas),
             "padMM": [Multitouch.padMM.width, Multitouch.padMM.height],
+            "pageW": canvas.camera.page.width,
             "lastStrokeMid": canvas.doc.strokes.last.map { s -> [Double] in let p = s.points[s.points.count / 2].p; return [p.x, p.y] } ?? [],
             "lastStrokes": canvas.doc.strokes.suffix(40).map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] },
             "toolbarHidden": tb.isHidden, "panelOpen": !tb.panel.isHidden,
@@ -233,10 +252,11 @@ final class Robot {
             "mainThread": ["ticks": tickGaps.count, "maxStallMs": tickGaps.max() ?? 0, "over50": tickGaps.filter { $0 > 50 }.count,
                            "over20": tickGaps.filter { $0 > 20 }.count],
         ]
-        s["toast"] = app.container.toast.isHidden ? "" : app.container.toast.stringValue   // robot:modern
+        s["toast"] = app.container.toast.isHidden ? "" : app.container.toast.stringValue   // robot:needs let toast
         s["panelMode"] = tb.panel.isHidden ? "" : "\(tb.panel.mode)"
-        s["gallery"] = app.galleryShown ? (app.gallery?.selected ?? -1) : -2   // robot:modern
-        s["canUndo"] = canvas.doc.canUndo   // robot:modern
+        s["gallery"] = app.galleryShown ? (app.gallery?.selected ?? -1) : -2   // robot:needs var galleryShown
+        s["canUndo"] = canvas.doc.canUndo   // robot:needs var canUndo
+        s["pageMap"] = app.container.pageMap.isHidden ? [:] : ["w": app.container.pageMap.frame.width, "h": app.container.pageMap.frame.height, "alpha": app.container.pageMap.alphaValue]   // robot:needs class PageMapView
         return s
     }
 }

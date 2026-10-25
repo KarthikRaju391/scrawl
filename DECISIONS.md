@@ -21,3 +21,12 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Scrub arms when the second tap of a two-finger double tap is held still for 0.25 s, and starts only after a 4 mm sideways slide, because two recorded touches rested like that and then lifted. It steps every 7 mm; left = undo.
 - The scrub follows the two fingers that held it: one lifting ends it, because a lift moved the midpoint 9.5 mm in a recorded session.
 - Scratch-out ships on by default (the 0-false-erase bar is met); a Settings switch comes with the Settings window.
+
+## Writing flow (W2)
+- A pan keeps the last three words on screen if they fit in 60% of the view, else two, else one, and moves at most half the view: you can follow the jump and still read the end of your sentence.
+- Centre mode still aims the line's end at mid-view, but keeping the words wins, so the end can sit a little right of the middle.
+- A new line puts the next line 57.5% down the view (was 50%): with two lines written, both stay in view (the robot measured 1 before).
+- A hand pan right (two fingers or →) with auto-pan on frees the current line from the line width until the next new line, because Karthik pans right on purpose to keep writing, and the old rule sent him back to the margin (the parked pan bug; the robot reproduced it and checks/pan.sh now passes).
+- With No pan, a hand pan is how you move along, so the line width still applies (otherwise a No-pan line never wraps).
+- The early new line at the page's end (at 70% of the view once the view reached the edge) is gone: the line ends at the page margin.
+- Page map: top-right, 132 pt wide; shown when zoomed past 1.5x (in and out of draw mode); clicks and drags move the view outside draw mode only (draw mode freezes the pointer); renders on a background queue at most every 0.4 s and only after a stroke ends; fades to 35% while a finger is down; View › Page Map turns it off (saved).

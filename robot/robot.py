@@ -314,7 +314,8 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None):
             line = {"x": bx, "y": min(b[1] for b in new) + (max(b[3] for b in new) - min(b[1] for b in new)) * 0.05,
                     "h": max(b[3] for b in new) - min(b[1] for b in new)}
         new_line = after["view"]["y"] < before["y"] - (line["h"] * 0.5 if line else 1)
-        recs.append({"word": w, "midWordMove": moved, "newLine": new_line, "view": after["view"]})
+        wb = [min(b[0] for b in new), min(b[1] for b in new), max(b[2] for b in new), max(b[3] for b in new)] if new else None
+        recs.append({"word": w, "midWordMove": moved, "newLine": new_line, "view": after["view"], "before": before, "bounds": wb})
         if new_line and line:
             # The next word starts the new line: below this line's first word.
             nl = {"x": line["x"], "y": line["y"] - max(line["h"] * 1.6, after["view"]["h"] * 0.12), "h": line["h"]}
@@ -414,6 +415,65 @@ def run_scenarios(app, rep, only, hand):
                     judge_writing(app, rep, recs, st, " ".join(SENTENCE.split()[:7]), ocr_check=False)
                 return f
             S[f"write-{wname}-{pname}"] = (f"Writing mode at zoom 3, {wname} line width, {pname.replace('-', ' ')}: seven words, with the new line where the width runs out.", make())
+
+    @scenario("pan-right-by-hand", "Karthik's case: start a line, pan right with two fingers past the line width, keep writing there and pause. The page must stay where he put it (no jump back to the margin).")
+    def _():
+        app.press("n")
+        st = app.state()
+        if not st["writing"]: app.press("w", until=lambda s: s["writing"])
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)        # View › Zoom to Whole Page
+        app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 30, dur=0.6))   # then pinch to zoom 2
+        recs, cid = write_words(app, hand, ["start", "here"], pad_h * 0.55, pad_w * 0.08, 9700, rep)
+        settle(app)
+        app.touch(two_finger(pad_w * 0.75, pad_h * 0.5, 25, 25, shift=(-40, 0), dur=0.6))   # pan right by hand, twice,
+        app.touch(two_finger(pad_w * 0.75, pad_h * 0.5, 25, 25, shift=(-35, 0), dur=0.6))   # well past the ½-page line
+        settle(app)
+        lim = app.state()
+        rep.step("after the hand pan", viewX=round(lim["view"]["x"]), viewRight=round(lim["view"]["x"] + lim["view"]["w"]), pageW=lim.get("pageW"))
+        rep.check(lim["view"]["x"] + lim["view"]["w"] > lim["pageW"] * 0.56 + 60, "the hand pan reached past the ½-page line (the case to test)",
+                  f"view {lim['view']['x']:.0f}-{lim['view']['x'] + lim['view']['w']:.0f} of {lim['pageW']:.0f}")
+        a = app.state()
+        (lx, ly), = app.cmd({"cmd": "toPad", "points": [[lim["pageW"] * 0.56, lim["view"]["y"] + lim["view"]["h"] * 0.5]]})["points"]
+        fr, cid = hand.frames(hand.word("there", lx, pad_h * 0.55), cid)   # just past the ½-page line
+        app.touch(fr + [[0.008, []]] * 100)
+        settle(app); b = app.state()
+        rep.check(abs(b["view"]["x"] - a["view"]["x"]) < 1e-6 and abs(b["view"]["y"] - a["view"]["y"]) < 1e-6,
+                  "after panning right by hand, writing there keeps the page where it is", f"view x {a['view']['x']:.0f} -> {b['view']['x']:.0f}, y {a['view']['y']:.0f} -> {b['view']['y']:.0f}")
+        rep.shot(app, "wrote after panning right by hand")
+        app.press("d", until=lambda s: not s["draw"])
+
+    @scenario("page-map", "Zoomed in past 1.5x, a small map of the page shows the view's place; clicking or dragging it moves the view; View › Page Map turns it off. At the whole page it stays away.")
+    def _():
+        if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
+        app.press("n")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        s0 = app.state()
+        rep.check(not s0.get("pageMap"), "no map at the whole page", f"{s0.get('pageMap')}")
+        app.press("d", until=lambda s: s["draw"])
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        fr, cid = hand.frames(hand.word("map", pad_w * 0.3, pad_h * 0.7, hand.roman), 9800)
+        app.touch(fr)
+        app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 45, dur=0.6))   # zoom 3
+        settle(app); time.sleep(0.6)
+        s1 = app.state()
+        rep.check(bool(s1.get("pageMap")) and s1["view"]["zoom"] > 1.5, "zoomed in: the page map shows", f"zoom {s1['view']['zoom']:.1f}, map {s1.get('pageMap')}")
+        rep.shot(app, "page map at zoom 3 (top right)")
+        app.press("d", until=lambda s: not s["draw"])
+        v0 = app.state()["view"]
+        app.cmd({"cmd": "clickMap", "x": 0.85, "y": 0.5}); time.sleep(0.2)
+        v1 = app.state()["view"]
+        rep.check(v1["x"] > v0["x"] + v0["w"] * 0.3, "clicking the map's right side moves the view there", f"view x {v0['x']:.0f} -> {v1['x']:.0f}")
+        app.cmd({"cmd": "clickMap", "x": 0.85, "y": 0.5, "to": [0.15, 0.5]}); time.sleep(0.2)
+        v2 = app.state()["view"]
+        rep.check(v2["x"] < v1["x"] - v1["w"] * 0.3, "dragging on the map moves the view along", f"view x {v1['x']:.0f} -> {v2['x']:.0f}")
+        rep.shot(app, "after dragging on the map")
+        app.cmd({"cmd": "menu", "action": "togglePageMapAction"}); time.sleep(0.3)
+        rep.check(not app.state().get("pageMap"), "View › Page Map turns it off")
+        app.cmd({"cmd": "menu", "action": "togglePageMapAction"}); time.sleep(0.3)
+        rep.check(bool(app.state().get("pageMap")), "and on again")
 
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
@@ -619,9 +679,48 @@ def run_scenarios(app, rep, only, hand):
     return S, names
 
 
+def flow_metrics(recs):
+    """What the writer can see after each page move: words of the line still on screen after a pan, the size
+    of the jump, and whether the line just finished is still in view after a new line."""
+    pans, lines = [], []
+    for i, r in enumerate(recs):
+        b, a = r["before"], r["view"]
+        if r["newLine"]:
+            # Lines written so far (split where the page went to a new line), and how many are still in view.
+            groups, g = [], []
+            for x in recs[:i + 1]:
+                if x["bounds"]: g.append(x["bounds"])
+                if x["newLine"]: groups.append(g); g = []
+            visible = sum(1 for gr in groups if any(pb[1] >= a["y"] - 1e-6 and pb[3] <= a["y"] + a["h"] + 1e-6 for pb in gr))
+            lines.append({"prevLineVisible": visible > 0, "linesVisible": visible, "linesWritten": len(groups)})
+        elif a["x"] > b["x"] + 1e-6:
+            words = 0
+            for x in reversed(recs[:i + 1]):
+                bb = x["bounds"]
+                if bb is None or x["newLine"] and x is not r: break
+                if bb[0] >= a["x"] - 1e-6 and bb[2] <= a["x"] + a["w"] + 1e-6: words += 1
+                else: break
+            pans.append({"wordsVisible": words, "jump": (a["x"] - b["x"]) / b["w"]})
+    return pans, lines
+
+
 def judge_writing(app, rep, recs, st, text, ocr_check=True):
     mid = [r["word"] for r in recs if r["midWordMove"]]
     rep.check(not mid, "the page never moved inside a word", f"moved inside: {mid}" if mid else f"{len(recs)} words")
+    pans, lines = flow_metrics(recs)
+    rep.step("page moves", pans=[(p["wordsVisible"], round(p["jump"], 2)) for p in pans], newLines=len(lines))
+    if pans:
+        few = min(p["wordsVisible"] for p in pans)
+        big = max(p["jump"] for p in pans)
+        rep.check(few >= 2, "after every pan the last 2-3 words are still on screen", f"fewest words visible after a pan: {few} ({len(pans)} pans)")
+        rep.check(big <= 0.52, "no pan jumps more than half a screen", f"largest jump {big:.0%} of the view")
+    if lines:
+        seen = sum(l["prevLineVisible"] for l in lines)
+        rep.check(seen == len(lines), "after a new line the line just written is still in view", f"{seen} of {len(lines)} new lines")
+        two = [l for l in lines if l["linesWritten"] >= 2]
+        if two:
+            ok2 = sum(l["linesVisible"] >= 2 for l in two)
+            rep.check(ok2 == len(two), "with two lines written, both are still in view after the next new line", f"{ok2} of {len(two)} new lines (lines in view: {[l['linesVisible'] for l in two]})")
     lines = sum(r["newLine"] for r in recs)
     rep.step("words", n=len(recs), newLines=lines, strokes=st["strokes"])
     p = rep.shot(app, "after writing")

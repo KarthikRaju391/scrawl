@@ -418,6 +418,7 @@ final class CanvasView: MTKView {
                 markDirty()   // the view of each page is saved too
                 let v = camera.visible
                 recorder.record(["k": "view", "x": v.minX, "y": v.minY, "w": v.width, "h": v.height, "z": camera.zoom, "src": source], sensorT: frameSensorT)
+                onViewChange?()
             }
             // One line per gesture (same cause within 0.5 s is coalesced); always when locked.
             if abs(camera.zoom - oldValue.zoom) > 1e-9 {
@@ -433,6 +434,16 @@ final class CanvasView: MTKView {
     /// What is changing the camera/tools right now (for the event log).
     var source = "unknown"
     func changing(_ src: String, _ body: () -> Void) { let old = source; source = src; body(); source = old }
+    /// The visible part of the page changed (the page map follows it).
+    var onViewChange: (() -> Void)?
+    /// A finger went down on / came off the page (draw mode): the page map fades while you draw.
+    var onTouching: ((Bool) -> Void)?
+    /// Centre the view on a page point, keeping the zoom (the page map).
+    func centerView(on p: CGPoint, src: String) {
+        cancelPendingMove(); finishSlide()
+        changing(src) { var c = camera; c.center = p; c.clamp(); camera = c }
+        needsRender = true
+    }
     private(set) var renderer: Renderer!
     private let gestures = GestureEngine()
     private var builder: StrokeBuilder?
@@ -546,7 +557,9 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil }
+    private func endWritingLine() { lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil; lineFree = false }
+    /// The current line was moved right by hand: it isn't held to the line width (WritingLayout.lineFree).
+    private var lineFree = false
 
     /// Return in writing mode: next line now (one line down, back to the line start).
     func newLineByHand() {
@@ -683,6 +696,7 @@ final class CanvasView: MTKView {
         cancelPendingMove(); finishSlide()
         let v = camera.visible, f = screen ? 1.0 : 0.1
         changing("arrow") { camera.center.x += Double(dx) * f * v.width; camera.center.y -= Double(dy) * f * v.height; camera.clamp() }
+        if dx > 0 && writingMode && tools.autoPan != .off && lineInk != nil && camera.visible.minX > v.minX { lineFree = true }   // moved right by hand
         needsRender = true
     }
     /// While the pages overview covers the canvas (and during its transitions): no frames. Each frame waits
@@ -723,6 +737,7 @@ final class CanvasView: MTKView {
         // Only fingers the edge guard counts: a palm resting on the edge must neither cancel nor hold
         // back a pending page move.
         let counted = contacts.filter { !gestures.ignoresAtEdge($0) }
+        if (countedContacts > 0) != !counted.isEmpty { onTouching?(!counted.isEmpty) }
         countedContacts = counted.count
         if countedContacts > 0 { finishSlide(); cancelPendingMove() }
         // Multi-finger taps: the view at the start of each touch episode, to undo any nudge a tap gave it.
@@ -892,7 +907,11 @@ final class CanvasView: MTKView {
         gestures.onEnd = { [weak self] commit in self?.endStroke(commit) }
         gestures.onNavigate = { [weak self] prev, now, ratio in
             guard let self else { return }
+            let x0 = self.camera.visible.minX
             self.changing("pinch") { self.camera.navigate(from: prev, to: now, ratio: ratio, zoomLocked: self.tools.zoomLocked) }  // moved by hand: the next stroke starts a new line where it lands
+            // With auto-pan on, panning right by hand is a choice of where to write; with No pan it's how you
+            // move along the line, which still ends at the line width.
+            if self.writingMode && self.tools.autoPan != .off && self.lineInk != nil && self.camera.visible.minX > x0 + 1e-6 { self.lineFree = true }
         }
     }
 
@@ -1012,7 +1031,7 @@ final class CanvasView: MTKView {
             let vh = camera.visible.height
             // A stroke well above or below the current line (you moved there yourself): new line here.
             if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
-                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX
+                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; lineFree = false
             }
             if legacyLineLeft == nil { legacyLineLeft = s.bounds.minX }
             let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
@@ -1023,6 +1042,7 @@ final class CanvasView: MTKView {
             layout.autoPan = tools.autoPan
             layout.edge = settings.panEdge
             layout.legacyStrokeEdge = legacyWriting
+            layout.lineFree = lineFree
             let start = legacyWriting ? legacyLineLeft! : layout.lineStart(pageWidth: camera.page.width)
             let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: start,
                                     visible: camera.visible, pageWidth: camera.page.width)
@@ -1059,10 +1079,10 @@ final class CanvasView: MTKView {
         case .pan(let c):
             act("autoPan", ["toX": c.x, "toY": c.y, "mode": tools.autoPan.rawValue])
             panCount += 1
-            if let line = lineInk { lastPanWordStart = WritingLayout.lastWordStart(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01)) }
+            if let line = lineInk { lastPanWordStart = WritingLayout.wordStarts(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01)).last ?? 0 }
             slideCamera(to: c)
         case .newLine(let c):
-            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []
+            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; lineFree = false
             slideCamera(to: c, src: "newLine")
         }
         needsRender = true

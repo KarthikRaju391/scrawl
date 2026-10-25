@@ -26,6 +26,7 @@ suites=(
   "page-arrows|checks/arrows.sh"
   "page-dates|checks/meta.sh"
   "zoomlock|checks/zoomlock.sh"
+  "pan-moves|checks/pan.sh"
   "autopan-centre|checks/autopan.sh --autopan centre"
   "autopan-left|checks/autopan.sh --autopan left"
   "autopan-off|checks/autopan.sh --autopan off"
