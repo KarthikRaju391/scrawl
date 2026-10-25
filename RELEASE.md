@@ -91,6 +91,17 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
     - 41 strokes now drawn that a resting edge touch had turned into a gesture;
     - 11 strokes removed: 5 of them he had undone, and 6 real strokes (0.4% of 1,464) are lost.
 - [x] **Mode keys toggle** (D, W, L/Z; M/H/E back to the pen; P back to the last other tool). `keys.sh` presses each twice, and the toolbar stays in sync.
+- [x] **Page bounds are obvious.**
+  - Off-page space (beside the page, above its top) is a plain grey desk with a shadowed edge and no lines.
+  - The trackpad's area sits at the top of a tall window, so the page top meets the window top and can't drift below it.
+  - `page.sh` covers narrow, wide and screen-sized windows at zoom 1, zoom 3, and zoom 3 at the right edge, with screenshots and pixel checks. Two mutations fail it.
+- [x] **Pages overview (G / grid button).**
+  - Cached thumbnails.
+  - The grow and shrink transition between a grid cell and the canvas, with its geometry asserted.
+  - The "+ New page" tile is last.
+  - It leaves draw mode and returns to it.
+  - `gallery.sh` covers 40 pages, persistence across a restart, and screenshots.
+- [x] **Page arrows dim** on the first and last page, and ⌘[ / ⌘] do nothing then. Next never adds a page. `arrows.sh` checks this, and a mutation fails it.
 - [x] **Aim-first mode removed** (Karthik: the finger rings already show where you'll write).
   - The toggle, the A key, the panel checkbox, the help and doc mentions, and its test suite are gone.
   - Old settings that still contain `aimFirst` load fine; the key is ignored and not written back (bench check).
@@ -122,26 +133,29 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 
 ## Test results (2026-10-25, `checks/run_all.sh`, everything in the background)
 
-All 18 suites pass:
+All 20 suites pass:
 
 | suite | result |
 |---|---|
-| bench | 56/56 |
+| bench | 57/57 |
 | persist | 11/11 |
 | cursor | 11/11 |
-| input | 13/13 |
-| mapping | 5 window shapes and full-screen sizes, all checks |
+| input | 12/12 |
+| mapping | 7/7 |
 | edge guard | 11/11 |
-| keys | 24/24 |
+| keys | 22/22 |
 | newline | 108 cases + palm + Return |
+| page edges | 9/9 |
+| gallery | 12/12 |
+| page arrows | 9/9 |
 | zoom lock | all steps |
-| auto-pan (centre, left, off) | 90 letters each, no overlaps |
+| auto-pan (centre, left, off) | 90 letters each |
 | ui | screenshots |
 | e2e replay | 27 strokes |
-| session replay | fidelity exact; mid-word page moves 24 → 0 |
+| session replay | fidelity exact |
 | edge replay | see the edge guard results above |
-| release DMG smoke test | 28/28, re-run on the final DMG |
+| release DMG smoke test | 28/28 |
 
-Fixes to the tests this round:
-- **Fresh-install welcome check:** it read the real settings, which now record that Karthik opened the build, so it now uses an empty store.
-- **Frame-time check:** it counted the window server's drawable wait, so it now counts only Scrawl's own work.
+**On hold (Karthik):**
+- **Pan after a hand pan right:** a new line pulls the view back. This is the regression from the line-end rule in 8ae637d. The failing test is in a stash.
+- **The new-line trigger.**
