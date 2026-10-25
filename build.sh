@@ -45,6 +45,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>NSSupportsAutomaticTermination</key><false/>
   <key>TDUpdateURL</key><string>$UPDATE_URL</string>
+  <key>TDTelemetryAppID</key><string>${TELEMETRY_APP_ID:-}</string>
   <key>TDBuildConfig</key><string>$CONFIG</string>
 </dict></plist>
 PLIST
