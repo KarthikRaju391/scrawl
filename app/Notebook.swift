@@ -124,27 +124,49 @@ extension Document {
 
 // MARK: - Saving and loading pages
 
-extension CanvasView {
-    func notebookFile() -> NotebookFile {
-        var f = NotebookFile()
-        f.appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        f.pageIndex = pageIndex
-        f.nextStrokeId = nextStrokeIdForSave
+/// Everything a save needs, captured on the main thread in a few milliseconds: the page structure, views,
+/// dates, and references to the strokes (immutable once committed). Building and encoding the file from it
+/// can then happen on the save queue: doing that on the main thread blocked drawing for ~100 ms per save on
+/// a 4.5 MB notebook (the ink froze, then jumped).
+struct NotebookSnapshot {
+    struct Page { var strokes: [Stroke]; var undo: [[Stroke]]; var redo: [[Stroke]]; var camera: Camera; var created: Date?; var edited: Date? }
+    var appVersion: String
+    var pageIndex: Int
+    var nextStrokeId: Int
+    var pages: [Page]
+}
+
+extension NotebookFile {
+    init(_ snap: NotebookSnapshot) {
+        self.init()
+        appVersion = snap.appVersion; pageIndex = snap.pageIndex; nextStrokeId = snap.nextStrokeId
         var table: [Int: Stroke] = [:]
-        for (i, doc) in pages.enumerated() {
-            let cam = i == pageIndex ? camera : (i < pageCamerasForSave.count ? pageCamerasForSave[i] : camera)
-            let h = doc.history
-            for s in doc.strokes { table[s.id] = s }
-            for list in h.undo + h.redo { for s in list { table[s.id] = s } }
-            f.pages.append(.init(strokes: doc.strokes.map(\.id), undo: h.undo.map { $0.map(\.id) }, redo: h.redo.map { $0.map(\.id) },
-                                 zoom: cam.zoom, centerX: cam.center.x, centerY: cam.center.y,
-                                 created: doc.created?.timeIntervalSince1970, edited: doc.edited?.timeIntervalSince1970))
+        for p in snap.pages {
+            for s in p.strokes { table[s.id] = s }
+            for list in p.undo + p.redo { for s in list { table[s.id] = s } }
+            pages.append(.init(strokes: p.strokes.map(\.id), undo: p.undo.map { $0.map(\.id) }, redo: p.redo.map { $0.map(\.id) },
+                               zoom: p.camera.zoom, centerX: p.camera.center.x, centerY: p.camera.center.y,
+                               created: p.created?.timeIntervalSince1970, edited: p.edited?.timeIntervalSince1970))
         }
-        f.strokes = table.values.sorted { $0.id < $1.id }.map {
+        strokes = table.values.sorted { $0.id < $1.id }.map {
             .init(id: $0.id, tool: $0.tool.rawValue, color: [$0.color.x, $0.color.y, $0.color.z, $0.color.w], size: $0.size, points: NotebookFile.pack($0.points))
         }
-        return f
     }
+}
+
+extension CanvasView {
+    /// Cheap (main thread): arrays of references, copied on write.
+    func notebookSnapshot() -> NotebookSnapshot {
+        NotebookSnapshot(appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+                         pageIndex: pageIndex, nextStrokeId: nextStrokeIdForSave,
+                         pages: pages.enumerated().map { i, doc in
+                             let h = doc.history
+                             return .init(strokes: doc.strokes, undo: h.undo, redo: h.redo,
+                                          camera: i == pageIndex ? camera : (i < pageCamerasForSave.count ? pageCamerasForSave[i] : camera),
+                                          created: doc.created, edited: doc.edited)
+                         })
+    }
+    func notebookFile() -> NotebookFile { NotebookFile(notebookSnapshot()) }
 
     /// Replace the notebook with a saved one.
     func load(_ f: NotebookFile) {
@@ -199,6 +221,8 @@ final class Autosaver {
     private(set) var changes = 0         // changes seen
     private(set) var savedThrough = 0    // changes covered by the last completed write
     var delay = 0.5
+    /// Main-thread time of each save (test / diagnostics): what the app is blocked for while you write.
+    private(set) var mainThreadMs: [Double] = []
 
     init(canvas: CanvasView) { self.canvas = canvas }
 
@@ -212,11 +236,16 @@ final class Autosaver {
 
     func saveNow(sync: Bool) {
         pending?.cancel(); pending = nil
-        guard AppPaths.persists, let c = canvas, let data = try? c.notebookFile().encoded() else { return }
+        let m0 = CACurrentMediaTime()
+        defer { mainThreadMs.append((CACurrentMediaTime() - m0) * 1000) }
+        guard AppPaths.persists, let c = canvas else { return }
+        // Main thread: only the snapshot. Building, encoding and writing happen on the save queue (in order).
+        let snap = c.notebookSnapshot()
         let path = AppPaths.notebookPath, through = changes
         let write = { [weak self] in
             AppPaths.ensure()
             do {
+                let data = try NotebookFile(snap).encoded()
                 try data.write(to: URL(fileURLWithPath: path), options: .atomic)
                 DispatchQueue.main.async { self?.saves += 1; self?.savedThrough = max(self?.savedThrough ?? 0, through) }
             }

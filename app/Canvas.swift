@@ -431,6 +431,8 @@ final class CanvasView: MTKView {
     private let gestures = GestureEngine()
     private var builder: StrokeBuilder?
     var liveStrokePointCountForTest: Int { builder?.points.count ?? 0 }
+    /// Test hook: the live stroke's newest filtered point (canvas units), nil between strokes.
+    var liveTipForTest: CGPoint? { builder?.points.last?.p }
     private var liveTool: ToolKind = .pen
     private var liveColor = SIMD4<Float>(0, 0, 0, 1)
     private var liveSize = 1.0

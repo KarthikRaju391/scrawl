@@ -57,4 +57,7 @@ old pages and settings over.
 - Universal app with the hardened runtime and no entitlements. Requires macOS 14 or later.
 
 ### Fixes
+- Writing no longer stutters as the notebook grows: autosave encoded the whole notebook on the main
+  thread (about 100 ms per save on a 4.5 MB notebook, every half second while writing). It now does that in
+  the background.
 - Settings panel controls were invisible in dark mode.
