@@ -17,6 +17,8 @@ old pages and settings over.
   the green button or ⌃⌘F). The trackpad maps without distortion to the largest trackpad-shaped area in
   the window, centred and outlined in draw mode. Pan to reach the paper around it.
 - Return in writing mode starts the next line.
+- The page's bounds are obvious. Anything off the page (beside it, above its top) is a plain grey desk with a
+  shadowed page edge and no lines. In a tall window the page top sits at the window top.
 - Edge guard: touches that start within 5% of the trackpad's edges are ignored, so a resting palm or
   thumb no longer draws, pans or zooms. The inner 90% covers the whole writing area. You can change it
   under ⚙︎ › Edge guard, and 0 turns it off.

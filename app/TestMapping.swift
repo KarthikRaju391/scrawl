@@ -52,7 +52,7 @@ enum TestMapping {
             let pr = canvas.padRect
             s["padRect"] = [pr.minX, pr.minY, pr.width, pr.height]
             s["padRectAspect"] = pr.width / pr.height
-            s["padRectCentredErr"] = max(abs(pr.midX - b.width / 2), abs(pr.midY - b.height / 2))
+            s["padRectCentredErr"] = max(abs(pr.midX - b.width / 2), abs(pr.maxY - b.height))   // centred left-right, at the top
             s["padRectFills"] = abs(pr.width - b.width) < 0.5 || abs(pr.height - b.height) < 0.5
             // Same scale on both axes everywhere in the view (no stretch).
             let rr = canvas.renderRect

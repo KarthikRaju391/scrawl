@@ -584,13 +584,14 @@ final class CanvasView: MTKView {
     required init(coder: NSCoder) { fatalError() }
 
     /// Where the trackpad's active area lands in this view: the largest rectangle with the pad's shape
-    /// that fits, centred. The paper fills the whole view; outside this rectangle it shows the page around
+    /// that fits, centred left-right and at the top (in a tall window the page top meets the window top,
+    /// and the rest of the window shows the page continuing below, instead of off-page space above it). The paper fills the whole view; outside this rectangle it shows the page around
     /// it at the same scale (reach it by panning). Same rule windowed (any shape) and in full screen: no stretch.
     var padRect: CGRect {
         let a = Self.pageUnits.width / Self.pageUnits.height
         var w = bounds.width, h = w / a
         if h > bounds.height { h = bounds.height; w = h * a }
-        return CGRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
+        return CGRect(x: (bounds.width - w) / 2, y: bounds.height - h, width: w, height: h)
     }
     /// Screen points per canvas unit at zoom 1.
     var ptPerUnit: Double { max(padRect.width, 1) / camera.page.width }
@@ -1082,6 +1083,7 @@ final class CanvasView: MTKView {
         perf.build.append((CACurrentMediaTime() - cpu0) * 1000)
         renderer.render(in: self, visible: vis, background: tools.background,
                         spacing: 48, pxPerUnit: ptPerUnit * camera.zoom * Double(window?.backingScaleFactor ?? 2),
+                        page: CGRect(x: 0, y: -1e9, width: camera.page.width, height: camera.page.height + 1e9),
                         items: items, presented: { [weak self] t in
                             guard t > 0 else { return }  // 0 = dropped frame
                             DispatchQueue.main.async {

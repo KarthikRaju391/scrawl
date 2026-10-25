@@ -21,8 +21,20 @@ vertex VOut bg_v(uint vid [[vertex_id]], constant Xf& xf [[buffer(1)]]) {
     float2 ndc = float2(float((vid << 1) & 2), float(vid & 2)) * 2 - 1;
     VOut o; o.pos = float4(ndc, 0, 1); o.canvas = (ndc - xf.m.zw) / xf.m.xy; return o;
 }
-struct BG { float kind; float spacing; float pxPerUnit; float pad; };
+struct BG { float kind; float spacing; float pxPerUnit; float pageWidth; float pageTop; float hasPage; float _a; float _b; };
 fragment float4 bg_f(VOut in [[stage_in]], constant BG& bg [[buffer(0)]]) {
+    // Off the page (left/right of it, above its top; it is endless downwards): a plain grey desk with a
+    // soft shadow along the page edge, so it can't be mistaken for writing space.
+    if (bg.hasPage > 0) {
+        float dx = max(max(-in.canvas.x, in.canvas.x - bg.pageWidth), 0.0);
+        float dy = max(in.canvas.y - bg.pageTop, 0.0);
+        float d = length(float2(dx, dy)) * bg.pxPerUnit;   // device pixels outside the page
+        if (d > 0) {
+            float4 desk = float4(0.80, 0.82, 0.85, 1);
+            float4 shadow = float4(0.55, 0.57, 0.61, 1);
+            return mix(desk, shadow, exp(-d / 10.0) * 0.6);
+        }
+    }
     float4 paper = float4(1, 1, 1, 1);
     float4 line = float4(0.82, 0.84, 0.87, 1);
     float2 c = in.canvas / bg.spacing;
@@ -192,13 +204,13 @@ final class Renderer {
     /// `items` in paint order. `verts` (instead of a mesh) is for small per-frame geometry.
     /// Time the last frame waited for a drawable from the window server (not our work).
     private(set) var lastDrawableWaitMs = 0.0
-    func render(in view: MTKView, visible: CGRect, background: Int, spacing: Double, pxPerUnit: Double,
+    func render(in view: MTKView, visible: CGRect, background: Int, spacing: Double, pxPerUnit: Double, page: CGRect? = nil,
                 items: [DrawItem], presented: ((Double) -> Void)?, gpuMs: ((Double) -> Void)? = nil) {
         let w0 = CACurrentMediaTime()
         guard let rpd = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let cb = queue.makeCommandBuffer() else { return }
         lastDrawableWaitMs = (CACurrentMediaTime() - w0) * 1000
-        encode(cb, rpd, visible: visible, background: background, spacing: spacing, pxPerUnit: pxPerUnit, items: items)
+        encode(cb, rpd, visible: visible, background: background, spacing: spacing, pxPerUnit: pxPerUnit, page: page, items: items)
         if let presented { drawable.addPresentedHandler { d in presented(d.presentedTime) } }
         if let gpuMs { cb.addCompletedHandler { cb in gpuMs((cb.gpuEndTime - cb.gpuStartTime) * 1000) } }
         cb.present(drawable)
@@ -206,14 +218,14 @@ final class Renderer {
     }
 
     func encode(_ cb: MTLCommandBuffer, _ rpd: MTLRenderPassDescriptor, visible: CGRect, background: Int, spacing: Double,
-                pxPerUnit: Double, items: [DrawItem]) {
+                pxPerUnit: Double, page: CGRect? = nil, items: [DrawItem]) {
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
         var xf = SIMD4<Float>(Float(2 / visible.width), Float(2 / visible.height),
                               Float(-1 - 2 * visible.minX / visible.width), Float(-1 - 2 * visible.minY / visible.height))
         enc.setRenderPipelineState(bgPSO)
-        var bg = SIMD4<Float>(Float(background), Float(spacing), Float(pxPerUnit), 0)
+        var bg: [Float] = [Float(background), Float(spacing), Float(pxPerUnit), Float(page?.width ?? 0), Float(page?.maxY ?? 0), page == nil ? 0 : 1, 0, 0]
         enc.setVertexBytes(&xf, length: 16, index: 1)
-        enc.setFragmentBytes(&bg, length: 16, index: 0)
+        enc.setFragmentBytes(&bg, length: 32, index: 0)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
 
         enc.setRenderPipelineState(strokePSO)

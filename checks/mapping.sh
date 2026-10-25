@@ -30,7 +30,7 @@ for s in r["scenarios"]:
     checks = {
         "no gap": s["gapPt"] < 0.5,
         "pad area has the pad's shape": abs(s["padRectAspect"] - r["padAspect"]) < 0.002,
-        "centred": s["padRectCentredErr"] < 0.5,
+        "centred left-right, at the top": s["padRectCentredErr"] < 0.5,
         "largest that fits": s["padRectFills"],
         "no stretch": abs(ux - uy) / ux < 1e-6,
         "corners": s["cornerErrPt"] < 0.5,
