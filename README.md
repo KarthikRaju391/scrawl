@@ -42,7 +42,7 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 - **Tools:** M marker, H highlighter, E eraser; press the same key again to go back to the pen.
   P picks the pen, and on the pen it goes back to the last other tool. 1–5 set the size. Tap the
   selected tool in the toolbar for sizes and colours.
-- **Every mode key toggles:** D, W, A and L (or Z) turn their mode on, and pressing them again turns it off.
+- **Every mode key toggles:** D, W and L (or Z) turn their mode on, and pressing them again turns it off.
 - **Edge guard:** touches that start within 5% of the trackpad's edges are ignored, so a resting palm
   or thumb doesn't draw, pan or zoom. A stroke that starts inside can still run to the edge. Change
   it under ⚙︎ › Edge guard (0 turns it off).
@@ -50,8 +50,6 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   when the line is full,
   back at the left margin (Return does it by hand). The page waits until your finger has been up for 0.4 s, so it never moves
   in the middle of a word. Choose the line width (½, ¾, full) and how it pans in the panel.
-- **Aim first (A):** touch lightly to see where you are (an orange ring), then press to start the
-  ink. Useful for maths and diagrams.
 - **Zoom lock (L)** keeps the zoom fixed while two fingers still pan.
 - **Pages:** N or ⌘N adds a page, ⌘[ and ⌘] move between them. Each page keeps its own view.
 - **Export:** ⌘E saves every page as one PDF (vector, sharp at any size), and ⇧⌘E saves the current
@@ -83,7 +81,7 @@ For finger pressure, Scrawl reads the trackpad through **MultitouchSupport**, a 
 macOS framework. That's why it can't be sold on the Mac App Store, and a future macOS update could
 break it. If that framework is turned off or stops sending touches, the app switches to macOS's
 public touch events and keeps working. Drawing still works there, but there's no pressure: line
-width follows your speed, and aim-first mode is off. You can choose this yourself with **View › Use
+width follows your speed. You can choose this yourself with **View › Use
 Basic Touch Input**.
 
 ## If the pointer seems stuck

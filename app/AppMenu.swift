@@ -107,7 +107,7 @@ extension AppDelegate {
         UserDefaults.standard.set(basic ? "nstouch" : "mt", forKey: "inputSource")
         sender.state = basic ? .on : .off
         let a = NSAlert(); a.messageText = "Reopen \(AppInfo.name) to switch touch input"
-        a.informativeText = basic ? "Basic touch input uses only public macOS APIs. There's no pressure: line width follows speed, and aim-first mode is off."
+        a.informativeText = basic ? "Basic touch input uses only public macOS APIs. There's no pressure: line width follows speed."
                                   : "Full touch input adds pressure (MultitouchSupport)."
         a.runModal()
     }

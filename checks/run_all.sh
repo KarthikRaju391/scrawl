@@ -13,7 +13,6 @@ suites=(
   "edge-guard|checks/edge.sh"
   "keys|checks/keys.sh"
   "newline|checks/newline.sh"
-  "aim|checks/aim.sh"
   "zoomlock|checks/zoomlock.sh"
   "autopan-centre|checks/autopan.sh --autopan centre"
   "autopan-left|checks/autopan.sh --autopan left"

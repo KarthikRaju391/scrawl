@@ -9,7 +9,7 @@ enum TestEdge {
         var t = 0.0
         var r: [String: Any] = ["guard": Camera.margin, "padMM": [pad.width, pad.height]]
         app.enterDrawMode(lock: false)
-        var tools = canvas.tools; tools.zoomLocked = false; tools.aimFirst = false; canvas.tools = tools
+        var tools = canvas.tools; tools.zoomLocked = false; canvas.tools = tools
         /// One frame: contacts as (id, x mm, y mm).
         func frame(_ cs: [(Int32, Double, Double)], p: Double = 30) {
             t += 0.008

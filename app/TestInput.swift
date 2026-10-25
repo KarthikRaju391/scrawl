@@ -30,7 +30,6 @@ enum TestInput {
         switch mode {
         case "fallback", "stall":
             app.enterDrawMode(lock: false)
-            var t = canvas.tools; t.aimFirst = true; canvas.tools = t   // aim-first needs pressure: must be off here
             canvas.lastMTFrameAt = 0
             stroke(y: 0.7, x0: 0.1, speedUp: true)
             stroke(y: 0.5, x0: 0.1, speedUp: false)
@@ -40,7 +39,6 @@ enum TestInput {
             r["strokes"] = strokes.count
             r["usingMTAfter"] = canvas.usingMT
             r["inputStalled"] = canvas.inputStalled
-            r["aimActive"] = canvas.aimActive
             r["inkStartsAtTouchMM"] = strokes.first.map { s -> [Double] in let p = canvas.padPoint(s.points.first!.p); return [p.x * Multitouch.padMM.width, p.y * Multitouch.padMM.height] } ?? []
             r["pressures"] = strokes.map { s in s.points.map(\.pressure) }.map { [$0.min() ?? 0, $0.max() ?? 0] }
             r["banner"] = app.container.hint.stringValue

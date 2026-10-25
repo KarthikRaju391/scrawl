@@ -19,7 +19,6 @@ def chk(ok, msg):
     global bad; bad += 0 if ok else 1; print("PASS" if ok else "FAIL", msg)
 chk(not f["multitouchStarted"] and not f["usingMTAtStart"], "MultitouchSupport off (--input-nstouch): never started")
 chk(f["strokes"] == 3, f"public touch path draws: {f['strokes']}/3 strokes")
-chk(not f["aimActive"], "aim-first stays off without pressure (a light touch must still ink)")
 x, y = f["inkStartsAtTouchMM"]
 chk(abs(x - 0.102 * 160) < 2 and abs(y - 0.7 * 100) < 2, f"ink starts where the finger touched ({x:.1f}, {y:.1f} mm; want ~16, 70)")
 (a0, a1), (c0, c1), _ = f["pressures"]

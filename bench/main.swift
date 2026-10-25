@@ -190,6 +190,7 @@ inputChecks(check)
 updateChecks(check)
 displayChecks(check)
 migrationChecks(check)
+aimRemovedChecks(check)
 
 // Prediction must point ahead along the motion: sine path like the UI test, at several phases.
 do {

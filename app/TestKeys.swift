@@ -14,14 +14,14 @@ enum TestKeys {
         }
         func snap(_ label: String) {
             steps.append(["after": label, "draw": canvas.drawMode, "writing": canvas.writingMode, "tool": canvas.tools.tool.rawValue,
-                          "zoomLocked": canvas.tools.zoomLocked, "aim": canvas.tools.aimFirst,
-                          "toolbarTool": tb.state.tool.rawValue, "toolbarZoomLocked": tb.state.zoomLocked, "toolbarAim": tb.state.aimFirst,
+                          "zoomLocked": canvas.tools.zoomLocked,
+                          "toolbarTool": tb.state.tool.rawValue, "toolbarZoomLocked": tb.state.zoomLocked,
                           "toolbarWriting": tb.writingMode, "toolbarDraw": tb.drawMode])
         }
-        var t = canvas.tools; t.tool = .pen; t.zoomLocked = false; t.aimFirst = false; canvas.tools = t; tb.state = t
+        var t = canvas.tools; t.tool = .pen; t.zoomLocked = false; canvas.tools = t; tb.state = t
         snap("start")
         for (k, label) in [("p", "P on pen, no other tool used yet"), ("d", "D"), ("d", "D again"), ("w", "W"), ("w", "W again"), ("l", "L"), ("l", "L again"), ("z", "Z"), ("z", "Z again"),
-                           ("a", "A"), ("a", "A again"), ("m", "M"), ("m", "M again"), ("h", "H"), ("h", "H again"), ("e", "E"), ("e", "E again"),
+                           ("m", "M"), ("m", "M again"), ("h", "H"), ("h", "H again"), ("e", "E"), ("e", "E again"),
                            ("p", "P on pen (last other tool: eraser)"), ("p", "P again")] {
             press(k); snap(label)
         }

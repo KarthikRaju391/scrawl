@@ -16,7 +16,7 @@ final class ContainerView: NSView {
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
         super.init(frame: frame)
-        // The page, toolbar and panels are drawn light in both modes; system controls (the aim checkbox)
+        // The page, toolbar and panels are drawn light in both modes; system controls (checkboxes, sliders)
         // must use light-mode colours too, or their labels turn white on the light panel in dark mode.
         appearance = NSAppearance(named: .aqua)
         wantsLayer = true
@@ -263,7 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             container.banner.stringValue = canvas.writingMode
                 ? "\(pageText) · Writing: pans at the right edge, next line at the line width\(canvas.tools.zoomLocked ? " · zoom locked" : ""). W = off, Esc exits."
-                : "\(pageText) · Drawing: one finger draws, two fingers pan\(canvas.tools.zoomLocked ? " (zoom locked, L unlocks)" : " and pinch")\(canvas.aimActive ? " · aim first: touch lightly to aim, press to write" : ""). W = writing, Esc exits."
+                : "\(pageText) · Drawing: one finger draws, two fingers pan\(canvas.tools.zoomLocked ? " (zoom locked, L unlocks)" : " and pinch"). W = writing, Esc exits."
             container.banner.layer?.backgroundColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).cgColor
         }
         container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
@@ -304,7 +304,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "w": toggleWriting(); return true
         case "n": page(0); return true
         case "l", "z": s.zoomLocked.toggle()   // L (or Z) locks / unlocks the zoom
-        case "a": s.aimFirst.toggle()           // aim first: light touch aims, press to ink
         case "k" where canvas.showPageHint: canvas.dismissPageHint(); return true
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false
@@ -369,13 +368,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if let i = a.firstIndex(of: "--test-persist"), i + 1 < a.count {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPersist.run(a[i + 1], canvas: canvas, app: self) }
-        }
-        if a.contains("--test-aim") {
-            let dir = (canvas.logger.path as NSString).deletingLastPathComponent
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [self] in
-                enterDrawMode(lock: false); canvas.setZoomForTest(settingsWritingZoom: true); canvas.resetZoom()
-                TestAim.run(canvas: canvas, dir: dir) { try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8) }
-            }
         }
         if a.contains("--test-zoomlock") {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent

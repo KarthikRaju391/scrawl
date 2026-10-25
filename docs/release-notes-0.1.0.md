@@ -25,7 +25,6 @@ The app asks for no permissions. Your pages stay on your Mac, and the only netwo
 - Finger drawing with pressure. A public-API fallback keeps drawing working if the private touch
   framework is unavailable.
 - Pen, marker, highlighter and eraser, with backgrounds.
-- Aim-first mode for maths and diagrams.
 - Infinite pages, writing mode (the page never moves mid-word), zoom lock.
 - Autosave of every page, view and undo history. It survives crashes and force quits.
 - PDF export of all pages, PNG export of one page.

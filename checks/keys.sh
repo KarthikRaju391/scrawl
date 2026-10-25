@@ -14,7 +14,6 @@ want = [  # step, field, value
     ("D", "draw", True), ("D again", "draw", False),
     ("W", "writing", True), ("W again", "writing", False),
     ("L", "zoomLocked", True), ("L again", "zoomLocked", False), ("Z", "zoomLocked", True), ("Z again", "zoomLocked", False),
-    ("A", "aim", True), ("A again", "aim", False),
     ("M", "tool", "marker"), ("M again", "tool", "pen"), ("H", "tool", "highlighter"), ("H again", "tool", "pen"),
     ("E", "tool", "eraser"), ("E again", "tool", "pen"),
     ("P on pen (last other tool: eraser)", "tool", "eraser"), ("P again", "tool", "pen"),
@@ -23,7 +22,7 @@ want = [  # step, field, value
 ]
 for step, field, v in want:
     chk(st[step][field] == v, f"{step}: {field} = {st[step][field]}")
-sync = [k for k, s in st.items() if s["toolbarTool"] != s["tool"] or s["toolbarZoomLocked"] != s["zoomLocked"] or s["toolbarAim"] != s["aim"]
+sync = [k for k, s in st.items() if s["toolbarTool"] != s["tool"] or s["toolbarZoomLocked"] != s["zoomLocked"]
         or s["toolbarWriting"] != s["writing"] or s["toolbarDraw"] != s["draw"]]
 chk(not sync, f"toolbar matches after every press ({len(st)} steps; out of sync: {sync})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")

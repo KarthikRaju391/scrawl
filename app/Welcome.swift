@@ -25,8 +25,8 @@ enum InputStatus: Equatable {
     }
     var detail: String {
         switch self {
-        case .full(let s): return "Using \(s). Pressure sets the line width and aim-first mode is available."
-        case .basic(let why): return "MultitouchSupport is \(why). Drawing works; line width follows speed instead of pressure, and aim-first mode is off."
+        case .full(let s): return "Using \(s). Pressure sets the line width."
+        case .basic(let why): return "MultitouchSupport is \(why). Drawing works; line width follows speed instead of pressure."
         case .stalled: return "The trackpad's full touch data stopped reaching \(AppInfo.name), so it now uses the standard touch events. If you want pressure back, check System Settings › Privacy & Security › Input Monitoring, then reopen the app."
         case .noTrackpad: return "\(AppInfo.name) draws with a finger on a trackpad (built-in or Magic Trackpad). Connect one and reopen the app; your pages can still be viewed and exported."
         }
@@ -44,7 +44,6 @@ enum HelpText {
         ("1 – 5", "Pen size"),
         ("W", "Writing mode on / off (pans along the line, then to the next line)"),
         ("Return", "Writing mode: next line, back at the left margin"),
-        ("A", "Aim first on / off: touch lightly to aim, press to ink"),
         ("L", "Lock / unlock zoom"),
         ("N", "New page (K keeps writing on this one)"),
         ("⌘[  ⌘]", "Previous / next page"),

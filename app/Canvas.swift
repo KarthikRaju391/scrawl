@@ -65,9 +65,6 @@ struct Settings {
     /// Inklet-style hover: a lighter touch shows the finger ring without inking; ink starts once
     /// MT pressure reaches this (raw units). 0 = off. Only meaningful with MultitouchSupport.
     var inkThreshold: Double { d.object(forKey: "inkThreshold") as? Double ?? 0 }
-    /// Aim first: pressure that starts the ink (Karthik's strokes: at 15, 0.4% of math strokes and
-    /// 1.3% of writing strokes never press that hard; touch-downs start at p50 9 / 16).
-    var aimThreshold: Double { d.object(forKey: "aimThreshold") as? Double ?? 15 }
 }
 
 // MARK: - Model
@@ -209,12 +206,11 @@ struct ToolState {
     var lineWidthIndex = 1
     var zoomLocked = false
     var autoPan = AutoPan.centre
-    var aimFirst = false   // light touch shows where you'll write; press to start the ink
 
     /// Saved in defaults ("toolState") so the app reopens with the same tools, sizes, colours,
     /// background, line width and zoom lock. (Smoothing/prediction are saved by their sliders.)
     func save(to defaults: UserDefaults = .standard) {
-        let d: [String: Any] = ["tool": tool.rawValue, "background": background, "lineWidthIndex": lineWidthIndex, "zoomLocked": zoomLocked, "autoPan": autoPan.rawValue, "aimFirst": aimFirst,
+        let d: [String: Any] = ["tool": tool.rawValue, "background": background, "lineWidthIndex": lineWidthIndex, "zoomLocked": zoomLocked, "autoPan": autoPan.rawValue,
                                 "colorIndex": Dictionary(uniqueKeysWithValues: colorIndex.map { ($0.key.rawValue, $0.value) }),
                                 "sizeIndex": Dictionary(uniqueKeysWithValues: sizeIndex.map { ($0.key.rawValue, $0.value) })]
         defaults.set(d, forKey: "toolState")
@@ -227,7 +223,7 @@ struct ToolState {
         if let v = d["lineWidthIndex"] as? Int, ToolState.lineWidths.indices.contains(v) { t.lineWidthIndex = v }
         if let v = d["zoomLocked"] as? Bool { t.zoomLocked = v }
         if let v = d["autoPan"] as? Int, let a = AutoPan(rawValue: v) { t.autoPan = a }
-        if let v = d["aimFirst"] as? Bool { t.aimFirst = v }
+        // "aimFirst" (aim-first mode, removed in 0.1.0) may still be in old settings: ignored.
         for (k, v) in d["colorIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), ToolState.colors.indices.contains(v) { t.colorIndex[kind] = v } }
         for (k, v) in d["sizeIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), (0..<5).contains(v) { t.sizeIndex[kind] = v } }
         return t
@@ -682,15 +678,6 @@ final class CanvasView: MTKView {
         // back a pending page move.
         countedContacts = contacts.filter { !gestures.ignoresAtEdge($0) }.count
         if countedContacts > 0 { finishSlide(); cancelPendingMove() }
-        // Aim first: ink starts only past the pressure threshold (needs MultitouchSupport pressure).
-        gestures.inkThreshold = aimActive ? settings.aimThreshold : settings.inkThreshold
-        if aimActive {   // the path of each not-yet-inking finger, to fill in the press ramp
-            let ids = Set(contacts.map(\.id))
-            aimTrail = aimTrail.filter { ids.contains($0.key) }
-            for c in contacts where c.id != gestures.drawingId {
-                aimTrail[c.id, default: []].append(InputSample(mm: c.mm, t: sensorT, pressure: c.pressure, size: c.size))
-            }
-        }
         gestures.frame(cs, t: arrival)
         needsRender = true
     }
@@ -827,9 +814,6 @@ final class CanvasView: MTKView {
 
     /// Where the last stroke lifted (pad mm, after any snap) and when (sensor clock).
     private var lastLift: (mm: CGPoint, t: Double, dir: CGPoint)?
-    /// Aim first is on and usable (MultitouchSupport gives pressure).
-    var aimActive: Bool { tools.aimFirst && usingMT }
-    private var aimTrail: [Int32: [InputSample]] = [:]
     /// Raw (unshifted) samples of the current stroke, and a pending rejoin waiting for the direction check.
     private var rawSamples: [InputSample] = []
     private var pendingSnap: CGPoint?
@@ -863,17 +847,6 @@ final class CanvasView: MTKView {
         liveSize = tools.sizePt / (ptPerUnit * camera.zoom)
         if liveTool == .eraser { doc.snapshot() }
         logger.begin(tool: liveTool.rawValue, model: model.name, zoom: camera.zoom, ptPerUnit: ptPerUnit, backing: Double(window?.backingScaleFactor ?? 2))
-        if aimActive, let trail = aimTrail[c.id] {
-            // Fill in the press: the trailing samples within 1.5 mm of where the press crossed the
-            // threshold (the aiming path before that stays ink-free).
-            var back: [InputSample] = []
-            for smp in trail.dropLast().reversed() {
-                if hypot(smp.mm.x - c.mm.x, smp.mm.y - c.mm.y) > 1.5 { break }
-                back.insert(smp, at: 0)
-            }
-            for smp in back { builder!.add(smp); rawSamples.append(smp) }
-            aimTrail[c.id] = nil
-        }
         act("strokeBegin", ["tool": liveTool.rawValue, "padX": c.norm.x, "padY": c.norm.y, "snapX": strokeOffset.x, "snapY": strokeOffset.y, "pendingSnap": pendingSnap != nil])
         moveStroke(c, t)
     }
@@ -1042,15 +1015,7 @@ final class CanvasView: MTKView {
             let ringR = 5 / (ptPerUnit * camera.zoom)
             for c in contacts {
                 let p = camera.canvas(fromPad: c.norm)
-                let aiming = aimActive && c.id != gestures.drawingId
-                if aiming {   // aim: bigger ring + centre dot, no ink yet
-                    let k = 1 / (ptPerUnit * camera.zoom)
-                    var dot: [SIMD2<Float>] = []
-                    for j in 0..<16 { let a0 = Double(j) / 16 * 2 * .pi, a1 = Double(j + 1) / 16 * 2 * .pi
-                        dot += [SIMD2(Float(p.x), Float(p.y)), SIMD2(Float(p.x + cos(a0) * 1.6 * k), Float(p.y + sin(a0) * 1.6 * k)), SIMD2(Float(p.x + cos(a1) * 1.6 * k), Float(p.y + sin(a1) * 1.6 * k))] }
-                    items.append(.init(mesh: Mesh(), verts: dot, color: premul(SIMD4(0.93, 0.42, 0.08, 0.9))))
-                }
-                let r = liveTool == .eraser && builder != nil ? liveSize / 2 : (aiming ? ringR * 2 : ringR)
+                let r = liveTool == .eraser && builder != nil ? liveSize / 2 : ringR
                 var v: [SIMD2<Float>] = []
                 let n = 32
                 for k in 0..<n {
@@ -1059,7 +1024,7 @@ final class CanvasView: MTKView {
                     func pt(_ a: Double, _ rr: Double) -> SIMD2<Float> { SIMD2(Float(p.x + cos(a) * rr), Float(p.y + sin(a) * rr)) }
                     v += [pt(a0, r - w), pt(a0, r + w), pt(a1, r + w), pt(a0, r - w), pt(a1, r + w), pt(a1, r - w)]
                 }
-                items.append(.init(mesh: Mesh(), verts: v, color: premul(aiming ? SIMD4(0.93, 0.42, 0.08, 0.9) : SIMD4(0.10, 0.45, 0.91, 0.8))))
+                items.append(.init(mesh: Mesh(), verts: v, color: premul(SIMD4(0.10, 0.45, 0.91, 0.8))))
             }
         }
         let arrival = pendingArrival

@@ -90,9 +90,12 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
     - 45 edge-caused two-finger gestures removed (805 → 760);
     - 41 strokes now drawn that a resting edge touch had turned into a gesture;
     - 11 strokes removed: 5 of them he had undone, and 6 real strokes (0.4% of 1,464) are lost.
-- [x] **Mode keys toggle** (D, W, A, L/Z; M/H/E back to the pen; P back to the last other tool). `keys.sh` presses each twice, and the toolbar stays in sync.
+- [x] **Mode keys toggle** (D, W, L/Z; M/H/E back to the pen; P back to the last other tool). `keys.sh` presses each twice, and the toolbar stays in sync.
+- [x] **Aim-first mode removed** (Karthik: the finger rings already show where you'll write).
+  - The toggle, the A key, the panel checkbox, the help and doc mentions, and its test suite are gone.
+  - Old settings that still contain `aimFirst` load fine; the key is ignored and not written back (bench check).
 - [x] **Renamed to Scrawl.** App, DMG, zip, window, menus, About, welcome and docs. Pages, logs and settings move over on first launch, tested in the bench.
-- [x] **Dark mode.** The aim-first checkbox label was white on the light panel; the window content now always uses the light appearance.
+- [x] **Dark mode.** A settings checkbox label was white on the light panel; the window content now always uses the light appearance.
 - [x] README (install, Gatekeeper, privacy, uninstall), DEVELOPMENT.md, CHANGELOG.md, LICENSE.
 
 ## Not verified (needs a person or other hardware)
@@ -131,7 +134,6 @@ All 18 suites pass:
 | edge guard | 11/11 |
 | keys | 24/24 |
 | newline | 108 cases + palm + Return |
-| aim | 4/4 |
 | zoom lock | all steps |
 | auto-pan (centre, left, off) | 90 letters each, no overlaps |
 | ui | screenshots |
