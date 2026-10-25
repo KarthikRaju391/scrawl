@@ -287,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Returns true if the key was handled.
     func key(_ e: NSEvent) -> Bool {
+        if e.keyCode == 36 || e.keyCode == 76, canvas.writingMode { canvas.newLineByHand(); return true }   // Return: next line
         if e.keyCode == 53 { if canvas.drawMode { exitDrawMode(); return true }; container.toolbar.hidePanel(); return true }  // Esc
         // Single-letter shortcuts work in and out of draw mode. Every mode key toggles: pressing it again
         // turns the mode off (D leaves draw mode, M/H/E go back to the pen, P on the pen goes back to the
@@ -356,6 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-newline") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestNewLine.run(app: self) } }
         if a.contains("--test-keys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestKeys.run(app: self) } }
         if a.contains("--test-edge") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestEdge.run(app: self) } }
         if a.contains("--test-mapping") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMapping.run(app: self) } }

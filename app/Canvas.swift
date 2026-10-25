@@ -248,6 +248,8 @@ final class GestureEngine {
     private(set) var edgeIgnored = Set<Int32>()
     var edgeGuard: () -> Double = { Settings.defaultEdgeGuard }
     static func inBand(_ n: CGPoint, _ g: Double) -> Bool { g > 0 && (n.x < g || n.x > 1 - g || n.y < g || n.y > 1 - g) }
+    /// Whether the guard ignores this contact (already ignored, or touching down in the band now).
+    func ignoresAtEdge(_ c: Contact) -> Bool { edgeIgnored.contains(c.id) || (!seen.contains(c.id) && Self.inBand(c.norm, edgeGuard())) }
     /// Extra palm signal (macOS resting-touch classification), checked per contact per frame.
     var isPalm: (Contact) -> Bool = { _ in false }
     /// Called once per contact when it lifts: (id, was classified palm, drew a stroke).
@@ -416,6 +418,10 @@ final class CanvasView: MTKView {
     private var liveColor = SIMD4<Float>(0, 0, 0, 1)
     private var liveSize = 1.0
     private var contacts: [Contact] = []
+    private var countedContacts = 0
+    /// Replays of sessions recorded before 0.1.0 (--legacy-edge): lines started at the line's first stroke.
+    private var legacyLineLeft: Double?
+    private let legacyWriting = CommandLine.arguments.contains("--legacy-edge")
     private var needsRender = true
     private var link: CADisplayLink?
     private(set) var settings = Settings()
@@ -459,7 +465,6 @@ final class CanvasView: MTKView {
     var writingMode = false { didSet { if writingMode != oldValue { act("writingMode", ["on": writingMode]) }; endWritingLine(); needsRender = true } }
     private var lineInk: CGRect?
     private var lineStrokes: [CGRect] = []
-    private var lineLeft: Double?
 
     private var camAnim: (from: CGPoint, to: CGPoint, start: Double, src: String)?
     private(set) var panCount = 0
@@ -513,7 +518,17 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineLeft = nil; lineStrokes = []; pendingMove = nil }
+    private func endWritingLine() { lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil }
+
+    /// Return in writing mode: next line now (one line down, back to the line start).
+    func newLineByHand() {
+        guard writingMode else { return }
+        cancelPendingMove(); finishSlide()
+        let v = camera.visible, layout = WritingLayout()
+        let midY = lineInk?.midY ?? v.midY
+        let pitch = max((lineInk?.height ?? 0) * 1.35, v.height * 0.12)
+        applyMove(.newLine(WritingLayout.newLineCenter(lineLeft: layout.lineStart(pageWidth: camera.page.width), lineMidY: midY, pitch: pitch, visible: v)))
+    }
 
 
 
@@ -634,7 +649,10 @@ final class CanvasView: MTKView {
         recorder.record(["k": "touch", "c": cs.map { [Int($0.id), Int($0.state), ($0.norm.x * 10000).rounded() / 10000, ($0.norm.y * 10000).rounded() / 10000, ($0.pressure * 10).rounded() / 10] }], sensorT: sensorT)
         perf.inputsSinceTick += 1
         contacts = cs.filter(\.isDown)
-        if !contacts.isEmpty { finishSlide(); cancelPendingMove() }
+        // Only fingers the edge guard counts: a palm resting on the edge must neither cancel nor hold
+        // back a pending page move.
+        countedContacts = contacts.filter { !gestures.ignoresAtEdge($0) }.count
+        if countedContacts > 0 { finishSlide(); cancelPendingMove() }
         // Aim first: ink starts only past the pressure threshold (needs MultitouchSupport pressure).
         gestures.inkThreshold = aimActive ? settings.aimThreshold : settings.inkThreshold
         if aimActive {   // the path of each not-yet-inking finger, to fill in the press ramp
@@ -889,9 +907,9 @@ final class CanvasView: MTKView {
             let vh = camera.visible.height
             // A stroke well above or below the current line (you moved there yourself): new line here.
             if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
-                lineInk = nil; lineStrokes = []; lineLeft = s.bounds.minX
+                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX
             }
-            if lineLeft == nil { lineLeft = s.bounds.minX }   // kept across automatic new lines: lines align left
+            if legacyLineLeft == nil { legacyLineLeft = s.bounds.minX }
             let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
             lineInk = line
             lineStrokes.append(s.bounds)
@@ -899,8 +917,10 @@ final class CanvasView: MTKView {
             layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
             layout.autoPan = tools.autoPan
             layout.edge = settings.panEdge
-            layout.legacyStrokeEdge = CommandLine.arguments.contains("--legacy-edge")
-            let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: lineLeft!, visible: camera.visible, pageWidth: camera.page.width)
+            layout.legacyStrokeEdge = legacyWriting
+            let start = legacyWriting ? legacyLineLeft! : layout.lineStart(pageWidth: camera.page.width)
+            let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: start,
+                                    visible: camera.visible, pageWidth: camera.page.width)
             if move == .none { pendingMove = nil }
             else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
             else { pendingMove = (move, now()); act("movePending", ["kind": move.kind]) }
@@ -923,7 +943,7 @@ final class CanvasView: MTKView {
 
     /// Called every display tick (and by the replay driver): run the pending move once the pause is up.
     func advanceClock() {
-        guard let p = pendingMove, contacts.isEmpty, now() - p.liftAt >= settings.pauseBeforeMoveMs / 1000 else { return }
+        guard let p = pendingMove, countedContacts == 0, now() - p.liftAt >= settings.pauseBeforeMoveMs / 1000 else { return }
         pendingMove = nil
         applyMove(p.move)
     }

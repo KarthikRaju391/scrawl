@@ -5,7 +5,10 @@
 //  - auto-pan (off / centre / left): when the stroke reaches the right 15% of the view, pan so it
 //    ends mid-screen (centre), or so the word just written sits at the left edge (left);
 //  - new line: when the line reaches the chosen width, or the view can't pan further right (end of
-//    the page), go to the start of the next line (line's left edge, one line down, mid-screen).
+//    the page), go to the start of the next line: one line down, and back to the left margin.
+// Lines always start at the page's left margin (`lineStart`), not at wherever the current line's
+// first stroke happened to be: that made every new line after a hand pan, an undo or a page switch
+// return to the middle of the page.
 import CoreGraphics
 
 enum AutoPan: Int { case off = 0, centre = 1, left = 2 }
@@ -16,6 +19,8 @@ struct WritingLayout {
                            // the next word starts with room; 0.85 ran words off the pad edge)
     var lineWidth = 0.75   // fraction of the page width a line may span (½, ¾, full)
     var margin = 0.03      // page side margin, fraction of the page width
+    /// Where every line starts (page units).
+    func lineStart(pageWidth: Double) -> Double { margin * pageWidth }
     var legacyStrokeEdge = false   // replays of old sessions: the edge check used only the last stroke
 
     enum Move: Equatable {
@@ -24,7 +29,7 @@ struct WritingLayout {
     }
 
     /// `line` = bounds of the current line's ink (incl. this stroke); `lineStrokes` = its strokes;
-    /// `lineLeft` = where lines start.
+    /// `lineLeft` = where lines start (the app passes `lineStart`).
     func after(stroke s: CGRect, line: CGRect, lineStrokes: [CGRect], lineLeft: Double, visible v: CGRect, pageWidth: Double) -> Move {
         let lineEnd = min(lineLeft + lineWidth * pageWidth, pageWidth * (1 - margin))
         // The line's rightmost ink, not just this stroke: an i-dot or t-cross placed back inside the
@@ -34,8 +39,7 @@ struct WritingLayout {
         let viewAtPageEnd = v.maxX >= pageWidth - 0.5
         if right >= lineEnd || (atEdge && viewAtPageEnd) {
             let pitch = max(line.height * 1.35, v.height * 0.12)
-            let minX = max(lineLeft - v.width * 0.05, 0)
-            return .newLine(CGPoint(x: minX + v.width / 2, y: line.midY - pitch))
+            return .newLine(Self.newLineCenter(lineLeft: lineLeft, lineMidY: line.midY, pitch: pitch, visible: v))
         }
         guard atEdge, autoPan != .off else { return .none }
         var minX: Double
@@ -48,6 +52,11 @@ struct WritingLayout {
         minX = min(minX, pageWidth - v.width)
         guard minX > v.minX + 0.5 else { return .none }
         return .pan(CGPoint(x: minX + v.width / 2, y: v.midY))
+    }
+
+    /// The view after a new line: one line (`pitch`) down, with the line start 5% in from the left.
+    static func newLineCenter(lineLeft: Double, lineMidY: Double, pitch: Double, visible v: CGRect) -> CGPoint {
+        CGPoint(x: max(lineLeft - v.width * 0.05, 0) + v.width / 2, y: lineMidY - pitch)
     }
 
     /// Left edge of the last word: strokes grouped left to right, a horizontal gap > `gap` splits words.
