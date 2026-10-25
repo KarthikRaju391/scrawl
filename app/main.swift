@@ -261,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let t = canvas.resumeTarget() { canvas.act("resume"); canvas.animateCamera(to: t, src: "resume") }   // back to where you last wrote
         container.toolbar.drawMode = true
         container.toolbar.isHidden = true; container.toolbar.hidePanel()   // at once, not at the next layout
+        container.capsule.isHidden = false; container.drawFrame.isHidden = false
         updateBanner()
     }
 
@@ -277,6 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         canvas.noteDrawExit()
         container.toolbar.drawMode = false
         container.toolbar.isHidden = false   // at once: a click right after Esc must reach it
+        container.capsule.isHidden = true; container.drawFrame.isHidden = true
         updateBanner()
         if stallNoticePending { stallNoticePending = false; showInfo(firstRun: false) }
     }
@@ -579,9 +581,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func nextPageAction() { page(1) }
     @objc func toggleDrawModeAction() { apply(.draw, from: "menu") }
     @objc func toggleZoomLockAction() { apply(.zoomLock, from: "menu") }
+    lazy var settingsWindow: SettingsWindow = {
+        let w = SettingsWindow(switches: [
+            .init(title: "Scratch out: a quick zig-zag over a word erases it", key: "scratchOut", get: { ScratchOut.enabled }, set: { ScratchOut.enabled = $0 }),
+            .init(title: "Page map when zoomed in", key: "pageMap", get: { PageMapView.enabled }, set: { PageMapView.enabled = $0 }),
+        ])
+        w.onChange = { [weak self] in self?.container.needsLayout = true }
+        return w
+    }()
+    @objc func showSettings() {
+        settingsWindow.refresh()
+        if Launch.background { settingsWindow.window?.orderFront(nil) } else { settingsWindow.showWindow(nil); settingsWindow.window?.makeKeyAndOrderFront(nil) }
+    }
     @objc func togglePageMapAction() {
         PageMapView.enabled.toggle()
         if !canvas.testMode { UserDefaults.standard.set(PageMapView.enabled, forKey: "pageMap") }
+        settingsWindow.refresh()
         container.needsLayout = true
     }
     @objc func penAction() { apply(.tool(.pen), from: "menu") }

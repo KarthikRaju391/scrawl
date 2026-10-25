@@ -42,3 +42,10 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - The draw-mode banner is a 4-5 word note ("Drawing · Esc to stop"), shown 2 s on entry and on a mode change. It used to stay up all session: it only faded when its text changed, and the text was set at launch while hidden (found by the robot; it's what the UX review saw in the recording).
 - A small capsule at the bottom (where the toolbar sits outside draw mode) shows the tool with its colour, writing, zoom lock and page n/N; a 3 pt accent frame round the window marks draw mode. Robot: chrome over the page after 3 s fell from 10,880 to about 5,400 pt².
 - The capsule doesn't expand on hover: the pointer is frozen in draw mode.
+
+## Toolbar and Settings (item 5)
+- Order: Draw (labelled, two buttons wide, blue) | pen, marker, highlighter, eraser, paper | writing, zoom lock | undo, redo | overview, ‹ › +. 14 buttons (was 15); the review aimed for ~10, but each remaining button is used and has a shortcut, so nothing else was cut.
+- Writing and zoom lock stay two buttons rather than one segmented control: they toggle independently and both have their own key.
+- The smoothing / prediction / edge-guard sliders moved to Settings (⌘,), with switches for scratch-out and the page map (tips and analytics join it later). Tests never save settings.
+- Every button has a tooltip naming its shortcut (14/14; the paper button has no key).
+- The capsule and the draw-mode frame never take clicks, and hide the moment draw mode ends: the capsule sat over the toolbar and swallowed a zoom-lock click (caught by checks/zoomlock.sh).

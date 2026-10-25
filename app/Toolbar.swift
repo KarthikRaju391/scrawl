@@ -4,7 +4,7 @@
 import AppKit
 
 final class ToolbarView: NSView {
-    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, zoomLock, settings, draw, gallery, prevPage, nextPage, newPage }
+    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, zoomLock, draw, gallery, prevPage, nextPage, newPage }
     var state = ToolState() { didSet { needsDisplay = true; panel.state = state; panel.needsDisplay = true } }
     var drawMode = false { didSet { needsDisplay = true } }
     var writingMode = false { didSet { needsDisplay = true } }
@@ -25,13 +25,17 @@ final class ToolbarView: NSView {
     var onGallery: (() -> Void)?
     let panel = PanelView()
 
-    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .zoomLock, .settings, .draw, .gallery, .prevPage, .nextPage, .newPage]
-    private let separatorsAfter = [1, 5, 10]
-    /// Button width: 44 pt, smaller in a narrow window so the whole toolbar fits (down to 28 pt).
+    // Grouped by what you do: Draw first (the main action, labelled), then the tools and paper, writing and
+    // the zoom lock, undo/redo, and pages. The tuning sliders live in Settings (⌘,).
+    private let items: [Item] = [.draw, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .zoomLock, .undo, .redo, .gallery, .prevPage, .nextPage, .newPage]
+    private let separatorsAfter = [0, 5, 7, 9]
+    /// Button width: 44 pt, smaller in a narrow window so the whole toolbar fits (down to 28 pt). Draw is
+    /// two buttons wide (icon and label).
     private var cell: CGFloat {
         let fixed = 2 * 14 + CGFloat(separatorsAfter.count) * 12 + 16
-        return min(44, max(28, (bounds.width - fixed) / CGFloat(items.count)))
+        return min(44, max(28, (bounds.width - fixed) / CGFloat(items.count + 1)))
     }
+    private func width(_ item: Item) -> CGFloat { item == .draw ? cell * 2 : cell }
     static let height: CGFloat = 56
 
     override init(frame: NSRect) {
@@ -46,14 +50,14 @@ final class ToolbarView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     private var pillRect: CGRect {
-        let w = CGFloat(items.count) * cell + 2 * 14 + CGFloat(separatorsAfter.count) * 12
+        let w = items.reduce(0) { $0 + width($1) } + 2 * 14 + CGFloat(separatorsAfter.count) * 12
         return CGRect(x: (bounds.width - w) / 2, y: 6, width: w, height: Self.height - 12)
     }
 
     private func rect(of i: Int) -> CGRect {
         var x = pillRect.minX + 14
-        for k in 0..<i { x += cell; if separatorsAfter.contains(k) { x += 12 } }
-        return CGRect(x: x, y: pillRect.minY, width: cell, height: pillRect.height)
+        for k in 0..<i { x += width(items[k]); if separatorsAfter.contains(k) { x += 12 } }
+        return CGRect(x: x, y: pillRect.minY, width: width(items[i]), height: pillRect.height)
     }
 
     private func symbol(_ item: Item) -> String {
@@ -66,7 +70,6 @@ final class ToolbarView: NSView {
         case .tool(.eraser): return "eraser"
         case .background: return "square.grid.3x3"
         case .writing: return "character.cursor.ibeam"
-        case .settings: return "slider.horizontal.3"
         case .zoomLock: return state.zoomLocked ? "lock.fill" : "lock.open"
         case .draw: return drawMode ? "hand.draw.fill" : "hand.draw"
         case .prevPage: return "chevron.left"
@@ -91,19 +94,33 @@ final class ToolbarView: NSView {
             case .tool(let k): selected = state.tool == k; if k != .eraser { tint = ToolState.colors[state.colorIndex[k] ?? 0] }
             case .draw: selected = drawMode
             case .writing: selected = writingMode
-            case .settings: selected = !panel.isHidden && panel.mode == .settings
             case .zoomLock: selected = state.zoomLocked
             case .background: selected = !panel.isHidden && panel.mode == .background
             default: selected = false
             }
             if tint.brightnessComponent > 0.92 && tint.saturationComponent < 0.1 { tint = NSColor(white: 0.6, alpha: 1) }  // white pen: keep icon visible
+            if item == .draw {
+                // A labelled button: blue when off (the thing to press), filled when on.
+                let pill = NSBezierPath(roundedRect: r.insetBy(dx: 3, dy: 7), xRadius: (r.height - 14) / 2, yRadius: (r.height - 14) / 2)
+                NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: selected ? 1 : 0.12).setFill(); pill.fill()
+                let fg = selected ? NSColor.white : NSColor(srgbRed: 0.10, green: 0.40, blue: 0.85, alpha: 1)
+                let cfg = NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold).applying(.init(paletteColors: [fg]))
+                let label = "Draw" as NSString, attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: fg]
+                let ls = label.size(withAttributes: attrs)
+                if let img = NSImage(systemSymbolName: symbol(item), accessibilityDescription: "Draw")?.withSymbolConfiguration(cfg) {
+                    let total = img.size.width + 4 + ls.width, x0 = r.midX - total / 2
+                    img.draw(in: CGRect(x: x0, y: r.midY - img.size.height / 2, width: img.size.width, height: img.size.height))
+                    label.draw(at: CGPoint(x: x0 + img.size.width + 4, y: r.midY - ls.height / 2), withAttributes: attrs)
+                }
+                continue
+            }
             if selected {
                 NSColor(srgbRed: 0.91, green: 0.94, blue: 0.99, alpha: 1).setFill()
                 NSBezierPath(ovalIn: r.insetBy(dx: 4, dy: (r.height - (r.width - 8)) / 2)).fill()
             }
             if !isEnabled(item) { tint = tint.withAlphaComponent(0.25) }
             let cfg = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular).applying(.init(paletteColors: [tint]))
-            if let img = NSImage(systemSymbolName: symbol(item), accessibilityDescription: nil)?.withSymbolConfiguration(cfg) {
+            if let img = NSImage(systemSymbolName: symbol(item), accessibilityDescription: tooltip(item))?.withSymbolConfiguration(cfg) {
                 let s = img.size
                 img.draw(in: CGRect(x: r.midX - s.width / 2, y: r.midY - s.height / 2, width: s.width, height: s.height))
             }
@@ -136,7 +153,6 @@ final class ToolbarView: NSView {
         case .redo: onRedo?()
         case .draw: onMode?(.draw)
         case .writing: onMode?(.writing)
-        case .settings: togglePanel(.settings, under: rect(of: i))
         case .zoomLock: onMode?(.zoomLock)
         case .prevPage: onPage?(-1)
         case .nextPage: onPage?(1)
@@ -178,6 +194,37 @@ final class ToolbarView: NSView {
     }
 
     func hidePanel() { panel.isHidden = true; needsDisplay = true }
+
+    // MARK: tooltips (with the shortcut), on every button
+
+    func tooltip(_ item: Item) -> String {
+        switch item {
+        case .draw: return "Draw mode (⌃⌥D or D): the trackpad becomes the page. Esc stops."
+        case .tool(.pen): return "Pen (P) · ⌃ or right-click: size and colour"
+        case .tool(.marker): return "Marker (M) · ⌃ or right-click: size and colour"
+        case .tool(.highlighter): return "Highlighter (H) · ⌃ or right-click: size and colour"
+        case .tool(.eraser): return "Eraser (E) · or scratch out with a quick zig-zag · ⌃: size"
+        case .background: return "Paper: plain, grid, dots or lines"
+        case .writing: return "Writing mode (W): pans along the line, then the next line · ⌃: line width and panning"
+        case .zoomLock: return state.zoomLocked ? "Zoom locked (L): two fingers only pan" : "Lock the zoom (L)"
+        case .undo: return "Undo (⌘Z, or a two-finger double tap)"
+        case .redo: return "Redo (⇧⌘Z, or a three-finger double tap)"
+        case .gallery: return "Pages overview (G)"
+        case .prevPage: return "Previous page (⌘[)"
+        case .nextPage: return "Next page (⌘])"
+        case .newPage: return "New page (N)"
+        }
+    }
+    private func installToolTips() {
+        removeAllToolTips()
+        for i in items.indices { addToolTip(rect(of: i), owner: self, userData: nil) }
+    }
+    override func setFrameSize(_ s: NSSize) { super.setFrameSize(s); installToolTips() }
+    @objc func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
+        items.indices.first { rect(of: $0).contains(point) }.map { tooltip(items[$0]) } ?? ""
+    }
+    /// Test hook: every button and its tooltip.
+    var tooltipsForTest: [String] { items.map { tooltip($0) } }
 
     /// Window coordinates of an item's panel chevron (test mode).
     func chevron(of item: Item) -> CGPoint? {

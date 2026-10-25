@@ -6,6 +6,7 @@ import AppKit
 final class StatusCapsule: NSView {
     struct Info: Equatable { var tool: ToolKind; var color: NSColor; var writing: Bool; var locked: Bool; var page: Int; var pages: Int }
     var info: Info? { didSet { if info != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } } }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }   // shows state only; clicks go through
 
     private func parts() -> [(NSImage?, String)] {
         guard let i = info else { return [] }

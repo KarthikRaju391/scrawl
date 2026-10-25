@@ -9,7 +9,7 @@ final class PageMapView: NSView {
     weak var canvas: CanvasView?
     static let width: CGFloat = 132
     static let minZoom = 1.5
-    nonisolated(unsafe) static var enabled = UserDefaults.standard.object(forKey: "pageMap") as? Bool ?? true
+    nonisolated(unsafe) static var enabled = Launch.testing ? true : (UserDefaults.standard.object(forKey: "pageMap") as? Bool ?? true)
 
     private var image: CGImage?
     private var region = CGRect.zero          // page units the image covers

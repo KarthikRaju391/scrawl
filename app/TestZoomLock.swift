@@ -68,7 +68,7 @@ extension AppDelegate {
             click(tb.center(of: .writing)); click(tb.center(of: .writing))
             click(tb.panel.centerOfWriting(0)); click(tb.panel.centerOfWriting(5)); click(tb.panel.centerOfWriting(4)); tb.hidePanel()
         }
-        add("settings panel opened and closed") { click(tb.center(of: .settings)); click(tb.center(of: .settings)) }
+        add("paper panel opened and closed") { click(tb.center(of: .background)); click(tb.center(of: .background)) }
         add("writing: strokes to the edge (auto-pan) and past the line width (new line)") {
             self.enterDrawMode(lock: false)
             var x = 0.2

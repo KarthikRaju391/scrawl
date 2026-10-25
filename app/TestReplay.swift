@@ -107,7 +107,7 @@ enum TestUI {
             ("9-writing-panel", { click(toolbar.chevron(of: .writing)) }),
             ("10-full-width", { click(toolbar.panel.centerOfWriting(2)) }),
             ("10b-pan-left", { click(toolbar.panel.centerOfWriting(5)) }),
-            ("11-settings", { toolbar.hidePanel(); click(toolbar.center(of: .settings)) }),
+            ("11-paper", { toolbar.hidePanel(); click(toolbar.center(of: .background)) }),   // the sliders moved to Settings (⌘,)
         ]
         var i = 0
         func next() {

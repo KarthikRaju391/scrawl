@@ -141,6 +141,10 @@ final class Robot {
             var ok = false
             ok = clickMap(c)   // robot:needs class PageMapView
             done(ok ? ["ok": true] : ["error": "no page map"])
+        case "settingsSwitch":   // a click on a Settings checkbox
+            var ok = false
+            ok = { app.settingsWindow.setSwitchForTest(c["index"] as? Int ?? 0, c["on"] as? Bool ?? true); return true }()   // robot:needs class SettingsWindow
+            done(ok ? ["ok": true] : ["error": "no settings window"])
         case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
@@ -222,7 +226,7 @@ final class Robot {
         switch name {
         case "undo": return .undo; case "redo": return .redo
         case "pen": return .tool(.pen); case "marker": return .tool(.marker); case "highlighter": return .tool(.highlighter); case "eraser": return .tool(.eraser)
-        case "background": return .background; case "writing": return .writing; case "zoomLock": return .zoomLock; case "settings": return .settings
+        case "background": return .background; case "writing": return .writing; case "zoomLock": return .zoomLock
         case "draw": return .draw; case "prevPage": return .prevPage; case "nextPage": return .nextPage; case "newPage": return .newPage
         case "gallery": return .gallery   // robot:needs case gallery
         default: return nil
@@ -263,6 +267,9 @@ final class Robot {
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        s["toolbarTips"] = tb.tooltipsForTest   // robot:needs var tooltipsForTest
+        s["settingsWindow"] = app.settingsWindow.window?.isVisible == true ? app.settingsWindow.window!.windowNumber : 0   // robot:needs class SettingsWindow
+        s["settingsSwitches"] = app.settingsWindow.switchesForTest.map { [$0.0, $0.1] as [Any] }   // robot:needs class SettingsWindow
         s["gallery"] = app.galleryShown ? (app.gallery?.selected ?? -1) : -2   // robot:needs var galleryShown
         s["canUndo"] = canvas.doc.canUndo   // robot:needs var canUndo
         s["pageMap"] = app.container.pageMap.isHidden ? [:] : ["w": app.container.pageMap.frame.width, "h": app.container.pageMap.frame.height, "alpha": app.container.pageMap.alphaValue]   // robot:needs class PageMapView

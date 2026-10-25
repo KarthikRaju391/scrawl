@@ -21,6 +21,8 @@ extension AppDelegate {
             item("About \(name)", #selector(showAbout)),
             item("Check for Updates…", #selector(checkForUpdates)),
             .separator(),
+            item("Settings…", #selector(showSettings), ","),
+            .separator(),
             item("Hide \(name)", #selector(NSApplication.hide(_:)), "h", target: NSApp),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option], target: NSApp),
             item("Show All", #selector(NSApplication.unhideAllApplications(_:)), target: NSApp),

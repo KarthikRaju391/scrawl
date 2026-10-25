@@ -527,6 +527,39 @@ def run_scenarios(app, rep, only, hand):
         app.press("w", until=lambda s: not s["writing"]); app.press("e", until=lambda s: s["tool"] == "pen")
         app.press("d", until=lambda s: not s["draw"])
 
+    @scenario("toolbar-settings", "The toolbar: Draw first and labelled, the tuning sliders gone from it, a tooltip with the shortcut on every button. Settings (⌘,) has the sliders and switches, and the scratch-out switch really turns it off.")
+    def _():
+        if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
+        st = app.state()
+        tips = st.get("toolbarTips") or []
+        rep.check(len(tips) > 0 and all(tips) and len(tips) <= 14, "every toolbar button has a tooltip; 14 buttons or fewer", f"{sum(1 for t in tips if t)}/{len(tips)} buttons")
+        rep.check(bool(tips) and tips[0].startswith("Draw"), "Draw is the first button", tips[0] if tips else "")
+        withkey = sum(1 for t in tips if "(" in t)
+        rep.check(withkey >= len(tips) - 1, "tooltips name the shortcut", f"{withkey}/{len(tips)}")
+        rep.shot(app, "the regrouped toolbar")
+        app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.6)
+        s2 = app.state(); wn = s2.get("settingsWindow", 0)
+        rep.check(wn != 0, "Scrawl › Settings… opens the settings window", f"window {wn}")
+        if wn:
+            p = os.path.join(rep.out, "shots", "toolbar-settings-window.png")
+            subprocess.run(["screencapture", "-x", "-o", f"-l{wn}", p])
+            rep.cur["shots"].append({"file": "shots/toolbar-settings-window.png", "label": "Settings (⌘,)"})
+        sw = s2.get("settingsSwitches") or []
+        idx = next((i for i, x in enumerate(sw) if x[0].startswith("Scratch")), None)
+        rep.check(idx is not None, "a Scratch out switch", str([x[0] for x in sw]))
+        if idx is None: return
+        app.cmd({"cmd": "settingsSwitch", "index": idx, "on": False})
+        app.press("n"); app.press("d", until=lambda s: s["draw"])
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        fr, cid = hand.frames(hand.word("off", pad_w * 0.3, pad_h * 0.45, hand.roman), 9950); app.touch(fr); a = app.state()
+        lo = app.cmd({"cmd": "toPad", "points": [[min(w[0] for w in a["lastStrokes"]), min(w[1] for w in a["lastStrokes"])]]})["points"][0]
+        hi = app.cmd({"cmd": "toPad", "points": [[max(w[2] for w in a["lastStrokes"]), max(w[3] for w in a["lastStrokes"])]]})["points"][0]
+        zig = [[(lo[0] + (hi[0] - lo[0]) * (k % 2), lo[1] + (hi[1] - lo[1]) * (0.25 + 0.5 * k / 6)) for k in range(7)]]
+        fr, cid = hand.frames(zig, cid, speed=140); app.touch(fr); b = app.state()
+        rep.check(b["strokes"] == a["strokes"] + 1, "with scratch-out off, a zig-zag over a word stays as ink", f"{a['strokes']} -> {b['strokes']}")
+        app.cmd({"cmd": "settingsSwitch", "index": idx, "on": True})
+        app.press("d", until=lambda s: not s["draw"])
+
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])

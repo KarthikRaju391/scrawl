@@ -9,14 +9,14 @@
 //   loops     net turning under 0.75 turns: circling (a wheel drawn round and round) isn't scratching
 // Then it must lie on ink: >= 60% of its points within 1.5 mm of strokes already on the page. Pen and marker
 // only: a highlighter zig-zag over text is highlighting.
-import CoreGraphics
+import Foundation
 
 enum ScratchOut {
     struct Features { var bigLegs = 0, legs = 0; var ratio = 0.0, speed = 0.0, extent = 0.0, loops = 0.0 }
 
     static let minBigLegs = 4, minRatio = 3.2, minSpeed = 60.0, minExtent = 4.0, maxLoops = 0.75, minOverlap = 0.6, reachMM = 1.5
-    /// Settings › Scratch to erase (on by default).
-    nonisolated(unsafe) static var enabled = true
+    /// Settings › Scratch out (on by default; tests always start with it on).
+    nonisolated(unsafe) static var enabled = Launch.testing ? true : (UserDefaults.standard.object(forKey: "scratchOut") as? Bool ?? true)
 
     static func features(mm pts: [CGPoint], t: [Double]) -> Features? {
         let n = pts.count
