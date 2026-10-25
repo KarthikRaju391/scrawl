@@ -43,7 +43,8 @@ extension AppDelegate {
         basic.state = Settings().inputSource == "nstouch" ? .on : .off
         menu("View", [
             item("Draw Mode  (⌃⌥D, Esc to leave)", #selector(toggleDrawModeAction)),   // the global hotkey owns ⌃⌥D
-            item("Writing Mode", #selector(toggleWritingAction)),
+            item("Writing Mode  (W)", #selector(toggleWritingAction)),
+            item("Zoom Lock  (L)", #selector(toggleZoomLockAction)),
             .separator(),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.control, .command], target: window),
             item("Pages Overview  (G)", #selector(toggleGalleryAction)),
@@ -52,6 +53,12 @@ extension AppDelegate {
             item("Next Page", #selector(nextPageAction), "]"),
             .separator(),
             basic,
+        ])
+        menu("Tools", [
+            item("Pen  (P)", #selector(penAction)),
+            item("Marker  (M)", #selector(markerAction)),
+            item("Highlighter  (H)", #selector(highlighterAction)),
+            item("Eraser  (E)", #selector(eraserAction)),
         ])
         menu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m", target: window),
@@ -112,10 +119,16 @@ extension AppDelegate {
                                   : "Full touch input adds pressure (MultitouchSupport)."
         a.runModal()
     }
-    @objc func toggleWritingAction() { toggleWriting() }
+    @objc func toggleWritingAction() { apply(.writing, from: "menu") }
 
     /// ⌘[ / ⌘] are disabled (so the shortcuts do nothing) when the page arrows are dimmed.
     @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        // The mode items show a checkmark while their mode is on.
+        if item.action == #selector(toggleDrawModeAction) { item.state = canvas.drawMode ? .on : .off }
+        if item.action == #selector(toggleWritingAction) { item.state = canvas.writingMode ? .on : .off }
+        if item.action == #selector(toggleZoomLockAction) { item.state = canvas.tools.zoomLocked ? .on : .off }
+        let tools: [Selector: ToolKind] = [#selector(penAction): .pen, #selector(markerAction): .marker, #selector(highlighterAction): .highlighter, #selector(eraserAction): .eraser]
+        if let a = item.action, let k = tools[a] { item.state = canvas.tools.tool == k ? .on : .off }
         if item.action == #selector(prevPageAction) { return canvas.pageIndex > 0 && !galleryShown }
         if item.action == #selector(nextPageAction) { return canvas.pageIndex < canvas.pages.count - 1 && !galleryShown }
         return true

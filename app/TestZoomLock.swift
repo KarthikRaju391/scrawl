@@ -89,8 +89,13 @@ extension AppDelegate {
         // Unlock: Z in draw mode, then pinch must zoom again.
         add("UNLOCK via Z key") { self.enterDrawMode(lock: false); key("z", code: 6) }
         add("pinch out (unlocked)") { pinch(spread: true) }
-        // Shortcuts: E outside draw mode picks the eraser and enters draw mode; P picks the pen; D leaves and enters.
-        add("Esc, then E (outside draw mode)") { key("\u{1b}", code: 53); key("e", code: 14) }
+        // Shortcuts: E outside draw mode picks the eraser and enters draw mode (E on the eraser turns it off first,
+        // see Modes.swift); P picks the pen; D leaves and enters.
+        add("Esc, then E (outside draw mode)") {
+            key("\u{1b}", code: 53)
+            if self.canvas.tools.tool == .eraser { key("e", code: 14) }
+            key("e", code: 14)
+        }
         add("P (outside draw mode)") { key("p", code: 35) }
         add("D enters draw mode") { key("d", code: 2); key("d", code: 2) }   // leaves (E turned it on), then enters
         add("L locks (in draw mode)") { key("l", code: 37) }

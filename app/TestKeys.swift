@@ -28,7 +28,7 @@ enum TestKeys {
             press(k); snap(label)
         }
         // P with a tool picked in the toolbar, and P with no other tool ever used (fresh state).
-        var s = tb.state; s.tool = .highlighter; tb.onChange?(s); tb.state = s; snap("toolbar: highlighter")
+        tb.onMode?(.tool(.highlighter)); snap("toolbar: highlighter")
         press("p"); snap("P (from highlighter)"); press("p"); snap("P again (back to highlighter)")
         // Esc still leaves draw mode; D enters it again.
         press("\u{1b}", code: 53); press("d"); snap("D (enter)"); press("\u{1b}", code: 53); snap("Esc")

@@ -42,10 +42,13 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   a two-finger tap stays your normal right-click. Blue rings show where your fingers
   are, since there's no pointer.
 - **Tools:** M marker, H highlighter, E eraser; press the same key again to go back to the pen.
-  Picking a tool outside draw mode (key or toolbar) turns draw mode on, so you can use it straight away.
-  P picks the pen, and on the pen it goes back to the last other tool. 1–5 set the size. Tap the
-  selected tool in the toolbar for sizes and colours.
-- **Every mode key toggles:** D, W and L (or Z) turn their mode on, and pressing them again turns it off.
+  Picking a tool outside draw mode (key, toolbar or the Tools menu) turns draw mode on, so you can use it
+  straight away. P picks the pen, and on the pen it goes back to the last other tool. 1–5 set the size.
+- **Everything toggles, the same way everywhere:** D, W and L (or Z), the tool keys, their toolbar buttons and
+  their menu items turn a mode or tool on, and the same key, click or menu item again turns it off. The toolbar
+  and the menu checkmarks show what's on; in draw mode, where the toolbar is hidden, a short note says what
+  changed ("Eraser off · Pen"). The small ⌃ chevron on a tool or the writing button (or a right-click on it)
+  opens its sizes and colours or the writing settings.
 - **Edge guard:** touches that start within 5% of the trackpad's edges are ignored, so a resting palm
   or thumb doesn't draw, pan or zoom. A stroke that starts inside can still run to the edge. Change
   it under ⚙︎ › Edge guard (0 turns it off).

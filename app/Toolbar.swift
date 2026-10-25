@@ -16,12 +16,12 @@ final class ToolbarView: NSView {
     func isEnabled(_ item: Item) -> Bool {
         switch item { case .prevPage: return canGoBack; case .nextPage: return canGoForward; case .undo: return canUndo; case .redo: return canRedo; default: return true }
     }
-    var onWriting: (() -> Void)?
     var onPage: ((Int) -> Void)?   // -1 previous, +1 next, 0 new
     var onChange: ((ToolState) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
-    var onDrawMode: (() -> Void)?
+    /// Draw mode, writing mode, the zoom lock and the tools: a click toggles them (the rules are in Modes.swift).
+    var onMode: ((ModeInput) -> Void)?
     var onGallery: (() -> Void)?
     let panel = PanelView()
 
@@ -37,8 +37,9 @@ final class ToolbarView: NSView {
     override init(frame: NSRect) {
         super.init(frame: frame)
         panel.isHidden = true
-        panel.onPick = { [weak self] st in self?.state = st; self?.onChange?(st) }
-        panel.onWritingOff = { [weak self] in self?.panel.isHidden = true; self?.onWriting?() }
+        // The panel may show another tool's sizes and colours (a secondary click on it): keep the active tool.
+        panel.onPick = { [weak self] st in guard let self else { return }; var s = st; s.tool = self.state.tool; self.state = s; self.onChange?(s) }
+        panel.onWritingOff = { [weak self] in self?.panel.isHidden = true; self?.onMode?(.writing) }
     }
     required init?(coder: NSCoder) { fatalError() }
     // A click on an unfocused window should still pick the tool, not just focus the window.
@@ -107,38 +108,66 @@ final class ToolbarView: NSView {
                 img.draw(in: CGRect(x: r.midX - s.width / 2, y: r.midY - s.height / 2, width: s.width, height: s.height))
             }
         }
+        // A small chevron on the buttons with a panel (a click toggles; the chevron opens the panel).
+        let chev = NSImage.SymbolConfiguration(pointSize: 7, weight: .bold).applying(.init(paletteColors: [NSColor(white: 0.55, alpha: 1)]))
+        for (i, item) in items.enumerated() where hasPanel(item) {
+            if let img = NSImage(systemSymbolName: "chevron.up", accessibilityDescription: nil)?.withSymbolConfiguration(chev) {
+                let c = chevronRect(of: i), s = img.size
+                img.draw(in: CGRect(x: c.midX - s.width / 2, y: c.midY - s.height / 2, width: s.width, height: s.height))
+            }
+        }
         NSColor(white: 0.88, alpha: 1).setFill()
         for k in separatorsAfter { let r = rect(of: k); NSBezierPath(rect: CGRect(x: r.maxX + 5.5, y: r.minY + 10, width: 1, height: r.height - 20)).fill() }
     }
 
+    /// The tools and writing mode have a panel (sizes and colours; line width and panning). A click toggles
+    /// them; the small chevron, a right-click or a Control-click opens the panel.
+    private func hasPanel(_ item: Item) -> Bool { if case .tool = item { return true }; return item == .writing }
+    private func chevronRect(of i: Int) -> CGRect { let r = rect(of: i); return CGRect(x: r.maxX - 13, y: r.maxY - 15, width: 13, height: 13) }
+
     override func mouseDown(with e: NSEvent) {
         let p = convert(e.locationInWindow, from: nil)
         guard let i = items.indices.first(where: { rect(of: $0).contains(p) }), isEnabled(items[i]) else { return }
+        if hasPanel(items[i]) && (e.modifierFlags.contains(.control) || chevronRect(of: i).insetBy(dx: -3, dy: -3).contains(p)) {
+            openPanel(of: i); needsDisplay = true; return
+        }
         switch items[i] {
         case .undo: onUndo?()
         case .redo: onRedo?()
-        case .draw: onDrawMode?()
-        case .writing:
-            if writingMode { togglePanel(.writing, under: rect(of: i)) } else { onWriting?() }
+        case .draw: onMode?(.draw)
+        case .writing: onMode?(.writing)
         case .settings: togglePanel(.settings, under: rect(of: i))
-        case .zoomLock: var s = state; s.zoomLocked.toggle(); state = s; onChange?(s)
+        case .zoomLock: onMode?(.zoomLock)
         case .prevPage: onPage?(-1)
         case .nextPage: onPage?(1)
         case .newPage: onPage?(0)
         case .gallery: onGallery?()
         case .background: togglePanel(.background, under: rect(of: i))
-        case .tool(let k):
-            if state.tool == k { togglePanel(.tool, under: rect(of: i)) } else {
-                var s = state; s.tool = k; state = s; onChange?(s); panel.isHidden = true
-            }
+        case .tool(let k): onMode?(.tool(k))
         }
         needsDisplay = true
     }
 
-    private func togglePanel(_ mode: PanelView.Mode, under r: CGRect) {
+    override func rightMouseDown(with e: NSEvent) {
+        let p = convert(e.locationInWindow, from: nil)
+        guard let i = items.indices.first(where: { rect(of: $0).contains(p) }), hasPanel(items[i]) else { return super.rightMouseDown(with: e) }
+        openPanel(of: i); needsDisplay = true
+    }
+
+    private func openPanel(of i: Int) {
+        if case .tool(let k) = items[i] {
+            let showing = !panel.isHidden && panel.mode == .tool && panel.state.tool == k
+            if showing { panel.isHidden = true; return }
+            panel.isHidden = true
+            togglePanel(.tool, under: rect(of: i), tool: k)
+        } else { togglePanel(.writing, under: rect(of: i)) }
+    }
+
+    private func togglePanel(_ mode: PanelView.Mode, under r: CGRect, tool: ToolKind? = nil) {
         if !panel.isHidden && panel.mode == mode { panel.isHidden = true; return }
         panel.mode = mode
         panel.state = state
+        if let tool { panel.state.tool = tool }
         let size = panel.preferredSize
         let anchor = convert(CGPoint(x: r.midX, y: bounds.maxY), to: panel.superview)
         var x = anchor.x - size.width / 2
@@ -149,6 +178,13 @@ final class ToolbarView: NSView {
     }
 
     func hidePanel() { panel.isHidden = true; needsDisplay = true }
+
+    /// Window coordinates of an item's panel chevron (test mode).
+    func chevron(of item: Item) -> CGPoint? {
+        guard let i = items.firstIndex(of: item) else { return nil }
+        let r = chevronRect(of: i)
+        return convert(CGPoint(x: r.midX, y: r.midY), to: nil)
+    }
 
     /// Window coordinates of an item's centre (test mode).
     func center(of item: Item) -> CGPoint? {

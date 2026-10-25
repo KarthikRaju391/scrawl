@@ -128,16 +128,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let tb = container.toolbar
         tb.state = cv.tools
         noteTool(cv.tools.tool)
-        tb.onChange = { [weak self] s in
+        tb.onChange = { [weak self] s in   // a panel pick: a size, colour, background or writing setting
             guard let self else { return }
-            let pickedTool = s.tool != self.canvas.tools.tool   // a different tool (not a colour, size or the zoom lock)
-            self.noteTool(s.tool); self.canvas.changing("toolbar") { self.canvas.tools = s }; self.updateBanner()
-            if pickedTool && !self.canvas.drawMode { self.enterDrawMode(lock: !self.canvas.testMode) }   // ready to use it
+            self.canvas.changing("toolbar") { self.canvas.tools = s }; self.updateBanner()
         }
+        tb.onMode = { [weak self] i in self?.apply(i, from: "toolbar") }
         tb.onUndo = { [weak self] in self?.canvas.undo() }
         tb.onRedo = { [weak self] in self?.canvas.redo() }
-        tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
-        tb.onWriting = { [weak self] in self?.toggleWriting() }
         tb.onPage = { [weak self] d in self?.page(d) }
         tb.onGallery = { [weak self] in self?.toggleGallery() }
         cv.onStatus = { [weak self] in self?.updateBanner() }
@@ -159,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { cv?.drainIfStale() }
             }
         }
-        HotKey.action = { [weak self] in self?.toggleDrawMode() }
+        HotKey.action = { [weak self] in self?.apply(.draw, from: "hotkey") }
         if !canvas.testMode { HotKey.register() }   // tests never take ⌃⌥D from the app in use
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in self?.key(e) == true ? nil : e }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
@@ -219,7 +216,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    func toggleDrawMode() { canvas.drawMode ? exitDrawMode() : enterDrawMode() }
 
     func enterDrawMode(lock: Bool = true) {
         guard !canvas.drawMode else { return }
@@ -339,34 +335,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if e.keyCode == 36 || e.keyCode == 76, canvas.writingMode { canvas.newLineByHand(); return true }   // Return: next line
         if e.keyCode == 53 { if canvas.drawMode { exitDrawMode(); return true }; container.toolbar.hidePanel(); return true }  // Esc
-        // Single-letter shortcuts work in and out of draw mode. Every mode key toggles: pressing it again
-        // turns the mode off (D leaves draw mode, M/H/E go back to the pen, P on the pen goes back to the
-        // last other tool).
+        // Single-letter shortcuts work in and out of draw mode. D, W, L/Z and the tool keys go through the
+        // same rules as the toolbar and the menu (see Modes.swift).
         guard e.modifierFlags.intersection([.command, .control, .option]).isEmpty, let ch = e.charactersIgnoringModifiers?.lowercased() else { return false }
+        let modeKeys: [String: ModeInput] = ["d": .draw, "w": .writing, "l": .zoomLock, "z": .zoomLock,
+                                             "p": .tool(.pen), "m": .tool(.marker), "h": .tool(.highlighter), "e": .tool(.eraser)]
+        if let i = modeKeys[ch] { apply(i, from: "key"); return true }
         var s = canvas.tools
-        var enterDraw = false
         switch ch {
-        case "d": if canvas.drawMode { exitDrawMode("D") } else { enterDrawMode(lock: !canvas.testMode) }; return true   // tests never freeze the cursor
-        // Outside draw mode a tool key picks that tool and turns draw mode on, ready to use; in draw mode
-        // they toggle (M/H/E again -> pen, P on the pen -> the last other tool).
-        case "p": if canvas.drawMode { s.tool = s.tool == .pen ? (lastOtherTool ?? .pen) : .pen } else { s.tool = .pen; enterDraw = true }
-        case "m": if canvas.drawMode { s.tool = s.tool == .marker ? .pen : .marker } else { s.tool = .marker; enterDraw = true }
-        case "h": if canvas.drawMode { s.tool = s.tool == .highlighter ? .pen : .highlighter } else { s.tool = .highlighter; enterDraw = true }
-        case "e": if canvas.drawMode { s.tool = s.tool == .eraser ? .pen : .eraser } else { s.tool = .eraser; enterDraw = true }
-        case "w": toggleWriting(); return true
         case "g": TransitionTiming.inputAt = CACurrentMediaTime(); toggleGallery(); return true
         case "n": page(0); return true
-        case "l", "z": s.zoomLocked.toggle()   // L (or Z) locks / unlocks the zoom
         case "k" where canvas.showPageHint: canvas.dismissPageHint(); return true
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
         default: return false
         }
-        noteTool(s.tool)
         canvas.changing("key") { canvas.tools = s }
         container.toolbar.state = s
         updateBanner()
-        if enterDraw { enterDrawMode(lock: !canvas.testMode) }
         return true
+    }
+
+    var modeState: ModeState { ModeState(draw: canvas.drawMode, writing: canvas.writingMode, locked: canvas.tools.zoomLocked, tool: canvas.tools.tool) }
+
+    /// A mode or tool input from a key, the toolbar or the menu (the rules are in Modes.swift). In draw mode,
+    /// where the toolbar is hidden, a short note says what changed.
+    func apply(_ input: ModeInput, from source: String) {
+        let old = modeState, new = old.after(input, lastOther: lastOtherTool)
+        if new.tool != old.tool || new.locked != old.locked {
+            var t = canvas.tools; t.tool = new.tool; t.zoomLocked = new.locked
+            noteTool(t.tool)
+            canvas.changing(source) { canvas.tools = t }
+            container.toolbar.state = t
+        }
+        if new.writing != old.writing { toggleWriting() }
+        if new.draw != old.draw { if new.draw { enterDrawMode(lock: !canvas.testMode) } else { exitDrawMode(source) } }   // tests never freeze the pointer
+        container.toolbar.hidePanel()
+        updateBanner()
+        if canvas.drawMode, let note = new.change(from: old) { showToast(note) }
     }
 
     /// The last tool other than the pen (marker, highlighter or eraser), for P on the pen.
@@ -533,7 +538,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func newPageAction() { page(0) }
     @objc func prevPageAction() { page(-1) }
     @objc func nextPageAction() { page(1) }
-    @objc func toggleDrawModeAction() { toggleDrawMode() }
+    @objc func toggleDrawModeAction() { apply(.draw, from: "menu") }
+    @objc func toggleZoomLockAction() { apply(.zoomLock, from: "menu") }
+    @objc func penAction() { apply(.tool(.pen), from: "menu") }
+    @objc func markerAction() { apply(.tool(.marker), from: "menu") }
+    @objc func highlighterAction() { apply(.tool(.highlighter), from: "menu") }
+    @objc func eraserAction() { apply(.tool(.eraser), from: "menu") }
     @objc func exportPNG() { export("png") { try self.canvas.exportPNG(to: $0) } }
     @objc func exportPDF() { export("pdf") { try self.canvas.exportPDF(to: $0) } }
     private func export(_ ext: String, _ write: @escaping (URL) throws -> Void) {

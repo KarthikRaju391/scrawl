@@ -98,13 +98,13 @@ enum TestUI {
         let steps: [(String, () -> Void)] = [
             ("1-background-panel", { click(toolbar.center(of: .background)) }),
             ("2-dot-background", { click(toolbar.panel.centerOfBackground(2)) }),
-            ("3-pen-panel", { click(toolbar.center(of: .tool(.pen))) }),
+            ("3-pen-panel", { click(toolbar.chevron(of: .tool(.pen))) }),   // a click on the pen toggles; its chevron opens the panel
             ("4-red-size5", { click(toolbar.panel.centerOfColor(2)); click(toolbar.panel.centerOfSize(4)) }),
             ("5-drawn", { toolbar.hidePanel(); draw() }),
             ("6-ruled", { click(toolbar.center(of: .background)); click(toolbar.panel.centerOfBackground(3)); toolbar.hidePanel() }),
             ("7-square", { click(toolbar.center(of: .background)); click(toolbar.panel.centerOfBackground(1)); toolbar.hidePanel() }),
             ("8-writing-on", { click(toolbar.center(of: .writing)) }),
-            ("9-writing-panel", { click(toolbar.center(of: .writing)) }),
+            ("9-writing-panel", { click(toolbar.chevron(of: .writing)) }),
             ("10-full-width", { click(toolbar.panel.centerOfWriting(2)) }),
             ("10b-pan-left", { click(toolbar.panel.centerOfWriting(5)) }),
             ("11-settings", { toolbar.hidePanel(); click(toolbar.center(of: .settings)) }),

@@ -13,6 +13,7 @@ suites=(
   "mapping|checks/mapping.sh"
   "edge-guard|checks/edge.sh"
   "keys|checks/keys.sh"
+  "modes-matrix|checks/modes.sh"
   "tool-enters-draw|checks/tooldraw.sh"
   "tap-gestures|checks/taps.sh"
   "arrow-keys|checks/arrowkeys.sh"
