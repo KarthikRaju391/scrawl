@@ -4,7 +4,7 @@
 import AppKit
 
 final class ToolbarView: NSView {
-    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, zoomLock, settings, draw, prevPage, nextPage, newPage }
+    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, zoomLock, settings, draw, gallery, prevPage, nextPage, newPage }
     var state = ToolState() { didSet { needsDisplay = true; panel.state = state; panel.needsDisplay = true } }
     var drawMode = false { didSet { needsDisplay = true } }
     var writingMode = false { didSet { needsDisplay = true } }
@@ -14,11 +14,16 @@ final class ToolbarView: NSView {
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var onDrawMode: (() -> Void)?
+    var onGallery: (() -> Void)?
     let panel = PanelView()
 
-    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .zoomLock, .settings, .draw, .prevPage, .nextPage, .newPage]
+    private let items: [Item] = [.undo, .redo, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .zoomLock, .settings, .draw, .gallery, .prevPage, .nextPage, .newPage]
     private let separatorsAfter = [1, 5, 10]
-    private let cell: CGFloat = 44
+    /// Button width: 44 pt, smaller in a narrow window so the whole toolbar fits (down to 28 pt).
+    private var cell: CGFloat {
+        let fixed = 2 * 14 + CGFloat(separatorsAfter.count) * 12 + 16
+        return min(44, max(28, (bounds.width - fixed) / CGFloat(items.count)))
+    }
     static let height: CGFloat = 56
 
     override init(frame: NSRect) {
@@ -58,6 +63,7 @@ final class ToolbarView: NSView {
         case .prevPage: return "chevron.left"
         case .nextPage: return "chevron.right"
         case .newPage: return "doc.badge.plus"
+        case .gallery: return "square.grid.2x2"
         }
     }
 
@@ -110,6 +116,7 @@ final class ToolbarView: NSView {
         case .prevPage: onPage?(-1)
         case .nextPage: onPage?(1)
         case .newPage: onPage?(0)
+        case .gallery: onGallery?()
         case .background: togglePanel(.background, under: rect(of: i))
         case .tool(let k):
             if state.tool == k { togglePanel(.tool, under: rect(of: i)) } else {

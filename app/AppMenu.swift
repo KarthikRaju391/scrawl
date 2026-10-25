@@ -46,6 +46,7 @@ extension AppDelegate {
             item("Writing Mode", #selector(toggleWritingAction)),
             .separator(),
             item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.control, .command], target: window),
+            item("Pages Overview  (G)", #selector(toggleGalleryAction)),
             item("Zoom to Whole Page", #selector(resetZoom), "0"),
             item("Previous Page", #selector(prevPageAction), "["),
             item("Next Page", #selector(nextPageAction), "]"),

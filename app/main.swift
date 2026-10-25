@@ -69,6 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var mtError: String?
     var notebookStatus = ""
     var previousCrash = false
+    var gallery: GalleryView?
+    var galleryReturnsToDraw = false
+    var transitionView: NSImageView?
+    var lastTransition: [String: Any] = [:]
     private var lastBannerText = ""
     private var bannerFade: DispatchWorkItem?
     var migrationNotes: [String] = []
@@ -129,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
         tb.onWriting = { [weak self] in self?.toggleWriting() }
         tb.onPage = { [weak self] d in self?.page(d) }
+        tb.onGallery = { [weak self] in self?.toggleGallery() }
         cv.onStatus = { [weak self] in self?.updateBanner() }
 
         // Input: MultitouchSupport (pressure) unless turned off (Help menu, or --input-nstouch), else the
@@ -288,6 +293,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Returns true if the key was handled.
     func key(_ e: NSEvent) -> Bool {
+        if galleryShown {   // the page overview: G or Esc goes back to the current page; other keys do nothing
+            if e.keyCode == 53 || e.charactersIgnoringModifiers?.lowercased() == "g" { openPage(canvas.pageIndex) }
+            return e.modifierFlags.intersection([.command, .control, .option]).isEmpty
+        }
         if e.keyCode == 36 || e.keyCode == 76, canvas.writingMode { canvas.newLineByHand(); return true }   // Return: next line
         if e.keyCode == 53 { if canvas.drawMode { exitDrawMode(); return true }; container.toolbar.hidePanel(); return true }  // Esc
         // Single-letter shortcuts work in and out of draw mode. Every mode key toggles: pressing it again
@@ -302,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "h": s.tool = s.tool == .highlighter ? .pen : .highlighter
         case "e": s.tool = s.tool == .eraser ? .pen : .eraser
         case "w": toggleWriting(); return true
+        case "g": toggleGallery(); return true
         case "n": page(0); return true
         case "l", "z": s.zoomLocked.toggle()   // L (or Z) locks / unlocks the zoom
         case "k" where canvas.showPageHint: canvas.dismissPageHint(); return true
@@ -357,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if let i = a.firstIndex(of: "--test-gallery"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGallery.run(a[i + 1], app: self) } }
         if a.contains("--test-page") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPage.run(app: self) } }
         if a.contains("--test-newline") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestNewLine.run(app: self) } }
         if a.contains("--test-keys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestKeys.run(app: self) } }

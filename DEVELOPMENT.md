@@ -39,6 +39,7 @@ the pointer or the trackpad, so they're safe to run while you use the Mac. The s
 | `checks/edge.sh`, `checks/edge_cf.sh` | Edge guard: synthetic palm and thumb cases with a guard-off control; Karthik's sessions replayed with the guard off and at 5% |
 | `checks/keys.sh` | Every mode key pressed twice; toolbar in sync |
 | `checks/zoomlock.sh`, `autopan.sh`, `ui.sh` | zoom lock on every path, writing-mode panning, toolbar clicks |
+| `checks/gallery.sh` | Pages overview:<br>• open/close round trips<br>• transition rects (cell ↔ canvas)<br>• thumbnails vs page contents, caching<br>• 40 pages scrolling, the New page tile<br>• persistence across a restart, screenshots |
 | `checks/page.sh` | page bounds: off-page grey desk with a shadowed edge, page top at the window top (screenshots) |
 | `checks/e2e.sh <strokes.jsonl>` | Recorded strokes replayed through the trackpad callback in the real app. Checks:<br>• ink on screen<br>• frames<br>• latency |
 | `checks/cf_all.sh` | Karthik's six recorded sessions replayed on a virtual clock with the old and new page-move rules |

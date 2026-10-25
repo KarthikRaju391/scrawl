@@ -46,6 +46,7 @@ enum HelpText {
         ("Return", "Writing mode: next line, back at the left margin"),
         ("L", "Lock / unlock zoom"),
         ("N", "New page (K keeps writing on this one)"),
+        ("G", "Pages overview on / off: click a page to open it"),
         ("⌘[  ⌘]", "Previous / next page"),
         ("⌘Z  ⇧⌘Z", "Undo / redo"),
         ("⌘0", "Zoom to the whole page"),

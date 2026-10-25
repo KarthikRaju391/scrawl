@@ -114,24 +114,27 @@ final class Document {
     private(set) var strokes: [Stroke] = []
     private var undoStack: [[Stroke]] = []
     private var redoStack: [[Stroke]] = []
+    /// Bumped on every change to the page's contents (the gallery re-renders a thumbnail only then).
+    private(set) var version = 0
 
     static let maxUndo = 100
-    func snapshot() { undoStack.append(strokes); if undoStack.count > Self.maxUndo { undoStack.removeFirst() }; redoStack.removeAll() }
+    func snapshot() { version += 1; undoStack.append(strokes); if undoStack.count > Self.maxUndo { undoStack.removeFirst() }; redoStack.removeAll() }
     var undoStackForSave: [[Stroke]] { undoStack }
     var redoStackForSave: [[Stroke]] { redoStack }
-    func restore(strokes: [Stroke], undo: [[Stroke]], redo: [[Stroke]]) { self.strokes = strokes; undoStack = undo; redoStack = redo }
+    func restore(strokes: [Stroke], undo: [[Stroke]], redo: [[Stroke]]) { version += 1; self.strokes = strokes; undoStack = undo; redoStack = redo }
     func add(_ s: Stroke) { snapshot(); strokes.append(s) }
     /// Eraser: removes without a new undo step (one step per eraser gesture, taken at its start).
     func remove(where pred: (Stroke) -> Bool) -> Bool {
         let n = strokes.count
         strokes.removeAll(where: pred)
+        if strokes.count != n { version += 1 }
         return strokes.count != n
     }
     func clear() { guard !strokes.isEmpty else { return }; snapshot(); strokes.removeAll() }
     /// Swap the last stroke (no new undo step: it's a correction of the stroke just added).
-    func replaceLast(_ s: Stroke) { guard !strokes.isEmpty else { return }; strokes[strokes.count - 1] = s }
-    func undo() { guard let s = undoStack.popLast() else { return }; redoStack.append(strokes); strokes = s }
-    func redo() { guard let s = redoStack.popLast() else { return }; undoStack.append(strokes); strokes = s }
+    func replaceLast(_ s: Stroke) { guard !strokes.isEmpty else { return }; version += 1; strokes[strokes.count - 1] = s }
+    func undo() { guard let s = undoStack.popLast() else { return }; version += 1; redoStack.append(strokes); strokes = s }
+    func redo() { guard let s = redoStack.popLast() else { return }; version += 1; undoStack.append(strokes); strokes = s }
     func dropEmptyUndo() { if let last = undoStack.last, last.count == strokes.count, zip(last, strokes).allSatisfy({ $0 === $1 }) { undoStack.removeLast() } }
 }
 
@@ -497,6 +500,9 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
+    /// A page's saved view (the current page: the live camera).
+    func cameraForPage(_ i: Int) -> Camera { i == pageIndex || !pageCameras.indices.contains(i) ? camera : pageCameras[i] }
+
     func goToPage(_ i: Int) {
         act("goToPage", ["page": i])
         guard pages.indices.contains(i), i != pageIndex else { return }
@@ -592,8 +598,9 @@ final class CanvasView: MTKView {
     /// Screen points per canvas unit at zoom 1.
     var ptPerUnit: Double { max(padRect.width, 1) / camera.page.width }
     /// The part of the page drawn in the view (the pad's area, `camera.visible`, plus the paper around it).
-    var renderRect: CGRect {
-        let v = camera.visible, r = padRect, k = v.width / max(r.width, 1)
+    var renderRect: CGRect { renderRect(for: camera) }
+    func renderRect(for cam: Camera) -> CGRect {
+        let v = cam.visible, r = padRect, k = v.width / max(r.width, 1)
         return CGRect(x: v.minX - r.minX * k, y: v.minY - r.minY * k, width: bounds.width * k, height: bounds.height * k)
     }
     /// Page point under a view point.
