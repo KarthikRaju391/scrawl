@@ -634,6 +634,45 @@ def run_scenarios(app, rep, only, hand):
         app.press("w", until=lambda s: not s["writing"])
         app.press("d", until=lambda s: not s["draw"])
 
+    @scenario("overview-find", "The overview shows each page's ink (cropped to it, not a near-blank top screen), titles each tile with its first handwritten line, finds pages by handwriting (⌘F, typed), and copies or shares a page as an image.")
+    def _():
+        if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
+        cid = 10600
+        start = app.state()["pages"]
+        for w in ["hello", "world", "."]:
+            app.press("n"); app.press("d", until=lambda s: s["draw"])
+            st = app.state(); pad_w, pad_h = st["padMM"]
+            old_h = hand.h; hand.h = 9.0
+            fr, cid = hand.frames(hand.word(w, pad_w * 0.2, pad_h * 0.75, hand.roman), cid); app.touch(fr)
+            hand.h = old_h
+            app.press("d", until=lambda s: not s["draw"])
+        st = app.state(); n = st["pages"]; a, b, c = n - 3, n - 2, n - 1
+        regs = st.get("thumbRegions") or []
+        pw = st["pageW"]
+        rep.check(regs and regs[a][2] < pw * 0.6 and regs[c][2] <= pw * 0.34, "thumbnails are cropped to the ink", f"page {a + 1} shows {regs[a][2] / pw:.0%} of the page width, the dot page {regs[c][2] / pw:.0%}" if regs else "")
+        app.press("g", until=lambda s: s["gallery"] >= 0, wait=3)
+        t0 = time.time(); titles = []
+        while time.time() - t0 < 12:
+            titles = app.state().get("galleryTitles") or []
+            if len(titles) > b and titles[a] and titles[b]: break
+            time.sleep(0.3)
+        rep.step("titles", titles=titles[a:])
+        rep.check(len(titles) > b and "hello" in titles[a].lower() and "world" in titles[b].lower(), "tiles get their first handwritten line as a title", f"{titles[a:] if titles else []} in {time.time() - t0:.1f} s")
+        time.sleep(0.5); rep.shot(app, "overview: cropped thumbnails and handwriting titles")
+        app.cmd({"cmd": "menu", "action": "findInPagesAction"}); time.sleep(0.6)
+        rep.check(app.state().get("searchFocused") is True, "⌘F (Edit › Find in Pages) puts the cursor in the search field", "")
+        for ch in "world": app.key(ch); time.sleep(0.05)
+        time.sleep(0.4); s1 = app.state()
+        rep.check(s1.get("galleryQuery") == "world" and s1.get("galleryMatching") == [b] and s1["gallery"] == b, "typing 'world' finds that page and selects it",
+                  f"query {s1.get('galleryQuery')!r}, matching {s1.get('galleryMatching')}, selected {s1['gallery']}")
+        rep.shot(app, "searching 'world'")
+        app.key("return"); time.sleep(1.0); s2 = app.state()
+        rep.check(s2["gallery"] == -2 and s2["page"] == b, "Return opens it", f"page {s2['page'] + 1}")
+        app.cmd({"cmd": "menu", "action": "copyPageAction"}); time.sleep(0.3)
+        rep.check(app.state().get("pasteboardPNG", 0) > 1000, "Edit › Copy Page as Image puts a PNG on the pasteboard", f"{app.state().get('pasteboardPNG', 0)} bytes")
+        app.cmd({"cmd": "menu", "action": "sharePageAction"}); time.sleep(0.3)
+        rep.check(app.state().get("shareFile") == "ok", "File › Share Page… shares the page as an image file", app.state().get("shareFile", ""))
+
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])

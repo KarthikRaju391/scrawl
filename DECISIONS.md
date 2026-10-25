@@ -59,3 +59,11 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Haptic tick (NSHapticFeedbackManager, .alignment) when a gesture undo or redo lands, at each scrub step, on a new line and on a scratch-out. It only reaches a Force Touch trackpad while a finger is on it, so a tap detected at lift may not be felt: that's on the hand-test list.
 - While the page waits to move (the 400 ms pause), a faint chevron shows where it will go: at the right edge for a pan, low on the left for a new line. Any touch cancels the move and hides it.
 - An undone or scratched-out stroke fades out over 120 ms instead of vanishing (drawn from its existing mesh with falling alpha; nothing extra while no fade is running).
+
+## Overview: crop, titles, search, share (item 8)
+- Thumbnails show the page's ink with a margin, in the tile's shape (at least a third of the page wide, so one dot isn't blown up); an empty page shows its top screen.
+- Titles are the first handwritten line, read on this Mac with Vision on a background queue, only while the overview is open, once per page version; nothing is uploaded. Not editable yet: an editable title needs a place in the notebook file, and a misread title is better fixed by the next read than by a format change two days before release.
+- OCR gets the ink with generous paper round it: cropped tight, Vision read "world" as "SIUM".
+- ⌘F (Edit › Find in Pages) opens the overview with the search field focused; typing dims pages that don't match and selects the first match; Return opens it; Esc in an empty field leaves it, the next Esc closes the overview.
+- Edit › Copy Page as Image (⌘C) and File › Share Page… (the system share menu with a PNG) act on the open page, or on the overview's selection. Tests copy to a private pasteboard, never yours.
+- Not cut: OCR search shipped, it's cheap here because it runs only on overview pages.

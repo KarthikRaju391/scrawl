@@ -22,6 +22,7 @@ extension AppDelegate {
             g.autoresizingMask = [.width, .height]
             g.onOpen = { [weak self] i in self?.openPage(i) }
             g.onNewPage = { [weak self] in self?.openNewPage() }
+            g.onSearchReturn = { [weak self] in self?.openSelectedTile() }
             container.addSubview(g)
             gallery = g
             return g
@@ -139,6 +140,37 @@ extension AppDelegate {
     }
 
     @objc func toggleGalleryAction() { toggleGallery() }
+
+    /// ⌘F: the overview with its search field focused.
+    @objc func findInPagesAction() {
+        if !galleryShown { showGallery() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.gallery?.focusSearch() }
+    }
+    /// The page ⌘C and Share act on: the overview's selection, or the open page.
+    var actionPageIndex: Int { galleryShown ? min(max(gallery?.selected ?? canvas.pageIndex, 0), canvas.pages.count - 1) : canvas.pageIndex }
+    /// The page as a PNG file in a temporary folder (for the pasteboard and Share).
+    func pagePNG(_ i: Int) -> URL? {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Scrawl-share", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("Scrawl page \(i + 1).png")
+        return (try? canvas.exportPNG(to: url, page: i)) != nil ? url : nil
+    }
+    /// Tests copy to their own pasteboard, never the one you're using.
+    static let pasteboard = Launch.testing ? NSPasteboard(name: NSPasteboard.Name("scrawl.test")) : NSPasteboard.general
+    @objc func copyPageAction() {
+        guard let url = pagePNG(actionPageIndex), let data = try? Data(contentsOf: url) else { return }
+        let pb = Self.pasteboard
+        pb.clearContents(); pb.setData(data, forType: .png)
+        showToast("Page \(actionPageIndex + 1) copied as an image")
+    }
+    @objc func sharePageAction() {
+        exitDrawMode("share")
+        guard let url = pagePNG(actionPageIndex) else { return }
+        let picker = NSSharingServicePicker(items: [url])
+        lastSharePicker = picker
+        guard !Launch.background else { return }   // tests check the file, not the menu
+        picker.show(relativeTo: CGRect(x: container.bounds.midX - 1, y: container.bounds.maxY - 40, width: 2, height: 2), of: container, preferredEdge: .minY)
+    }
 }
 
 /// Calls a closure on every display refresh of a view's screen until stopped.

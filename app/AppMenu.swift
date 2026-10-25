@@ -34,10 +34,14 @@ extension AppDelegate {
             .separator(),
             item("Export All Pages as PDF…", #selector(exportPDF), "e"),
             item("Export Page as PNG…", #selector(exportPNG), "e", [.command, .shift]),
+            item("Share Page…", #selector(sharePageAction)),
         ])
         menu("Edit", [
             item("Undo", #selector(undo), "z"),
             item("Redo", #selector(redoAction), "z", [.command, .shift]),
+            .separator(),
+            item("Copy Page as Image", #selector(copyPageAction), "c"),
+            item("Find in Pages…", #selector(findInPagesAction), "f"),
             .separator(),
             item("Clear Page", #selector(clearPage), "\u{8}"),
         ])

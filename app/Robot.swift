@@ -267,6 +267,14 @@ final class Robot {
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        if let g = app.gallery, app.galleryShown {   // robot:needs class PageTitles
+            s["galleryTitles"] = canvas.pages.map { g.titles.title($0) }   // robot:needs class PageTitles
+            s["galleryMatching"] = g.matching; s["galleryQuery"] = g.query   // robot:needs class PageTitles
+            s["searchFocused"] = app.window.firstResponder is NSText   // robot:needs class PageTitles
+        }   // robot:needs class PageTitles
+        s["thumbRegions"] = canvas.pages.map { let r = ThumbnailCache.region($0.strokes, page: canvas.camera.page); return [r.minX, r.minY, r.width, r.height] }   // robot:needs static func region(
+        s["pasteboardPNG"] = AppDelegate.pasteboard.data(forType: .png)?.count ?? 0   // robot:needs static let pasteboard
+        s["shareFile"] = app.lastSharePicker != nil ? (FileManager.default.fileExists(atPath: FileManager.default.temporaryDirectory.appendingPathComponent("Scrawl-share/Scrawl page \(app.actionPageIndex + 1).png").path) ? "ok" : "missing") : ""   // robot:needs var lastSharePicker
         s["haptics"] = Haptics.count   // robot:needs enum Haptics
         s["fading"] = canvas.ghostCountForTest   // robot:needs var ghostCountForTest
         s["pendingMove"] = app.container.pendingMove.isHidden ? "" : "\(app.container.pendingMove.kind.map { "\($0)" } ?? "")"   // robot:needs class PendingMoveView

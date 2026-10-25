@@ -63,11 +63,27 @@ final class ThumbnailCache {
     private func render(_ strokes: [Stroke], version: Int, key: ObjectIdentifier, page: CGSize) -> CGImage? {
         lock.lock(); let have = cache[key]; lock.unlock()
         if let have, have.version == version { return have.image }   // rendered meanwhile
-        let rect = CGRect(x: 0, y: 0, width: page.width, height: page.height)   // the top screen of the page
+        let rect = Self.region(strokes, page: page)
         guard let img = PageImage.render(strokes, rect: rect, pageWidth: page.width, pageTop: page.height,
                                          px: CGSize(width: Self.pixelWidth, height: Self.pixelWidth * page.height / page.width)) else { return nil }
         lock.lock(); renderCount += 1; cache[key] = (version, img); lock.unlock()
         return img
+    }
+    /// The part of the page a thumbnail shows: the ink with a margin, in the tile's shape (at least a third of
+    /// the page wide, so a dot isn't blown up), inside the page; the top screen when there's no ink. A few
+    /// lines at the top used to make a near-blank card.
+    static func region(_ strokes: [Stroke], page: CGSize) -> CGRect {
+        let top = CGRect(x: 0, y: 0, width: page.width, height: page.height)
+        guard var ink = strokes.first?.bounds else { return top }
+        for s in strokes.dropFirst() { ink = ink.union(s.bounds) }
+        let a = page.width / page.height, m = max(ink.width, ink.height) * 0.08 + page.width * 0.01
+        var w = ink.width + 2 * m, h = ink.height + 2 * m
+        if w / h < a { w = h * a } else { h = w / a }
+        if w < page.width / 3 { w = page.width / 3; h = w / a }
+        if w > page.width { w = page.width; h = w / a }
+        let x = min(max(ink.midX - w / 2, 0), page.width - w)
+        let maxY = min(ink.midY + h / 2, page.height)
+        return CGRect(x: x, y: maxY - h, width: w, height: h)
     }
     /// The cached image and whether it is up to date (no rendering).
     func cached(_ doc: Document) -> (image: CGImage?, fresh: Bool) {
@@ -102,7 +118,7 @@ final class ThumbnailCache {
 }
 
 final class GalleryView: NSView {
-    static let cellWidth: CGFloat = 240, gap: CGFloat = 28, label: CGFloat = 22, header: CGFloat = 54
+    static let cellWidth: CGFloat = 240, gap: CGFloat = 28, label: CGFloat = 38, header: CGFloat = 54
     let scroll = NSScrollView()
     private let grid = GridView()
     private let title = NSTextField(labelWithString: "Pages")
@@ -110,6 +126,11 @@ final class GalleryView: NSView {
     var onOpen: ((Int) -> Void)?
     var onNewPage: (() -> Void)?
     let thumbnails = ThumbnailCache()
+    let titles = PageTitles()
+    /// ⌘F: pages whose handwriting contains this; the others dim.
+    let search = NSSearchField()
+    var query = "" { didSet { if query != oldValue { applyQuery() } } }
+    var onSearchReturn: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -123,6 +144,10 @@ final class GalleryView: NSView {
         title.font = .systemFont(ofSize: 20, weight: .semibold); title.textColor = NSColor(white: 0.15, alpha: 1)
         hintLabel.font = .systemFont(ofSize: 12); hintLabel.textColor = NSColor(white: 0.45, alpha: 1)
         addSubview(title); addSubview(hintLabel)
+        search.placeholderString = "Search handwriting (⌘F)"
+        search.sendsSearchStringImmediately = true
+        search.target = self; search.action = #selector(searchChanged)
+        addSubview(search)
         grid.gallery = self
         scroll.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in
@@ -144,7 +169,20 @@ final class GalleryView: NSView {
         thumbnails.keep(pages)
         needsLayout = true; layoutSubtreeIfNeeded()
         grid.needsDisplay = true
+        titles.refresh(pages, page: pageSize) { [weak self] in self?.grid.needsDisplay = true; self?.applyQuery(moveSelection: false) }
     }
+
+    @objc private func searchChanged() {
+        query = search.stringValue
+        if let e = NSApp.currentEvent, e.type == .keyDown, e.keyCode == 36 || e.keyCode == 76 { onSearchReturn?() }   // Return opens the match
+    }
+    /// Pages that match the search (all of them when it's empty).
+    var matching: [Int] { pages.indices.filter { titles.matches(pages[$0], query) } }
+    private func applyQuery(moveSelection: Bool = true) {
+        if moveSelection, !query.isEmpty, let first = matching.first { selected = first; grid.scrollToVisible(cellRectInGrid(first).insetBy(dx: 0, dy: -Self.gap)) }
+        grid.needsDisplay = true
+    }
+    func focusSearch() { window?.makeFirstResponder(search) }
 
     override func layout() {
         super.layout()
@@ -152,6 +190,7 @@ final class GalleryView: NSView {
         title.frame.origin = CGPoint(x: 28, y: bounds.height - Self.header + 14)
         hintLabel.frame.origin = CGPoint(x: title.frame.maxX + 16, y: bounds.height - Self.header + 18)
         scroll.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.header)
+        search.frame = CGRect(x: bounds.width - 268, y: bounds.height - Self.header + 14, width: 240, height: 24)
         grid.frame = CGRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(gridHeight, scroll.contentSize.height))
     }
 
@@ -238,6 +277,9 @@ final class GalleryView: NSView {
                     ctx.draw(img, in: CGRect(x: 0, y: 0, width: r.width, height: r.height))
                     ctx.restoreGState()
                 }
+                if !query.isEmpty && !titles.matches(pages[i], query) {   // not a search match: dimmed
+                    NSColor(srgbRed: 0.93, green: 0.94, blue: 0.95, alpha: 0.75).setFill(); NSBezierPath(roundedRect: r, xRadius: 6, yRadius: 6).fill()
+                }
                 labelText = tileLabel(i)
             } else {
                 NSColor(white: 0.55, alpha: 1).setStroke()
@@ -257,6 +299,12 @@ final class GalleryView: NSView {
                                                                        .foregroundColor: NSColor(white: 0.3, alpha: 1)])
             let lx = r.midX - l.size().width / 2
             l.draw(at: CGPoint(x: lx, y: r.maxY + 5))
+            // The first handwritten line (read on this Mac), under the label.
+            if i < pages.count, case let t = titles.title(pages[i]), !t.isEmpty {
+                let style = NSMutableParagraphStyle(); style.lineBreakMode = .byTruncatingTail; style.alignment = .center
+                let tl = NSAttributedString(string: "“\(t)”", attributes: [.font: NSFont.systemFont(ofSize: 11.5), .foregroundColor: NSColor(white: 0.45, alpha: 1), .paragraphStyle: style])
+                tl.draw(in: CGRect(x: r.minX, y: r.maxY + 21, width: r.width, height: 16))
+            }
             if i == current {   // the page that was open: a small blue dot before its (semibold) label
                 NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).setFill()
                 NSBezierPath(ovalIn: CGRect(x: lx - 11, y: r.maxY + 5 + l.size().height / 2 - 3, width: 6, height: 6)).fill()

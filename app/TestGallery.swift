@@ -47,9 +47,11 @@ enum TestGallery {
             (0..<6).map { k -> [String: Any] in
                 let img = app.gallery!.thumbnails.image(for: canvas.pages[k], page: canvas.camera.page)!
                 let rows = inkRows(img)
-                // Expected: a line at page y maps to thumbnail row (pageTop - y) / pageTop.
+                // Expected: a line at page y maps to thumbnail row (top - y) / height of the part the thumbnail
+                // shows (cropped to the ink).
                 let ys = lines(k) + (afterCacheEdit && k == 2 ? [500] : [])
-                let want = ys.map { (canvas.camera.page.height - $0) / canvas.camera.page.height }
+                let reg = ThumbnailCache.region(canvas.pages[k].strokes, page: canvas.camera.page)
+                let want = ys.map { (reg.maxY - $0) / reg.height }
                 let found = want.map { w in rows.contains { abs($0 - w) < 0.02 } }
                 let stray = rows.filter { r in !want.contains { abs($0 - r) < 0.03 } }.count
                 return ["page": k, "want": want.count, "found": found.filter { $0 }.count, "strayRows": stray]

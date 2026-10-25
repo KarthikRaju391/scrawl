@@ -82,6 +82,9 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   Return, Space, G or a click opens it: the page grows from its spot to fill the window. Esc goes back to
   the page you came from. The "+ New page" tile is last. Opening the overview leaves draw mode, and opening a
   page puts you back in it.
+- **Find and share:** tiles show each page's ink, titled with its first handwritten line (read on this
+  Mac, never uploaded). **⌘F** searches your handwriting across pages; Return opens the match. **⌘C**
+  copies the page as an image, and **File › Share Page…** sends it to Messages, Notes, Mail and the rest.
 - **Page dates:** every page remembers when it was created (shown under its tile in the overview and in
   the small label at the top of the open page) and when it was last edited. Pages from before this
   version show "date unknown".

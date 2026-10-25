@@ -97,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var previousCrash = false
     var toastFade: DispatchWorkItem?
     var gallery: GalleryView?
+    var lastSharePicker: NSSharingServicePicker?
     var galleryReturnsToDraw = false
     var transitionView: NSView?
     var lastTransition: [String: Any] = [:]
@@ -366,7 +367,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Returns true if the key was handled.
     func key(_ e: NSEvent) -> Bool {
-        // Keys meant for a text field (a save panel's file name, any other window) are not shortcuts.
+        // Keys meant for a text field (a save panel's file name, the overview's search) are not shortcuts.
+        // Esc in an empty search leaves the field, so the next Esc closes the overview.
+        if galleryShown, e.keyCode == 53, let t = window.firstResponder as? NSText, t.string.isEmpty, let g = gallery { window.makeFirstResponder(g); return true }
         if e.window !== window || window.firstResponder is NSText { return false }
         let arrow: (Int, Int)? = [123: (-1, 0), 124: (1, 0), 125: (0, 1), 126: (0, -1)][e.keyCode]
         let plainOrShift = e.modifierFlags.intersection([.command, .control, .option]).isEmpty
