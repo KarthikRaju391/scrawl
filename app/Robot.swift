@@ -28,6 +28,7 @@ final class Robot {
 
     func start() {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        app.canvas.resumeOnDrawStart = true   // robot:needs var resumeOnDrawStart
         let t = Timer(timeInterval: 0.004, repeats: true) { [weak self] _ in self?.poll() }
         RunLoop.main.add(t, forMode: .common)
         timer = t

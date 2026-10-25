@@ -475,6 +475,37 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "menu", "action": "togglePageMapAction"}); time.sleep(0.3)
         rep.check(bool(app.state().get("pageMap")), "and on again")
 
+    @scenario("resume", "Write at zoom 3, leave draw mode and zoom out to the whole page, press D: you're back at the end of your last word, at zoom 3, in a quarter second. If you zoomed in somewhere else yourself, D leaves you there.")
+    def _():
+        if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
+        app.press("n")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        app.press("d", until=lambda s: s["draw"])
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        app.touch(two_finger(pad_w / 2, pad_h * 0.4, 15, 45, dur=0.6)); settle(app)
+        fr, cid = hand.frames(hand.word("resume", pad_w * 0.3, pad_h * 0.5), 9850)
+        app.touch(fr); settle(app)
+        a = app.state(); last = a["lastStrokes"][-1]
+        app.press("esc", until=lambda s: not s["draw"])
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        z1 = app.state()["view"]["zoom"]
+        t0 = time.time()
+        app.press("d", until=lambda s: s["draw"])
+        v = settle(app); dt = (time.time() - t0) * 1000
+        inside = v["x"] <= last[2] <= v["x"] + v["w"] and v["y"] <= (last[1] + last[3]) / 2 <= v["y"] + v["h"]
+        rep.check(z1 < 1.05 and abs(v["zoom"] - a["view"]["zoom"]) < 0.05 and inside,
+                  "D from the whole page: back at the last word, at the zoom it was written at", f"zoom {z1:.1f} -> {v['zoom']:.1f} (wrote at {a['view']['zoom']:.1f}), last word in view: {inside}, settled in {dt:.0f} ms")
+        across = (last[2] - v["x"]) / v["w"]
+        rep.check(0.2 <= across <= 0.6, "with room to keep writing (the last word ends left of the middle)", f"ends {across:.0%} across")
+        rep.shot(app, "D from the whole page: back where you were writing")
+        app.press("esc", until=lambda s: not s["draw"])
+        for _ in range(4): app.press("down")
+        b = app.state()["view"]
+        app.press("d", until=lambda s: s["draw"]); c = settle(app)
+        rep.check(abs(c["x"] - b["x"]) < 0.5 and abs(c["y"] - b["y"]) < 0.5 and abs(c["zoom"] - b["zoom"]) < 1e-3,
+                  "moved somewhere else yourself (zoomed in): D stays there", f"view y {b['y']:.0f} -> {c['y']:.0f}")
+        app.press("d", until=lambda s: not s["draw"])
+
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])

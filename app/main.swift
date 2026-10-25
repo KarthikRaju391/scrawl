@@ -251,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             CursorLock.lock(at: CursorLock.parkPoint(canvasOnScreen: r, primaryScreenHeight: NSScreen.screens.first?.frame.height ?? r.maxY))
         }
         canvas.drawMode = true
+        if let t = canvas.resumeTarget() { canvas.act("resume"); canvas.animateCamera(to: t, src: "resume") }   // back to where you last wrote
         container.toolbar.drawMode = true
         container.toolbar.isHidden = true; container.toolbar.hidePanel()   // at once, not at the next layout
         updateBanner()
@@ -266,6 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             try? JSONSerialization.data(withJSONObject: r).write(to: URL(fileURLWithPath: dir + "/test-exit.json"))
         }
         canvas.drawMode = false
+        canvas.noteDrawExit()
         container.toolbar.drawMode = false
         container.toolbar.isHidden = false   // at once: a click right after Esc must reach it
         updateBanner()

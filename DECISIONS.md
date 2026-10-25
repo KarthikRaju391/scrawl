@@ -30,3 +30,10 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - With No pan, a hand pan is how you move along, so the line width still applies (otherwise a No-pan line never wraps).
 - The early new line at the page's end (at 70% of the view once the view reached the edge) is gone: the line ends at the page margin.
 - Page map: top-right, 132 pt wide; shown when zoomed past 1.5x (in and out of draw mode); clicks and drags move the view outside draw mode only (draw mode freezes the pointer); renders on a background queue at most every 0.4 s and only after a stroke ends; fades to 35% while a finger is down; View › Page Map turns it off (saved).
+
+## Resume (item 3)
+- Draw mode glides (250 ms) to the end of the last stroke on the page, at the zoom it was written at, with the line 57.5% down and the word's end 40% across, so you can keep writing straight away.
+- It only moves when the view is where draw mode ended or at the whole page (zoom ~1, "looking"); if you zoomed in somewhere else yourself, that's where you meant to write, so it stays.
+- No 600 ms "finger here" pulse: the blue finger rings already show where a touch lands, and a pulse would flash on every draw start.
+- After a relaunch the zoom the last stroke was written at isn't known, so it uses 3x (Karthik's median is 3.6x).
+- Off in test modes (they check exact views); the robot turns it on.

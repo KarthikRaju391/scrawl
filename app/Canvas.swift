@@ -502,7 +502,7 @@ final class CanvasView: MTKView {
     private var lineInk: CGRect?
     private var lineStrokes: [CGRect] = []
 
-    private var camAnim: (from: CGPoint, to: CGPoint, start: Double, src: String)?
+    private var camAnim: (from: Camera, to: Camera, start: Double, src: String, duration: Double)?
     private(set) var panCount = 0
     private(set) var lastPanWordStart: Double?   // test/diagnostics: start of the word at the last pan
     private(set) var newLineCount = 0
@@ -581,22 +581,59 @@ final class CanvasView: MTKView {
 
     private func slideCamera(to c: CGPoint, src: String = "autopan") {
         var target = camera; target.center = c; target.clamp()
-        camAnim = (camera.center, target.center, CACurrentMediaTime(), src)
+        camAnim = (camera, target, CACurrentMediaTime(), src, 0.18)
+    }
+    /// Move and zoom the view to `target` over `duration` (ease out; the zoom changes evenly in log scale).
+    func animateCamera(to target: Camera, src: String, duration: Double = 0.25) {
+        var t = target; t.clamp()
+        camAnim = (camera, t, CACurrentMediaTime(), src, duration)
         needsRender = true
     }
 
-    /// Finish any slide immediately (a finger touched down: the mapping must not move under it).
     private func finishSlide() {
-        if let a = camAnim { changing(a.src) { camera.center = a.to }; camAnim = nil }
+        if let a = camAnim { changing(a.src) { camera = a.to }; camAnim = nil }
     }
 
     private func stepSlide() {
         guard let a = camAnim else { return }
-        let t = min((CACurrentMediaTime() - a.start) / 0.18, 1)
+        let t = min((CACurrentMediaTime() - a.start) / a.duration, 1)
         let e = 1 - pow(1 - t, 3)  // ease out
-        changing(a.src) { camera.center = CGPoint(x: a.from.x + (a.to.x - a.from.x) * e, y: a.from.y + (a.to.y - a.from.y) * e) }
+        var c = a.to
+        c.zoom = exp(log(a.from.zoom) + (log(a.to.zoom) - log(a.from.zoom)) * e)
+        c.center = CGPoint(x: a.from.center.x + (a.to.center.x - a.from.center.x) * e, y: a.from.center.y + (a.to.center.y - a.from.center.y) * e)
+        changing(a.src) { camera = c }
         if t >= 1 { camAnim = nil } else { needsRender = true }
     }
+
+    // MARK: resume (draw mode starts where you last wrote)
+
+    /// Where you last wrote on each page (the end of the last stroke, its line's height) and the zoom it
+    /// was written at.
+    private var lastInk: [ObjectIdentifier: (point: CGPoint, zoom: Double)] = [:]
+    /// The view when draw mode last ended.
+    private var viewAtDrawExit: Camera?
+    /// Tests that check views don't want draw mode to move them (the robot turns it on).
+    var resumeOnDrawStart = !Launch.testing
+    static let resumeDefaultZoom = 3.0
+
+    /// The view draw mode should start at: the last word's end 40% across and its line 57.5% down, at the
+    /// zoom you wrote it at. Nil (stay) if the page is empty, if that's in view already, or if you've zoomed
+    /// in somewhere else since draw mode ended (you chose that spot).
+    func resumeTarget() -> Camera? {
+        guard resumeOnDrawStart, let last = doc.strokes.last else { return nil }
+        let info = lastInk[ObjectIdentifier(doc)] ?? (CGPoint(x: last.bounds.maxX, y: last.bounds.midY), Self.resumeDefaultZoom)
+        let sameAsExit = viewAtDrawExit.map { abs($0.center.x - camera.center.x) < 0.5 && abs($0.center.y - camera.center.y) < 0.5 && abs($0.zoom - camera.zoom) < 1e-3 } ?? true
+        guard sameAsExit || camera.zoom <= 1.05 else { return nil }
+        var t = camera
+        if !tools.zoomLocked { t.zoom = max(info.zoom, 1) }
+        let w = t.page.width / t.zoom, h = t.page.height / t.zoom
+        t.center = CGPoint(x: info.point.x + 0.1 * w, y: info.point.y + (WritingLayout.lineFromTop - 0.5) * h)
+        t.clamp()
+        if abs(t.zoom - camera.zoom) < 1e-3 && camera.visible.insetBy(dx: w * 0.05, dy: h * 0.05).contains(info.point) { return nil }
+        return t
+    }
+    func noteDrawExit() { viewAtDrawExit = camera }
+
     private(set) var presentedCount = 0
 
     // Timing of the frame being handled: arrival (latency) and sensor time (filter).
@@ -1023,6 +1060,7 @@ final class CanvasView: MTKView {
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
         s.id = nextStrokeIdValue; nextStrokeIdValue += 1
         doc.add(s)
+        lastInk[ObjectIdentifier(doc)] = (CGPoint(x: s.bounds.maxX, y: s.bounds.midY), camera.zoom)
         act("commit", ["id": s.id, "page": pageIndex])
         markDirty()
         updateScreensFilled()

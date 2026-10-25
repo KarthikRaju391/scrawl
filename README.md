@@ -32,7 +32,9 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 
 ## Using it
 
-- **⌃⌥D** (or **D** when the app is in front) starts drawing, and pressing it again stops.
+- **⌃⌥D** (or **D** when the app is in front) starts drawing, and pressing it again stops. Drawing
+  starts where you last wrote on the page, at the zoom you wrote at (a quick glide there), unless you've
+  zoomed in somewhere else yourself.
   The paper fills the window, whatever its shape, and full screen works too (green button or ⌃⌘F). The
   trackpad (apart from a thin edge band, below) maps without distortion to the largest trackpad-shaped area
   in the window, centred. In draw mode a faint outline shows that area, and you pan to reach the rest. The pointer freezes and hides. **Esc** gives the pointer back. So do ⌃⌥D,
