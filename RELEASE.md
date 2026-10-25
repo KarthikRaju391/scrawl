@@ -110,6 +110,11 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
   - Replaying the 7 sessions recorded before the gestures gives 0 false double taps; looser rules give 1, which fails the check. Karthik's session recorded with the gestures replays to exactly the 14 undos and redos the app made.
   - Fixed along the way: an eraser pan could erase under the first finger.
   - Tested by `taps.sh`, which fails on the old build, and the bench replay.
+- [x] **Writing jitter fixed.**
+  - The cause: autosave encoded the whole notebook on the main thread, about every half second while writing. On Karthik's 4.5 MB notebook that blocked drawing for ~100 ms per save; his recorded session shows 153 stalls of 86 ms.
+  - Now the main thread only takes a snapshot (0.2 ms); the encoding and writing happen in the background.
+  - Tested by `jitter.sh`: every displayed frame's ink step must stay within 1 pt of the steady step. Before: 20.9 pt jumps; after: 0.66 pt. On a copy of his notebook: 6.6 → 0.6 pt. A mutation that puts the encoding back on the main thread fails it.
+- [x] **Overview: one highlight.** The blue ring moves with the arrows and the pointer, and G, Return or Space opens it. Esc goes back. The page you came from shows a small dot. Tested by `gallerykeys.sh`, which fails on the old build.
 - [x] **Arrow keys.**
   - They pan the page: 10% of the view, or a screen with Shift, clamped at the page edges.
   - In the overview they move a selection, and Return or Space opens it.
@@ -147,7 +152,7 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 
 ## Test results (2026-10-25, `checks/run_all.sh`, everything in the background)
 
-All 26 suites pass:
+All 28 suites pass:
 
 | suite | result |
 |---|---|
@@ -161,6 +166,8 @@ All 26 suites pass:
 | tool enters draw | 10/10 |
 | tap gestures | 14/14 |
 | arrow keys | 20/20 |
+| overview highlight | 8/8 |
+| ink jitter | 2/2 |
 | pill labels | 7/7 |
 | newline | 108 cases + palm + Return |
 | page edges | 9/9 |

@@ -24,7 +24,7 @@ The app asks for no permissions. Your pages stay on your Mac, and the only netwo
 - Every mode key toggles: press it again to turn the mode off.
 - Pages overview (G): thumbnails of every page, each with its date; a page grows into view when you open it.
 - In draw mode: two-finger double tap = undo, three-finger double tap = redo.
-- Arrow keys pan the page (Shift: a screen) and pick a page in the overview.
+- Arrow keys pan the page (Shift: a screen) and move the selection in the overview; Return, Space or G opens it.
 - Picking a tool (P, M, H, E) outside draw mode starts drawing with it straight away.
 - The page's edges are obvious: off-page space is a grey desk.
 - Finger drawing with pressure. A public-API fallback keeps drawing working if the private touch
@@ -40,6 +40,6 @@ Full list: [CHANGELOG.md](https://github.com/KarthikRaju391/trackpad-draw/blob/m
 ## Checksums (SHA-256)
 
 ```
-66c47324b01886ee08d9b55eaf87a1f85baf8322685c8b0e0495f2f23d84051a  Scrawl-0.1.0.dmg
-a9da9cead0adbcbd871beb8382b4ea3c97da1088ae385b8aac3a9f66871c3c36  Scrawl-0.1.0.zip
+6bcb52c479926d062c09a86ca5a65a1e1057e2f7459c83e18d7b5fcd1b0377da  Scrawl-0.1.0.dmg
+aad28975689fa21c70f0bac80b6e13a8a5a614c58330048763dda3dea588570e  Scrawl-0.1.0.zip
 ```
