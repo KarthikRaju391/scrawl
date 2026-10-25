@@ -860,6 +860,49 @@ def run_scenarios(app, rep, only, hand):
         else:
             rep.step("OCR not applicable", why=f"the replayed part is a drawing: OCR reads {len(words_r)} words in the stored ink")
 
+    @scenario("usage-counts", "Usage counts: using the app writes events like session_start, draw_mode, tool, undo and overview to the local log at quit, with only small allow-listed props and never what was written. Turned off in Settings, that session records nothing more.")
+    def _():
+        log = os.path.join(app.data, "events.jsonl")
+        def events():
+            out = []
+            if os.path.exists(log):
+                for line in open(log):
+                    try: out.append(json.loads(line))
+                    except ValueError: pass
+            return out
+        if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
+        sess = app.state().get("analyticsSession")
+        app.press("d", until=lambda s: s["draw"])
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        fr, cid = hand.frames(hand.word("secret", pad_w * 0.3, pad_h * 0.5), 10800); app.touch(fr)
+        app.press("e", until=lambda s: s["tool"] == "eraser"); app.press("e", until=lambda s: s["tool"] == "pen")
+        app.touch(double_tap(2, pad_w / 2, pad_h * 0.3))
+        app.press("d", until=lambda s: not s["draw"])
+        app.press("g", until=lambda s: s["gallery"] >= 0, wait=3); app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+        app.quit(); app.launch()
+        ev = [e for e in events() if e.get("session") == sess]
+        names = {e["event"] for e in ev}
+        want = {"session_start", "draw_mode", "first_stroke", "tool", "undo", "strokes", "overview", "session_end"}
+        rep.check(want <= names, "using the app writes the expected events to the local log", f"missing {sorted(want - names)}; {len(ev)} events")
+        allowed = {"source", "tool", "on", "kind", "steps", "count", "seconds", "pages", "strokes", "zoom", "tip", "step", "key", "format", "result", "category", "minutes", "words", "page"}
+        bad = [e for e in events() if not set(e.get("props", {})) <= allowed or any(len(str(v)) > 32 for v in e.get("props", {}).values())]
+        raw = open(log).read() if os.path.exists(log) else ""
+        rep.check(not bad and "secret" not in raw, "only small allow-listed props, and never what was written", f"{len(bad)} bad events; 'secret' in the log: {'secret' in raw}")
+        rep.step("events in that session", events=sorted(names))
+        # Off: nothing more from this session.
+        sess2 = app.state().get("analyticsSession")
+        sw = app.state().get("settingsSwitches") or []
+        ai = next((i for i, x in enumerate(sw) if x[0].startswith("Share anonymous")), None)
+        rep.check(ai is not None, "Settings has the usage-counts switch", str([x[0] for x in sw]))
+        if ai is None: return
+        app.cmd({"cmd": "settingsSwitch", "index": ai, "on": False})
+        app.press("d", until=lambda s: s["draw"])
+        fr, cid = hand.frames(hand.word("off", pad_w * 0.3, pad_h * 0.5), cid); app.touch(fr)
+        app.press("d", until=lambda s: not s["draw"])
+        app.quit(); app.launch()
+        ev2 = [e["event"] for e in events() if e.get("session") == sess2]
+        rep.check(not ({"draw_mode", "first_stroke", "strokes", "session_end"} & set(ev2)), "turned off: nothing after that point is written", f"events from that session: {ev2}")
+
     @scenario("quit-relaunch", "Quit, start again: every page and stroke is back, on the same page.")
     def _():
         a = app.state()

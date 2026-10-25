@@ -104,6 +104,12 @@ final class Analytics: @unchecked Sendable {
     }
     /// Send what's queued soon (quit, going to the background); returns at once.
     func flushSoon() { work.async { [weak self] in self?.drain() } }
+    /// At quit: drain and wait at most `timeout` (quitting, never drawing; a slow network just loses the batch).
+    func flushBeforeQuit(timeout: Double = 0.5) {
+        let done = DispatchSemaphore(value: 0)
+        work.async { [weak self] in self?.drain(); done.signal() }
+        _ = done.wait(timeout: .now() + timeout)
+    }
     /// Tests: drain now and wait for it (never on the drawing path).
     func flushAndWait() {   // async + wait: work.sync would run the drain on the calling thread
         let done = DispatchSemaphore(value: 0)

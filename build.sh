@@ -56,7 +56,7 @@ else
 fi
 echo "built: $APP ($CONFIG, $VERSION build $BUILD)"
 [ "$CONFIG" = release ] && exit 0
-swiftc -O -swift-version 5 -o build/bench $(ls app/*.swift | grep -v -e main.swift -e TestZoomLock.swift -e TestPersist.swift -e TestInput.swift -e TestAbout.swift -e TestMapping.swift -e TestEdge.swift -e TestKeys.swift -e TestNewLine.swift -e TestPage.swift -e TestGallery.swift -e TestArrows.swift -e TestMeta.swift -e TestGallerySpeed.swift -e TestToolDraw.swift -e TestTaps.swift -e TestArrowKeys.swift -e TestToast.swift -e TestJitter.swift -e TestGalleryKeys.swift -e TestModes.swift -e Robot.swift -e TestPan.swift -e AppMenu.swift -e AppGallery.swift) bench/*.swift \
+swiftc -O -swift-version 5 -o build/bench $(ls app/*.swift | grep -v -e main.swift -e TestZoomLock.swift -e TestPersist.swift -e TestInput.swift -e TestAbout.swift -e TestMapping.swift -e TestEdge.swift -e TestKeys.swift -e TestNewLine.swift -e TestPage.swift -e TestGallery.swift -e TestArrows.swift -e TestMeta.swift -e TestGallerySpeed.swift -e TestToolDraw.swift -e TestTaps.swift -e TestArrowKeys.swift -e TestToast.swift -e TestJitter.swift -e TestGalleryKeys.swift -e TestModes.swift -e Robot.swift -e TestPan.swift -e UsageEvents.swift -e AppMenu.swift -e AppGallery.swift) bench/*.swift \
   $FRAMEWORKS -framework PDFKit
 swiftc -O -o build/winid tools/winid.swift          # window id for the screenshot checks (screencapture -l)
 swiftc -O -o build/crashdialogs tools/crashdialogs.swift   # used by the crash checks

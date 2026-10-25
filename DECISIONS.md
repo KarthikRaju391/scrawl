@@ -67,3 +67,12 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - ⌘F (Edit › Find in Pages) opens the overview with the search field focused; typing dims pages that don't match and selects the first match; Return opens it; Esc in an empty field leaves it, the next Esc closes the overview.
 - Edit › Copy Page as Image (⌘C) and File › Share Page… (the system share menu with a PNG) act on the open page, or on the overview's selection. Tests copy to a private pasteboard, never yours.
 - Not cut: OCR search shipped, it's cheap here because it runs only on overview pages.
+
+## Usage counts (analytics)
+- Provider: TelemetryDeck (privacy-first, EU-hosted, hashes user IDs, no IPs stored), spoken to directly over their v2 ingest API as their Swift SDK does it, so there's no dependency. Off until release.conf has TELEMETRY_APP_ID; it's empty, so this release sends nothing.
+- record() is an append under an unfair lock (p99 0.67 µs on the main thread); a full queue (2,000) drops; batches go every 30 s on a utility queue; the local log is always written while it's on.
+- At quit the last batch gets at most 0.5 s (quitting, never drawing); a slow network just loses it.
+- Failed sends retry at 30 s, then 2, 4, 8, 16 min (capped at an hour), and are dropped after 6 tries; at most 5 batches wait.
+- Props: allow-listed keys only, values only numbers, true/false or ≤ 32-character words: ink, text, search queries and file names can't get in by mistake.
+- Notice: new users see it in the welcome window with a switch; people updating get a one-time sheet (Keep On / Turn Off). Settings has the switch; off clears the queue and stops writing and sending at once.
+- Robot: the expected events land in the local log, nothing written ("secret") appears, and a session turned off writes nothing more. Timing unchanged: main-thread stalls 26 ms (25 before), ink jitter 0.59 pt (0.66 at the jitter fix).

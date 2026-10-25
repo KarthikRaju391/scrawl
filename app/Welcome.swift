@@ -60,11 +60,14 @@ enum HelpText {
         ("⌘E  ⇧⌘E", "Export all pages as PDF / this page as PNG"),
     ]
     static var privacy: String {
-        """
-        Your pages are saved automatically on this Mac, in \(AppPaths.dataDir.replacingOccurrences(of: NSHomeDirectory(), with: "~")). \
-        Nothing is uploaded. Crash notes and the optional touch diagnostics (Help › Diagnostic Logs) stay in \
-        \(AppPaths.logsDir.replacingOccurrences(of: NSHomeDirectory(), with: "~")). The only network request is \
-        Check for Updates, which you start yourself.
+        let logs = AppPaths.logsDir.replacingOccurrences(of: NSHomeDirectory(), with: "~")
+        let counts = Analytics.shared.hasRemote
+            ? "Anonymous usage counts (which features you use and for how long; never your ink, pages or text) are kept in \(logs)/events.jsonl and sent to TelemetryDeck with a random ID. Settings › Share anonymous usage counts turns that off. "
+            : "Anonymous usage counts (which features you use; never your ink, pages or text) stay in \(logs)/events.jsonl on this Mac. "
+        return """
+        Your pages are saved automatically on this Mac, in \(AppPaths.dataDir.replacingOccurrences(of: NSHomeDirectory(), with: "~")), and never uploaded. \
+        Crash notes and the optional touch diagnostics (Help › Diagnostic Logs) stay in \(logs). \(counts)\
+        Otherwise the only network request is Check for Updates, which you start yourself.
         """
     }
 }
@@ -105,6 +108,11 @@ final class InfoWindow: NSWindowController {
         stack.addArrangedSubview(grid)
         stack.addArrangedSubview(label("Privacy", .systemFont(ofSize: 13, weight: .semibold)))
         stack.addArrangedSubview(label(HelpText.privacy, .systemFont(ofSize: 12), .secondaryLabelColor))
+        if firstRun {
+            let share = NSButton(checkboxWithTitle: "Share anonymous usage counts", target: nil, action: #selector(InfoWindow.toggleUsage(_:)))
+            share.target = self; share.state = Analytics.shared.enabled ? .on : .off
+            stack.addArrangedSubview(share)
+        }
         let ok = NSButton(title: firstRun ? "Start Drawing" : "Close", target: nil, action: #selector(InfoWindow.closeWindow))
         ok.target = self; ok.keyEquivalent = "\r"
         let practice = NSButton(title: "Try a 30-second practice", target: nil, action: #selector(InfoWindow.startPractice))
@@ -117,6 +125,7 @@ final class InfoWindow: NSWindowController {
     }
 
     @objc func closeWindow() { window?.close(); onClose?() }
+    @objc func toggleUsage(_ b: NSButton) { Analytics.shared.enabled = b.state == .on }
     @objc func startPractice() { window?.close(); onClose?(); onPractice?() }
     @objc func openInputMonitoring() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)

@@ -7,6 +7,7 @@ final class SettingsWindow: NSWindowController {
     private var switches: [Switch] = []
     private var boxes: [NSButton] = []
     var onChange: (() -> Void)?
+    var onSwitch: ((String) -> Void)?
 
     init(switches: [Switch]) {
         let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 460, height: 360), styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -42,8 +43,8 @@ final class SettingsWindow: NSWindowController {
     @objc private func toggled(_ b: NSButton) {
         let sw = switches[b.tag], on = b.state == .on
         sw.set(on)
-        if !Launch.testing { UserDefaults.standard.set(on, forKey: sw.key) }
-        onChange?()
+        if !Launch.testing && !sw.key.hasSuffix("Switch") { UserDefaults.standard.set(on, forKey: sw.key) }   // "…Switch": stores itself
+        onSwitch?(sw.key); onChange?()
     }
     func refresh() { for (i, b) in boxes.enumerated() { b.state = switches[i].get() ? .on : .off } }
     /// Test hook: the switches and whether each is on.

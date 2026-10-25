@@ -104,9 +104,15 @@ second of ink is lost.
 ## Your data and privacy
 
 - Pages are saved only on this Mac, in `~/Library/Application Support/Scrawl/Notebook.tdnb`.
-- Nothing is uploaded and there are no analytics. The only network request is **Check for Updates**,
-  which runs only when you choose it. It asks GitHub for the latest release and opens the release page
-  if there's a newer one.
+- Your ink and pages are never uploaded. Scrawl keeps **anonymous usage counts**: which features you use
+  (draw mode, undo, scratch-out, the overview…) and how long, with a random ID that isn't tied to you,
+  never ink, page images, handwriting, search text or file names. They're written to
+  `~/Library/Logs/Scrawl/events.jsonl`, and a release built with a TelemetryDeck app ID also sends them
+  there in the background every 30 s. The first launch says so; **Settings › Share anonymous usage
+  counts** turns it all off. [docs/analytics.md](docs/analytics.md) lists every event.
+- The only other network request is **Check for Updates**, which runs only when you choose it. It asks
+  GitHub for the latest release and opens the release page if there's a newer one. Nothing connects at
+  launch.
 - Local logs live in `~/Library/Logs/Scrawl`. They note when the pointer was given back, and when
   a session ended without quitting. Touch diagnostics (raw touch data, for tuning) are off unless
   you turn on **Help › Record Touch Diagnostics**. They also stay on this Mac.

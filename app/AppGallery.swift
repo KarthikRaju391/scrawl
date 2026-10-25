@@ -9,7 +9,7 @@ extension AppDelegate {
 
     /// The canvas shrinks into the current page's cell; the grid shows every page.
     func showGallery() {
-        tips.openedOverview(); practiceTick(.overview)
+        tips.openedOverview(); practiceTick(.overview); usage.record("overview", ["pages": canvas.pages.count])
         guard !galleryShown, transitionView == nil else { return }
         var ms: [String: Double] = [:]; var tl = CACurrentMediaTime()
         func lap(_ k: String) { let n = CACurrentMediaTime(); ms[k] = (n - tl) * 1000; tl = n }
@@ -22,7 +22,10 @@ extension AppDelegate {
             g.autoresizingMask = [.width, .height]
             g.onOpen = { [weak self] i in self?.openPage(i) }
             g.onNewPage = { [weak self] in self?.openNewPage() }
-            g.onSearchReturn = { [weak self] in self?.openSelectedTile() }
+            g.onSearchReturn = { [weak self] in
+                self?.usage.record("overview_search", ["result": (self?.gallery?.matching.isEmpty ?? true) ? "none" : "found"])
+                self?.openSelectedTile()
+            }
             container.addSubview(g)
             gallery = g
             return g
@@ -161,12 +164,14 @@ extension AppDelegate {
         guard let url = pagePNG(actionPageIndex), let data = try? Data(contentsOf: url) else { return }
         let pb = Self.pasteboard
         pb.clearContents(); pb.setData(data, forType: .png)
+        usage.record("copy_page")
         showToast("Page \(actionPageIndex + 1) copied as an image")
     }
     @objc func sharePageAction() {
         exitDrawMode("share")
         guard let url = pagePNG(actionPageIndex) else { return }
         let picker = NSSharingServicePicker(items: [url])
+        usage.record("share")
         lastSharePicker = picker
         guard !Launch.background else { return }   // tests check the file, not the menu
         picker.show(relativeTo: CGRect(x: container.bounds.midX - 1, y: container.bounds.maxY - 40, width: 2, height: 2), of: container, preferredEdge: .minY)

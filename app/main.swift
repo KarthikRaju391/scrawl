@@ -123,6 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// carries on; the explanation waits until the user leaves draw mode (no window mid-stroke).
     var stallNoticePending = false
     func inputStalled() {
+        usage.record("error", ["category": "input_stalled"])
         stallNoticePending = true
         updateBanner()
     }
@@ -161,8 +162,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.canvas.changing("toolbar") { self.canvas.tools = s }; self.updateBanner()
         }
         tb.onMode = { [weak self] i in self?.apply(i, from: "toolbar") }
-        tb.onUndo = { [weak self] in self?.tips.undoByKeyOrToolbar(inDrawMode: self?.canvas.drawMode ?? false); self?.canvas.undo() }
-        tb.onRedo = { [weak self] in self?.canvas.redo() }
+        tb.onUndo = { [weak self] in self?.tips.undoByKeyOrToolbar(inDrawMode: self?.canvas.drawMode ?? false); self?.usage.record("undo", ["source": "toolbar"]); self?.canvas.undo() }
+        tb.onRedo = { [weak self] in self?.usage.record("redo", ["source": "toolbar"]); self?.canvas.redo() }
         tb.onPage = { [weak self] d in self?.page(d) }
         tb.onGallery = { [weak self] in self?.toggleGallery() }
         cv.onStatus = { [weak self] in self?.updateBanner() }
@@ -180,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         cv.onTapCommand = { [weak self] text in self?.updateUndoState(); self?.showToast(text) }
         tips.show = { [weak self] text in self?.showToast(text, seconds: 4) }
+        tips.onShown = { t in Analytics.shared.record("tip_shown", ["tip": t.rawValue]) }
         cv.onAct = { [weak self] name, extra in self?.canvasAct(name, extra) }
 
         // Input: MultitouchSupport (pressure) unless turned off (Help menu, or --input-nstouch), else the
@@ -217,7 +219,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         notebookStatus = canvas.loadNotebookFromDisk()
         updateBanner()
         startTestReplayIfAsked()
-        if !canvas.testMode && Self.shouldWelcome(.standard) { showInfo(firstRun: true) }
+        let firstRun = !canvas.testMode && Self.shouldWelcome(.standard)
+        if firstRun { showInfo(firstRun: true) }
+        usageLaunch()
+        if !canvas.testMode { showUsageNoticeIfNeeded(firstRun: firstRun) }
         if UserDefaults.standard.string(forKey: "rejoinMode") == "ab" {   // record the hidden condition
             canvas.logger.event(["what": "abCondition", "rejoin": Settings.abCondition])
         }
@@ -412,6 +417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// where the toolbar is hidden, a short note says what changed.
     func apply(_ input: ModeInput, from source: String) {
         let old = modeState, new = old.after(input, lastOther: lastOtherTool)
+        usageMode(old: old, new: new, source: source)
         if new.tool != old.tool || new.locked != old.locked {
             var t = canvas.tools; t.tool = new.tool; t.zoomLocked = new.locked
             noteTool(t.tool)
@@ -430,6 +436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// The last tool other than the pen (marker, highlighter or eraser), for P on the pen.
     private(set) var lastOtherTool: ToolKind?
     let tips = Tips()
+    let usageState = UsageState()
     var robot: AnyObject?   // the robot user's hook (Robot.swift, dev builds only)
     func noteTool(_ t: ToolKind) { if t != .pen { lastOtherTool = t } }
 
@@ -590,8 +597,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: menu
 
-    @objc func undo() { tips.undoByKeyOrToolbar(inDrawMode: canvas.drawMode); canvas.undo() }
-    @objc func redoAction() { canvas.redo() }
+    @objc func undo() { tips.undoByKeyOrToolbar(inDrawMode: canvas.drawMode); usage.record("undo", ["source": "key"]); canvas.undo() }
+    @objc func redoAction() { usage.record("redo", ["source": "key"]); canvas.redo() }
     @objc func clearPage() { canvas.clearPage() }
     @objc func resetZoom() { canvas.resetZoom() }
     @objc func newPageAction() { page(0) }
@@ -604,8 +611,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .init(title: "Scratch out: a quick zig-zag over a word erases it", key: "scratchOut", get: { ScratchOut.enabled }, set: { ScratchOut.enabled = $0 }),
             .init(title: "Page map when zoomed in", key: "pageMap", get: { PageMapView.enabled }, set: { PageMapView.enabled = $0 }),
             .init(title: "Tips (each shows at most twice)", key: "tipsEnabled", get: { Tips.enabled }, set: { Tips.enabled = $0 }),
+            .init(title: "Share anonymous usage counts (never your ink or text)", key: "analyticsEnabledSwitch", get: { Analytics.shared.enabled }, set: { Analytics.shared.enabled = $0 }),
         ])
         w.onChange = { [weak self] in self?.container.needsLayout = true }
+        w.onSwitch = { key in Analytics.shared.record("settings_changed", ["key": key]) }
         return w
     }()
     @objc func showSettings() {
@@ -615,6 +624,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: tips and the practice page (Tips.swift)
 
     func canvasAct(_ name: String, _ extra: [String: Any]) {
+        usageAct(name, extra)
         switch name {
         case "gestureUndo": tips.gestureUndo(); practiceTick(.undo); Haptics.tick()
         case "gestureRedo", "scrubStep": Haptics.tick()
@@ -631,7 +641,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     var practiceActive: Bool { !container.practice.isHidden }
     private(set) var practiceStrokes = 0
-    func practiceTick(_ s: PracticeView.Step) { if practiceActive { container.practice.tick(s) } }
+    func practiceTick(_ s: PracticeView.Step) {
+        guard practiceActive, !container.practice.done.contains(s) else { return }
+        container.practice.tick(s); usage.record("practice", ["step": "\(s)"])
+    }
     @objc func startPracticeAction() { startPractice() }
     func startPractice() {
         if galleryShown { openPage(canvas.pageIndex) }
@@ -639,7 +652,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         practiceStrokes = 0
         let p = container.practice
         p.reset(); p.isHidden = false; p.alphaValue = 1
+        usage.record("practice", ["step": "started"])
         p.onFinished = { [weak self] in
+            self?.usage.record("practice", ["step": "finished"])
             self?.showToast("Practice done. That's the whole app!", seconds: 2.5)
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self?.container.practice.isHidden = true }
         }
@@ -649,6 +664,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc func togglePageMapAction() {
         PageMapView.enabled.toggle()
+        usage.record("page_map", ["on": PageMapView.enabled])
         if !canvas.testMode { UserDefaults.standard.set(PageMapView.enabled, forKey: "pageMap") }
         settingsWindow.refresh()
         container.needsLayout = true
@@ -667,13 +683,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.nameFieldStringValue = ext == "pdf" ? "\(AppInfo.name) \(f.string(from: Date())).pdf" : "Page \(canvas.pageIndex + 1) \(f.string(from: Date())).png"
         panel.beginSheetModal(for: window) { r in
             guard r == .OK, let url = panel.url else { return }
-            do { try write(url) } catch { NSAlert(error: error).runModal() }
+            do { try write(url); self.usage.record("export", ["format": ext]) }
+            catch { self.usage.record("error", ["category": "export_failed"]); NSAlert(error: error).runModal() }
         }
     }
 
     func windowWillClose(_ n: Notification) { exitDrawMode("window closed"); NSApp.terminate(nil) }
     func applicationWillTerminate(_ n: Notification) {
         exitDrawMode("quit"); canvas.autosaver.saveNow(sync: true); canvas.recorder.flush()
+        usageQuit()
         CrashNote.clear()
     }
 }

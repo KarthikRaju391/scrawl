@@ -32,7 +32,8 @@ chk("Touches weren't arriving" in iw and "[Open Input Monitoring Settings]" in i
 full = " ".join(w["full"])
 chk("Welcome to Scrawl" in full and "Trackpad Draw" not in full and "⌃⌥D" in full and "Esc" in full and "Full touch input" in full and "[Start Drawing]" in full,
     "welcome: what it does, ⌃⌥D / Esc, which input is live, Start button")
-chk("Nothing is uploaded" in full and "Check for Updates" in full, "welcome: privacy note (pages stay local, only network use is Check for Updates)")
+chk("never uploaded" in full and "never your ink" in full and "Check for Updates" in full and "events.jsonl" in full,
+    "welcome: privacy note (pages never uploaded, usage counts never include ink, where they live, Check for Updates)")
 chk("No trackpad found" in " ".join(w["none"]) and "Basic touch input" in " ".join(w["basic"]), "no-trackpad and basic-input messages")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 PY

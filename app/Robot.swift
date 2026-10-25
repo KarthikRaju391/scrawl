@@ -267,6 +267,7 @@ final class Robot {
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        s["analyticsSession"] = Analytics.shared.context.sessionID   // robot:needs final class Analytics
         if let g = app.gallery, app.galleryShown {   // robot:needs class PageTitles
             s["galleryTitles"] = canvas.pages.map { g.titles.title($0) }   // robot:needs class PageTitles
             s["galleryMatching"] = g.matching; s["galleryQuery"] = g.query   // robot:needs class PageTitles
