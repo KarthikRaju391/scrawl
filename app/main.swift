@@ -17,6 +17,7 @@ final class ContainerView: NSView {
     let capsule = StatusCapsule()
     let drawFrame = DrawModeFrame(frame: .zero)
     let practice = PracticeView()
+    let pendingMove = PendingMoveView()
 
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
@@ -50,6 +51,7 @@ final class ContainerView: NSView {
         capsule.isHidden = true; addSubview(capsule)
         drawFrame.isHidden = true; addSubview(drawFrame)
         practice.isHidden = true; addSubview(practice)
+        pendingMove.isHidden = true; addSubview(pendingMove)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -74,6 +76,9 @@ final class ContainerView: NSView {
         drawFrame.frame = bounds
         let ps = practice.fittingSize
         practice.frame = CGRect(x: 16, y: bounds.height - ps.height - 16, width: ps.width, height: ps.height)
+        // Pan: at the right edge; next line: low on the left, where the line will start.
+        pendingMove.frame = pendingMove.kind == .newLine ? CGRect(x: 14, y: bounds.height * 0.3, width: 40, height: 40)
+                                                         : CGRect(x: bounds.width - 46, y: bounds.midY - 20, width: 40, height: 40)
         hint.frame = CGRect(x: bounds.midX - hint.fittingWidth / 2, y: bounds.height - 27, width: hint.fittingWidth, height: 18)
         canvas.setNeedsRender()
     }
@@ -608,10 +613,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func canvasAct(_ name: String, _ extra: [String: Any]) {
         switch name {
-        case "gestureUndo": tips.gestureUndo(); practiceTick(.undo)
+        case "gestureUndo": tips.gestureUndo(); practiceTick(.undo); Haptics.tick()
+        case "gestureRedo", "scrubStep": Haptics.tick()
+        case "newLine": Haptics.tick(); container.pendingMove.hide()
+        case "movePending": container.pendingMove.show(extra["kind"] as? String == "newLine" ? .newLine : .pan)
+        case "moveCancelled", "autoPan", "drawMode", "writingMode": container.pendingMove.hide()
         case "scrubStart": tips.gestureUndo(); practiceTick(.undo)
         case "pinchZoom": tips.pinchZoom(at: CACurrentMediaTime())
-        case "scratchOut": tips.scratchedOut(); practiceTick(.scratch)
+        case "scratchOut": tips.scratchedOut(); practiceTick(.scratch); Haptics.tick()
         case "newLineByHand": tips.manualNewLine()
         case "commit": if practiceActive { practiceStrokes += 1; if practiceStrokes >= 3 { practiceTick(.write) } }
         default: break

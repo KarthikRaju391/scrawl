@@ -267,6 +267,9 @@ final class Robot {
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        s["haptics"] = Haptics.count   // robot:needs enum Haptics
+        s["fading"] = canvas.ghostCountForTest   // robot:needs var ghostCountForTest
+        s["pendingMove"] = app.container.pendingMove.isHidden ? "" : "\(app.container.pendingMove.kind.map { "\($0)" } ?? "")"   // robot:needs class PendingMoveView
         s["tips"] = Dictionary(uniqueKeysWithValues: Tips.Tip.allCases.map { ($0.rawValue, app.tips.count($0)) })   // robot:needs final class Tips
         s["practice"] = app.container.practice.isHidden ? [:] : ["done": app.container.practice.done.map { "\($0)" }.sorted()]   // robot:needs final class PracticeView
         s["toolbarTips"] = tb.tooltipsForTest   // robot:needs var tooltipsForTest

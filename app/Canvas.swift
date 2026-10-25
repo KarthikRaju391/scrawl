@@ -809,7 +809,7 @@ final class CanvasView: MTKView {
                 while sc.steps > target && doc.canUndo { undo(); sc.steps -= 1 }
                 while sc.steps < target && doc.canRedo { redo(); sc.steps += 1 }
                 if sc.steps != target { sc.startX = x - Double(sc.steps) * Self.scrubStepMM }   // at an end of history
-                if sc.steps != was { onTapCommand?(sc.steps < 0 ? "Undo ×\(-sc.steps)" : sc.steps > 0 ? "Redo ×\(sc.steps)" : "← Undo · Redo →") }
+                if sc.steps != was { act("scrubStep", ["steps": sc.steps]); onTapCommand?(sc.steps < 0 ? "Undo ×\(-sc.steps)" : sc.steps > 0 ? "Redo ×\(sc.steps)" : "← Undo · Redo →") }
             } else if !sc.ended {
                 sc.ended = true
                 if sc.sliding { act("scrubEnd", ["steps": sc.steps]) }
@@ -1057,6 +1057,7 @@ final class CanvasView: MTKView {
             let unitsPerMM = camera.visible.width / (Multitouch.padMM.width * (1 - 2 * Camera.margin))
             if let gone = ScratchOut.covered(scratch: b.points.map(\.p), in: doc.strokes, reach: ScratchOut.reachMM * unitsPerMM) {
                 doc.scratchOut(erasing: gone)
+                fadeOut(gone)
                 act("scratchOut", ["ids": gone.map(\.id)])
                 markDirty()
                 onTapCommand?("Scratched out")
@@ -1173,6 +1174,16 @@ final class CanvasView: MTKView {
             if s.mesh.buffer == nil { s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit)) }
             return .init(mesh: s.mesh, verts: nil, color: premul(s.color))
         }
+        if !ghosts.isEmpty {
+            let t = CACurrentMediaTime()
+            ghosts = ghosts.filter { t - $0.start < Self.fadeSeconds }
+            for g in ghosts where g.stroke.bounds.intersects(vis) {
+                if g.stroke.mesh.buffer == nil { g.stroke.mesh = renderer.makeMesh(strokeMesh(g.stroke.points, radii: g.stroke.radii, pxPerUnit: meshPxPerUnit)) }
+                var c = g.stroke.color; c.w *= Float(1 - (t - g.start) / Self.fadeSeconds)
+                items.append(.init(mesh: g.stroke.mesh, verts: nil, color: premul(c)))
+            }
+            if !ghosts.isEmpty { needsRender = true }
+        }
         if let b = builder, liveTool != .eraser, !b.points.isEmpty {
             var pts = b.points
             if let p = b.predicted(ahead: predictAhead) { pts.append(p) }
@@ -1238,7 +1249,18 @@ final class CanvasView: MTKView {
     func undo() {
         logger.event(["what": "undo", "strokesBefore": doc.strokes.count])   // the "that landed wrong" signal
         act("undo", ["strokes": doc.strokes.count])
+        let before = doc.strokes
         doc.undo(); endWritingLine(); updateScreensFilled(); markDirty(); needsRender = true
+        fadeOut(before.filter { s in !doc.strokes.contains { $0 === s } })
+    }
+    /// Strokes that just went (undo, scratch-out) fade out over 120 ms, so you see what was taken away.
+    private var ghosts: [(stroke: Stroke, start: Double)] = []
+    static let fadeSeconds = 0.12
+    var ghostCountForTest: Int { ghosts.count }
+    private func fadeOut(_ gone: [Stroke]) {
+        let t = CACurrentMediaTime()
+        ghosts = ghosts.filter { t - $0.start < Self.fadeSeconds } + gone.map { ($0, t) }
+        if !ghosts.isEmpty { needsRender = true }
     }
     func redo() { act("redo", ["strokes": doc.strokes.count]); doc.redo(); markDirty(); needsRender = true }
     func clearPage() {

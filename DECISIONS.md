@@ -54,3 +54,8 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Five tips, each shown at most twice and only on a sign it's needed: every 3rd undo by ⌘Z/toolbar in draw mode (double tap and scrub), the first Return in writing mode (new lines are automatic), 3 pinches within a minute (L locks the zoom), the 2nd time the eraser is picked (scratch-out), 3 page changes by arrows (G). Using the gesture, the lock, scratch-out or the overview marks its tip as known, so it never shows.
 - Tips show in the toast for 4 s; Settings › Tips turns them off.
 - Practice page (Help › Practice Page, and a button in the welcome window): a new page, draw mode on, and a 4-line checklist (write your name, undo with a double tap, scratch out, G) that ticks itself; "Practice done" at the end. The page stays: it's ink you wrote.
+
+## Feedback (item 7)
+- Haptic tick (NSHapticFeedbackManager, .alignment) when a gesture undo or redo lands, at each scrub step, on a new line and on a scratch-out. It only reaches a Force Touch trackpad while a finger is on it, so a tap detected at lift may not be felt: that's on the hand-test list.
+- While the page waits to move (the 400 ms pause), a faint chevron shows where it will go: at the right edge for a pan, low on the left for a new line. Any touch cancels the move and hides it.
+- An undone or scratched-out stroke fades out over 120 ms instead of vanishing (drawn from its existing mesh with falling alpha; nothing extra while no fade is running).

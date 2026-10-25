@@ -610,6 +610,30 @@ def run_scenarios(app, rep, only, hand):
         app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
         if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
 
+    @scenario("feedback", "Changes you can't see get feedback: a haptic tick on gesture undo/redo and scratch-out, an undone stroke fades out instead of vanishing, and a faint chevron shows while the page waits to move (gone when a touch cancels it).")
+    def _():
+        if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
+        app.press("n"); app.press("d", until=lambda s: s["draw"])
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        fr, cid = hand.frames(hand.word("tick", pad_w * 0.3, pad_h * 0.5, hand.roman), 10500); app.touch(fr)
+        h0 = app.state().get("haptics", 0)
+        app.touch(double_tap(2, pad_w / 2, pad_h * 0.3)); h1 = app.state().get("haptics", 0)
+        app.touch(double_tap(3, pad_w / 2, pad_h * 0.3)); h2 = app.state().get("haptics", 0)
+        rep.check(h1 == h0 + 1 and h2 == h1 + 1, "a haptic tick when a gesture undo and a redo land", f"{h0} -> {h1} -> {h2}")
+        app.cmd({"cmd": "menu", "action": "undo"}); f0 = app.state().get("fading", 0)
+        time.sleep(0.3); f1 = app.state().get("fading", 0)
+        rep.check(f0 >= 1 and f1 == 0, "an undone stroke fades out (gone after the 120 ms fade)", f"fading right after: {f0}, 0.3 s later: {f1}")
+        # The pending move: write to the right part of the view in writing mode, then look during the pause.
+        app.press("w", until=lambda s: s["writing"])
+        fr, cid = hand.frames(hand.word("edge", pad_w * 0.66, pad_h * 0.5, hand.roman), cid)
+        app.touch(fr + [[0.008, []]] * 12, settle=0.0)
+        p0 = app.state().get("pendingMove", "")
+        app.touch([[0.008, [[cid + 50, pad_w * 0.5, pad_h * 0.2, 2, 0.5, 7.5]]]] * 3 + [[0.008, []]], settle=0.05)   # a light touch: cancels
+        p1 = app.state().get("pendingMove", "")
+        rep.check(p0 != "" and p1 == "", "a chevron shows while the page waits to move, and a touch cancels it", f"during the pause: {p0!r}, after a touch: {p1!r}")
+        app.press("w", until=lambda s: not s["writing"])
+        app.press("d", until=lambda s: not s["draw"])
+
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
