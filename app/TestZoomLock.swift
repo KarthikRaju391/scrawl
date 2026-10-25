@@ -89,10 +89,10 @@ extension AppDelegate {
         // Unlock: Z in draw mode, then pinch must zoom again.
         add("UNLOCK via Z key") { self.enterDrawMode(lock: false); key("z", code: 6) }
         add("pinch out (unlocked)") { pinch(spread: true) }
-        // Shortcuts outside draw mode: E picks the eraser, P the pen, D enters draw mode.
+        // Shortcuts: E outside draw mode picks the eraser and enters draw mode; P picks the pen; D leaves and enters.
         add("Esc, then E (outside draw mode)") { key("\u{1b}", code: 53); key("e", code: 14) }
         add("P (outside draw mode)") { key("p", code: 35) }
-        add("D enters draw mode") { key("d", code: 2) }
+        add("D enters draw mode") { key("d", code: 2); key("d", code: 2) }   // leaves (E turned it on), then enters
         add("L locks (in draw mode)") { key("l", code: 37) }
         add("L unlocks (outside draw mode)") { key("\u{1b}", code: 53); key("l", code: 37) }
 

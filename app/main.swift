@@ -127,7 +127,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let tb = container.toolbar
         tb.state = cv.tools
         noteTool(cv.tools.tool)
-        tb.onChange = { [weak self] s in self?.noteTool(s.tool); self?.canvas.changing("toolbar") { self?.canvas.tools = s }; self?.updateBanner() }
+        tb.onChange = { [weak self] s in
+            guard let self else { return }
+            let pickedTool = s.tool != self.canvas.tools.tool   // a different tool (not a colour, size or the zoom lock)
+            self.noteTool(s.tool); self.canvas.changing("toolbar") { self.canvas.tools = s }; self.updateBanner()
+            if pickedTool && !self.canvas.drawMode { self.enterDrawMode(lock: !self.canvas.testMode) }   // ready to use it
+        }
         tb.onUndo = { [weak self] in self?.canvas.undo() }
         tb.onRedo = { [weak self] in self?.canvas.redo() }
         tb.onDrawMode = { [weak self] in self?.toggleDrawMode() }
@@ -312,12 +317,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // last other tool).
         guard e.modifierFlags.intersection([.command, .control, .option]).isEmpty, let ch = e.charactersIgnoringModifiers?.lowercased() else { return false }
         var s = canvas.tools
+        var enterDraw = false
         switch ch {
         case "d": if canvas.drawMode { exitDrawMode("D") } else { enterDrawMode(lock: !canvas.testMode) }; return true   // tests never freeze the cursor
-        case "p": s.tool = s.tool == .pen ? (lastOtherTool ?? .pen) : .pen
-        case "m": s.tool = s.tool == .marker ? .pen : .marker
-        case "h": s.tool = s.tool == .highlighter ? .pen : .highlighter
-        case "e": s.tool = s.tool == .eraser ? .pen : .eraser
+        // Outside draw mode a tool key picks that tool and turns draw mode on, ready to use; in draw mode
+        // they toggle (M/H/E again -> pen, P on the pen -> the last other tool).
+        case "p": if canvas.drawMode { s.tool = s.tool == .pen ? (lastOtherTool ?? .pen) : .pen } else { s.tool = .pen; enterDraw = true }
+        case "m": if canvas.drawMode { s.tool = s.tool == .marker ? .pen : .marker } else { s.tool = .marker; enterDraw = true }
+        case "h": if canvas.drawMode { s.tool = s.tool == .highlighter ? .pen : .highlighter } else { s.tool = .highlighter; enterDraw = true }
+        case "e": if canvas.drawMode { s.tool = s.tool == .eraser ? .pen : .eraser } else { s.tool = .eraser; enterDraw = true }
         case "w": toggleWriting(); return true
         case "g": TransitionTiming.inputAt = CACurrentMediaTime(); toggleGallery(); return true
         case "n": page(0); return true
@@ -330,6 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         canvas.changing("key") { canvas.tools = s }
         container.toolbar.state = s
         updateBanner()
+        if enterDraw { enterDrawMode(lock: !canvas.testMode) }
         return true
     }
 
@@ -375,6 +384,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-tooldraw") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestToolDraw.run(app: self) } }
         if a.contains("--test-gallery-speed") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGallerySpeed.run(app: self) } }
         if let i = a.firstIndex(of: "--test-meta"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMeta.run(a[i + 1], app: self) } }
         if let i = a.firstIndex(of: "--test-arrows"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestArrows.run(a[i + 1], app: self) } }

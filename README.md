@@ -40,6 +40,7 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 - **One finger** draws. **Two fingers** pan, and pinching zooms. Blue rings show where your fingers
   are, since there's no pointer.
 - **Tools:** M marker, H highlighter, E eraser; press the same key again to go back to the pen.
+  Picking a tool outside draw mode (key or toolbar) turns draw mode on, so you can use it straight away.
   P picks the pen, and on the pen it goes back to the last other tool. 1–5 set the size. Tap the
   selected tool in the toolbar for sizes and colours.
 - **Every mode key toggles:** D, W and L (or Z) turn their mode on, and pressing them again turns it off.

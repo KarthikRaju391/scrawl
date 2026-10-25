@@ -10,8 +10,8 @@ st = {s["after"]: s for s in json.load(open(sys.argv[1]))["steps"]}; bad = 0
 def chk(ok, msg):
     global bad; bad += 0 if ok else 1; print("PASS" if ok else "FAIL", msg)
 want = [  # step, field, value
-    ("P on pen, no other tool used yet", "tool", "pen"),
-    ("D", "draw", True), ("D again", "draw", False),
+    ("D", "draw", True), ("P on pen, no other tool used yet", "tool", "pen"),
+    ("D again", "draw", False), ("D (back on)", "draw", True),
     ("W", "writing", True), ("W again", "writing", False),
     ("L", "zoomLocked", True), ("L again", "zoomLocked", False), ("Z", "zoomLocked", True), ("Z again", "zoomLocked", False),
     ("M", "tool", "marker"), ("M again", "tool", "pen"), ("H", "tool", "highlighter"), ("H again", "tool", "pen"),

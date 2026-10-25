@@ -27,6 +27,7 @@ old pages and settings over.
 - Edge guard: touches that start within 5% of the trackpad's edges are ignored, so a resting palm or
   thumb no longer draws, pans or zooms. The inner 90% covers the whole writing area. You can change it
   under ⚙︎ › Edge guard, and 0 turns it off.
+- Picking a tool (P, M, H, E, or a toolbar tool) outside draw mode turns draw mode on with that tool.
 - Every mode key toggles: D, W, L/Z on and off; M/H/E pressed again return to the pen; P on the pen
   goes back to the last other tool.
 

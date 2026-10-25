@@ -12,6 +12,7 @@ suites=(
   "mapping|checks/mapping.sh"
   "edge-guard|checks/edge.sh"
   "keys|checks/keys.sh"
+  "tool-enters-draw|checks/tooldraw.sh"
   "newline|checks/newline.sh"
   "page-edges|checks/page.sh"
   "gallery|checks/gallery.sh"

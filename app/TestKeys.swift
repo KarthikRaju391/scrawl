@@ -20,7 +20,9 @@ enum TestKeys {
         }
         var t = canvas.tools; t.tool = .pen; t.zoomLocked = false; canvas.tools = t; tb.state = t
         snap("start")
-        for (k, label) in [("p", "P on pen, no other tool used yet"), ("d", "D"), ("d", "D again"), ("w", "W"), ("w", "W again"), ("l", "L"), ("l", "L again"), ("z", "Z"), ("z", "Z again"),
+        // Tool keys outside draw mode pick the tool and enter draw mode (checks/tooldraw.sh); here the toggles are
+        // checked in draw mode: D first.
+        for (k, label) in [("d", "D"), ("p", "P on pen, no other tool used yet"), ("d", "D again"), ("d", "D (back on)"), ("w", "W"), ("w", "W again"), ("l", "L"), ("l", "L again"), ("z", "Z"), ("z", "Z again"),
                            ("m", "M"), ("m", "M again"), ("h", "H"), ("h", "H again"), ("e", "E"), ("e", "E again"),
                            ("p", "P on pen (last other tool: eraser)"), ("p", "P again")] {
             press(k); snap(label)
@@ -29,7 +31,7 @@ enum TestKeys {
         var s = tb.state; s.tool = .highlighter; tb.onChange?(s); tb.state = s; snap("toolbar: highlighter")
         press("p"); snap("P (from highlighter)"); press("p"); snap("P again (back to highlighter)")
         // Esc still leaves draw mode; D enters it again.
-        press("d"); snap("D (enter)"); press("\u{1b}", code: 53); snap("Esc")
+        press("\u{1b}", code: 53); press("d"); snap("D (enter)"); press("\u{1b}", code: 53); snap("Esc")
         let r: [String: Any] = ["steps": steps]
         try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-keys.json"))
         try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)

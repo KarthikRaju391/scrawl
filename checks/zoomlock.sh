@@ -14,7 +14,7 @@ for s in steps:
     flag = ""
     if "zoomUnchangedSinceLock" in s and not s["step"].startswith(("UNLOCK", "pinch out (unlocked)", "Esc, then E", "P (outside", "D enters", "L locks", "L unlocks")):
         if not s["locked"] or not s["zoomUnchangedSinceLock"] or not s["toolbarShowsLocked"]: flag = "  <-- FAIL"; bad += 1
-    if s["step"].startswith("Esc, then E") and not (s["tool"] == "eraser" and s["toolbarTool"] == "eraser" and not s["drawMode"]): flag = "  <-- FAIL"; bad += 1
+    if s["step"].startswith("Esc, then E") and not (s["tool"] == "eraser" and s["toolbarTool"] == "eraser" and s["drawMode"]): flag = "  <-- FAIL"; bad += 1   # E outside draw mode: eraser, ready to erase
     if s["step"].startswith("P (outside") and s["tool"] != "pen": flag = "  <-- FAIL"; bad += 1
     if s["step"].startswith("D enters") and not s["drawMode"]: flag = "  <-- FAIL"; bad += 1
     if s["step"].startswith("L locks") and not (s["locked"] and s["toolbarShowsLocked"]): flag = "  <-- FAIL"; bad += 1
