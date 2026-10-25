@@ -51,7 +51,8 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   back at the left margin (Return does it by hand). The page waits until your finger has been up for 0.4 s, so it never moves
   in the middle of a word. Choose the line width (½, ¾, full) and how it pans in the panel.
 - **Zoom lock (L)** keeps the zoom fixed while two fingers still pan.
-- **Pages:** N or ⌘N adds a page, ⌘[ and ⌘] move between them. Each page keeps its own view.
+- **Pages:** N or ⌘N adds a page, ⌘[ and ⌘] move between them. Each page keeps its own view. The arrows dim
+  (and ⌘[ / ⌘] do nothing) when there's no page that way; Next never adds a page, + does.
 - **Pages overview (G, or the grid button):** every page as a thumbnail. Click one to open it: it grows
   from its spot in the grid to fill the window. G from a page shrinks it back. The "+ New page" tile is
   last. Opening the overview leaves draw mode, and opening a page puts you back in it.

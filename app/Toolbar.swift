@@ -8,6 +8,10 @@ final class ToolbarView: NSView {
     var state = ToolState() { didSet { needsDisplay = true; panel.state = state; panel.needsDisplay = true } }
     var drawMode = false { didSet { needsDisplay = true } }
     var writingMode = false { didSet { needsDisplay = true } }
+    /// Page arrows: dimmed and inert when there is no page that way (first / last page).
+    var canGoBack = false { didSet { if canGoBack != oldValue { needsDisplay = true } } }
+    var canGoForward = false { didSet { if canGoForward != oldValue { needsDisplay = true } } }
+    func isEnabled(_ item: Item) -> Bool { item == .prevPage ? canGoBack : item == .nextPage ? canGoForward : true }
     var onWriting: (() -> Void)?
     var onPage: ((Int) -> Void)?   // -1 previous, +1 next, 0 new
     var onChange: ((ToolState) -> Void)?
@@ -92,6 +96,7 @@ final class ToolbarView: NSView {
                 NSColor(srgbRed: 0.91, green: 0.94, blue: 0.99, alpha: 1).setFill()
                 NSBezierPath(ovalIn: r.insetBy(dx: 4, dy: (r.height - (r.width - 8)) / 2)).fill()
             }
+            if !isEnabled(item) { tint = tint.withAlphaComponent(0.25) }
             let cfg = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular).applying(.init(paletteColors: [tint]))
             if let img = NSImage(systemSymbolName: symbol(item), accessibilityDescription: nil)?.withSymbolConfiguration(cfg) {
                 let s = img.size
@@ -104,7 +109,7 @@ final class ToolbarView: NSView {
 
     override func mouseDown(with e: NSEvent) {
         let p = convert(e.locationInWindow, from: nil)
-        guard let i = items.indices.first(where: { rect(of: $0).contains(p) }) else { return }
+        guard let i = items.indices.first(where: { rect(of: $0).contains(p) }), isEnabled(items[i]) else { return }
         switch items[i] {
         case .undo: onUndo?()
         case .redo: onRedo?()

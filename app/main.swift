@@ -247,8 +247,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if stallNoticePending { stallNoticePending = false; showInfo(firstRun: false) }
     }
 
+    /// Prev is dimmed on the first page, Next on the last (it never creates a page; the + button and N do).
+    func updatePageArrows() {
+        container.toolbar.canGoBack = canvas.pageIndex > 0
+        container.toolbar.canGoForward = canvas.pageIndex < canvas.pages.count - 1
+    }
+
     /// -1 previous, +1 next, 0 new page.
     func page(_ d: Int) {
+        if d == -1 && !container.toolbar.canGoBack || d == 1 && !container.toolbar.canGoForward { return }
         if d == 0 { canvas.newPage() } else { canvas.goToPage(canvas.pageIndex + d) }
         updateBanner()
     }
@@ -260,6 +267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func updateBanner() {
+        updatePageArrows()
         let input = canvas.usingMT ? "" : "  ·  basic touch input (no pressure)"
         let pageText = "Page \(canvas.pageIndex + 1) of \(canvas.pages.count)"
         if canvas.showPageHint {
@@ -367,6 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if let i = a.firstIndex(of: "--test-arrows"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestArrows.run(a[i + 1], app: self) } }
         if let i = a.firstIndex(of: "--test-gallery"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGallery.run(a[i + 1], app: self) } }
         if a.contains("--test-page") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPage.run(app: self) } }
         if a.contains("--test-newline") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestNewLine.run(app: self) } }

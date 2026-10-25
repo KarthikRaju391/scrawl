@@ -16,6 +16,8 @@ old pages and settings over.
   the green button or ⌃⌘F). The trackpad maps without distortion to the largest trackpad-shaped area in
   the window, centred and outlined in draw mode. Pan to reach the paper around it.
 - Return in writing mode starts the next line.
+- The page arrows dim when there's no page that way: Prev on the first page, Next on the last. ⌘[ and ⌘]
+  do nothing then too.
 - Pages overview (G or the toolbar's grid button): thumbnails of every page, growing into the page when
   opened and shrinking back into the grid with G.
 - The page's bounds are obvious. Anything off the page (beside it, above its top) is a plain grey desk with a

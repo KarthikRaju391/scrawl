@@ -113,4 +113,11 @@ extension AppDelegate {
         a.runModal()
     }
     @objc func toggleWritingAction() { toggleWriting() }
+
+    /// ⌘[ / ⌘] are disabled (so the shortcuts do nothing) when the page arrows are dimmed.
+    @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(prevPageAction) { return canvas.pageIndex > 0 && !galleryShown }
+        if item.action == #selector(nextPageAction) { return canvas.pageIndex < canvas.pages.count - 1 && !galleryShown }
+        return true
+    }
 }
