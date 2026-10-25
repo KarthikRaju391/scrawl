@@ -264,6 +264,11 @@ img{{width:280px;border:1px solid #ccc;border-radius:6px}}figcaption{{font-size:
 
 # ---------------------------------------------------------------- scenarios
 
+def ensure(app, field, value, key):
+    """Press `key` only if `field` isn't `value` already (scenarios don't inherit each other's modes)."""
+    if app.state()[field] != value: app.press(key, until=lambda s: s[field] == value)
+
+
 def settle(app, quiet=0.12, limit=1.5):
     """Wait until the view has stopped moving (a person waits for the page before writing on)."""
     t0, last, since = time.time(), None, time.time()
@@ -520,12 +525,12 @@ def run_scenarios(app, rep, only, hand):
         area = b["bannerArea"] + b.get("capsuleArea", 0) + b["toolbarArea"]
         rep.step("chrome over the page after 3 s (pt²)", area=round(area), banner=round(b["bannerArea"]), capsule=round(b.get("capsuleArea", 0)))
         rep.check(area < 6000, "little chrome over the page while drawing", f"{area:.0f} pt² after 3 s")
-        app.press("e", until=lambda s: s["tool"] == "eraser"); app.press("w", until=lambda s: s["writing"]); time.sleep(0.2)
+        ensure(app, "tool", "eraser", "e"); ensure(app, "writing", True, "w"); time.sleep(0.2)
         c = app.state()["chrome"]
         rep.check("Eraser" in c.get("capsule", "") and "writing" in c.get("capsule", ""), "the capsule follows the tool and writing mode", c.get("capsule"))
         time.sleep(2.2); rep.shot(app, "draw mode: eraser, writing on (capsule at the bottom, frame round the window)")
-        app.press("w", until=lambda s: not s["writing"]); app.press("e", until=lambda s: s["tool"] == "pen")
-        app.press("d", until=lambda s: not s["draw"])
+        ensure(app, "writing", False, "w"); ensure(app, "tool", "pen", "p")
+        ensure(app, "draw", False, "d")
 
     @scenario("toolbar-settings", "The toolbar: Draw first and labelled, the tuning sliders gone from it, a tooltip with the shortcut on every button. Settings (⌘,) has the sliders and switches, and the scratch-out switch really turns it off.")
     def _():
@@ -575,9 +580,13 @@ def run_scenarios(app, rep, only, hand):
         tipped = [i + 1 for i in range(9) if counts[i] > (counts[i - 1] if i else 0)]
         rep.check(tipped == [3, 6], "the double-tap tip shows on the 3rd and 6th ⌘Z undo, then never again", f"tip after undo #{tipped}")
         rep.shot(app, "the undo tip")
+        pre_lock_tip = app.state()["tips"]["zoomLock"]
         for k in range(3):
             app.touch(two_finger(pad_w / 2, pad_h * 0.5, 20, 26 if k % 2 == 0 else 15, dur=0.3)); time.sleep(0.1)
-        rep.check("locks the zoom" in app.state().get("toast", ""), "three pinches within a minute: the zoom-lock tip", app.state().get("toast", ""))
+        if pre_lock_tip >= 2:
+            rep.step("zoom-lock tip", why="already known: the zoom lock was used earlier in this run, so the tip is retired")
+        else:
+            rep.check("locks the zoom" in app.state().get("toast", ""), "three pinches within a minute: the zoom-lock tip", app.state().get("toast", ""))
         sw = app.state().get("settingsSwitches") or []
         ti = next((i for i, x in enumerate(sw) if x[0].startswith("Tips")), None)
         if ti is not None:
@@ -624,15 +633,15 @@ def run_scenarios(app, rep, only, hand):
         time.sleep(0.3); f1 = app.state().get("fading", 0)
         rep.check(f0 >= 1 and f1 == 0, "an undone stroke fades out (gone after the 120 ms fade)", f"fading right after: {f0}, 0.3 s later: {f1}")
         # The pending move: write to the right part of the view in writing mode, then look during the pause.
-        app.press("w", until=lambda s: s["writing"])
+        ensure(app, "writing", True, "w")
         fr, cid = hand.frames(hand.word("edge", pad_w * 0.66, pad_h * 0.5, hand.roman), cid)
         app.touch(fr + [[0.008, []]] * 12, settle=0.0)
         p0 = app.state().get("pendingMove", "")
         app.touch([[0.008, [[cid + 50, pad_w * 0.5, pad_h * 0.2, 2, 0.5, 7.5]]]] * 3 + [[0.008, []]], settle=0.05)   # a light touch: cancels
         p1 = app.state().get("pendingMove", "")
         rep.check(p0 != "" and p1 == "", "a chevron shows while the page waits to move, and a touch cancels it", f"during the pause: {p0!r}, after a touch: {p1!r}")
-        app.press("w", until=lambda s: not s["writing"])
-        app.press("d", until=lambda s: not s["draw"])
+        ensure(app, "writing", False, "w")
+        ensure(app, "draw", False, "d")
 
     @scenario("overview-find", "The overview shows each page's ink (cropped to it, not a near-blank top screen), titles each tile with its first handwritten line, finds pages by handwriting (⌘F, typed), and copies or shares a page as an image.")
     def _():
@@ -750,6 +759,7 @@ def run_scenarios(app, rep, only, hand):
     @scenario("undo-scrub", "Write five words, then two-finger double tap and keep the second tap down: sliding left steps back through them live, sliding right brings them back. A plain double tap still undoes one step.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
+        settle(app)   # draw mode may glide back to the last word first
         st = app.state(); pad_w, pad_h = st["padMM"]
         cid, counts = 9500, [st["strokes"]]
         for i, w in enumerate(["one", "two", "six", "ten", "zen"]):
@@ -847,7 +857,8 @@ def run_scenarios(app, rep, only, hand):
         b = app.state()
         rep.check(b["strokes"] - a["strokes"] >= info["commits"] * 0.9, "strokes kept like in the session",
                   f"{b['strokes'] - a['strokes']} new, the session committed {info['commits']}")
-        p = rep.shot(app, "recorded session replayed")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app); time.sleep(2.5)   # the whole page, like the export
+        p = rep.shot(app, "recorded session replayed (whole page)")
         ref = os.path.join(rep.out, "shots", "recorded-export.png")
         app.cmd({"cmd": "exportPNG", "path": ref})
         o_s, o_r = ocr(p, ""), ocr(ref, "")
