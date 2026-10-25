@@ -119,7 +119,7 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 
 ## Test results (2026-10-25, `checks/run_all.sh`, everything in the background)
 
-All 17 suites pass:
+All 18 suites pass:
 
 | suite | result |
 |---|---|
@@ -127,18 +127,19 @@ All 17 suites pass:
 | persist | 11/11 |
 | cursor | 11/11 |
 | input | 13/13 |
-| mapping | 6/6 |
+| mapping | 5 window shapes and full-screen sizes, all checks |
 | edge guard | 11/11 |
 | keys | 24/24 |
+| newline | 108 cases + palm + Return |
 | aim | 4/4 |
 | zoom lock | all steps |
 | auto-pan (centre, left, off) | 90 letters each, no overlaps |
 | ui | screenshots |
 | e2e replay | 27 strokes |
-| session replay | mid-word page moves 24 → 0 |
+| session replay | fidelity exact; mid-word page moves 24 → 0 |
 | edge replay | see the edge guard results above |
-| release DMG smoke test | 28/28 |
+| release DMG smoke test | 28/28, re-run on the final DMG |
 
-Notes:
-- **Zoom lock** failed once, after the toolbar started hiding in draw mode: the test clicked a hidden toolbar. The app now shows the toolbar the moment draw mode ends, and the test clicks it outside draw mode. It passes again.
-- **Release smoke test** was re-run on the final DMG, on battery (see Performance above).
+Fixes to the tests this round:
+- **Fresh-install welcome check:** it read the real settings, which now record that Karthik opened the build, so it now uses an empty store.
+- **Frame-time check:** it counted the window server's drawable wait, so it now counts only Scrawl's own work.
