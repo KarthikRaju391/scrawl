@@ -393,7 +393,8 @@ final class CanvasView: MTKView {
     var doc: Document { pages[pageIndex] }
     /// Called when page, hint or mode status changes (the window updates its labels).
     var onStatus: (() -> Void)?
-    var tools = ToolState.load() {
+    // Tests start from the default tools: the person using this Mac may have left the real app on the eraser.
+    var tools = Launch.testing ? ToolState() : ToolState.load() {
         didSet {
             if tools.zoomLocked != oldValue.zoomLocked { logger.event(["what": "zoomLock", "locked": tools.zoomLocked, "source": source]) }
             if tools.tool != oldValue.tool || tools.autoPan != oldValue.autoPan || tools.zoomLocked != oldValue.zoomLocked || tools.lineWidthIndex != oldValue.lineWidthIndex {
