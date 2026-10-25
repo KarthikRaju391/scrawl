@@ -102,6 +102,14 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
   - It leaves draw mode and returns to it.
   - `gallery.sh` covers 40 pages, persistence across a restart, and screenshots.
 - [x] **Page arrows dim** on the first and last page, and ⌘[ / ⌘] do nothing then. Next never adds a page. `arrows.sh` checks this, and a mutation fails it.
+- [x] **Page dates.** Created and last-edited dates per page, shown on overview tiles and the open page's label. Pages saved before this change show "date unknown" (no real source to recover them from). Tested by `meta.sh` and the bench.
+- [x] **Overview responsiveness.** Click to first frame went from ~300 ms to ~5 ms, and G from ~320 ms to 10–35 ms. The animation runs 0.22 s, easing out, at 8.3 ms frames. Tested by `gallery_speed.sh`, which fails on the old build.
+- [x] **Tool keys and buttons outside draw mode** turn draw mode on with that tool. Tested by `tooldraw.sh`, which fails on the old build.
+- [x] **Two-finger double tap = undo, three-finger double tap = redo** (draw mode).
+  - The tap rules come from Karthik's recorded sessions.
+  - Replaying all 7 sessions gives 0 false double taps; looser rules give 1, which fails the check.
+  - Fixed along the way: an eraser pan could erase under the first finger.
+  - Tested by `taps.sh`, which fails on the old build, and the bench replay.
 - [x] **Aim-first mode removed** (Karthik: the finger rings already show where you'll write).
   - The toggle, the A key, the panel checkbox, the help and doc mentions, and its test suite are gone.
   - Old settings that still contain `aimFirst` load fine; the key is ignored and not written back (bench check).
@@ -133,21 +141,25 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 
 ## Test results (2026-10-25, `checks/run_all.sh`, everything in the background)
 
-All 20 suites pass:
+All 24 suites pass:
 
 | suite | result |
 |---|---|
-| bench | 57/57 |
+| bench | 68/68 |
 | persist | 11/11 |
 | cursor | 11/11 |
 | input | 12/12 |
 | mapping | 7/7 |
 | edge guard | 11/11 |
-| keys | 22/22 |
+| keys | 23/23 |
+| tool enters draw | 10/10 |
+| tap gestures | 14/14 |
 | newline | 108 cases + palm + Return |
 | page edges | 9/9 |
 | gallery | 12/12 |
+| gallery speed | 7/7 |
 | page arrows | 9/9 |
+| page dates | 8/8 |
 | zoom lock | all steps |
 | auto-pan (centre, left, off) | 90 letters each |
 | ui | screenshots |

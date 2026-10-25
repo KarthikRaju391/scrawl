@@ -22,7 +22,9 @@ The app asks for no permissions. Your pages stay on your Mac, and the only netwo
 - Writing mode: a new line goes back to the left margin (also by hand with Return).
 - Edge guard: a palm or thumb resting on the trackpad's edge no longer draws, pans or zooms.
 - Every mode key toggles: press it again to turn the mode off.
-- Pages overview (G): thumbnails of every page; a page grows into view when you open it.
+- Pages overview (G): thumbnails of every page, each with its date; a page grows into view when you open it.
+- In draw mode: two-finger double tap = undo, three-finger double tap = redo.
+- Picking a tool (P, M, H, E) outside draw mode starts drawing with it straight away.
 - The page's edges are obvious: off-page space is a grey desk.
 - Finger drawing with pressure. A public-API fallback keeps drawing working if the private touch
   framework is unavailable.
@@ -37,6 +39,6 @@ Full list: [CHANGELOG.md](https://github.com/KarthikRaju391/trackpad-draw/blob/m
 ## Checksums (SHA-256)
 
 ```
-380d6720975920b8e8103210487be79a37b212c4c5a17f45ea3dbf514479034b  Scrawl-0.1.0.dmg
-93d9d8c10a8f30d403164043991842bec7fb7ad7f5aa5a391e5d6be63b284762  Scrawl-0.1.0.zip
+8674fb17f0f16fc16be16861782b72aaf853c1edbb2c8828a21052677ee5aafb  Scrawl-0.1.0.dmg
+f54fae3f4a018ca6d277f59abeee4764af203db27bada8a2b6daef8639db01fa  Scrawl-0.1.0.zip
 ```
