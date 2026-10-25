@@ -15,6 +15,7 @@ suites=(
   "newline|checks/newline.sh"
   "page-edges|checks/page.sh"
   "gallery|checks/gallery.sh"
+  "gallery-speed|checks/gallery_speed.sh"
   "page-arrows|checks/arrows.sh"
   "page-dates|checks/meta.sh"
   "zoomlock|checks/zoomlock.sh"

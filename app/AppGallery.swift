@@ -10,8 +10,11 @@ extension AppDelegate {
     /// The canvas shrinks into the current page's cell; the grid shows every page.
     func showGallery() {
         guard !galleryShown, transitionView == nil else { return }
+        var ms: [String: Double] = [:]; var tl = CACurrentMediaTime()
+        func lap(_ k: String) { let n = CACurrentMediaTime(); ms[k] = (n - tl) * 1000; tl = n }
+        canvas.renderingPaused = true   // covered by the overview from now on
         galleryReturnsToDraw = canvas.drawMode
-        exitDrawMode("gallery")
+        exitDrawMode("gallery"); lap("exitDraw")
         container.toolbar.hidePanel()
         let g = gallery ?? {
             let g = GalleryView(frame: container.bounds)
@@ -23,10 +26,15 @@ extension AppDelegate {
             return g
         }()
         g.frame = container.bounds
-        g.reload(pages: canvas.pages, pageSize: canvas.camera.page, current: canvas.pageIndex)
+        g.reload(pages: canvas.pages, pageSize: canvas.camera.page, current: canvas.pageIndex); lap("reload")
         g.isHidden = false
-        let from = canvas.frame, to = g.cellRect(canvas.pageIndex, in: container)
-        transition(kind: "close", page: canvas.pageIndex, image: viewImage(of: canvas.pageIndex), from: from, to: to) {}
+        let to = g.cellRect(canvas.pageIndex, in: container); lap("cellRect")
+        g.display(); lap("display")
+        CATransaction.flush(); lap("flush")   // draw and commit the grid now, before the first frame, not during the animation
+        let from = canvas.frame
+        let img = canvasSnapshot(); lap("snapshot")
+        transition(kind: "close", page: canvas.pageIndex, image: img, from: from, to: to) {}
+        lastTransition["stepsMs"] = ms
     }
 
     /// Page i grows from its cell to the full canvas.
@@ -48,14 +56,19 @@ extension AppDelegate {
     }
 
     private func finishOpening(page i: Int, from: CGRect) {
-        transition(kind: "open", page: i, image: viewImage(of: i), from: from, to: canvas.frame) { [weak self] in
+        transition(kind: "open", page: i, image: canvasSnapshot(), from: from, to: canvas.frame) { [weak self] in
             guard let self else { return }
+            self.canvas.renderingPaused = false   // renders the opened page under the transition's last frame
             self.gallery?.isHidden = true
             if self.galleryReturnsToDraw { self.enterDrawMode(lock: !self.canvas.testMode) }
         }
     }
 
-    /// What the canvas shows for page i (its saved view), rendered on the CPU for the transition.
+    /// What the canvas shows now (the page being opened has already been switched to): a GPU snapshot.
+    /// At point resolution: it's on screen for 0.22 s, then the canvas itself takes over.
+    func canvasSnapshot() -> CGImage? { canvas.snapshot(scale: 1) }
+
+    /// What the canvas shows for page i (its saved view), rendered on the CPU (slow; kept for comparison).
     func viewImage(of i: Int) -> NSImage? {
         let cam = canvas.cameraForPage(i), rr = canvas.renderRect(for: cam)
         let scale = window.backingScaleFactor
@@ -65,35 +78,73 @@ extension AppDelegate {
         return NSImage(cgImage: cg, size: canvas.bounds.size)
     }
 
-    static var transitionSeconds: Double { ProcessInfo.processInfo.environment["TRACKPAD_DRAW_SLOW_TRANSITION"] != nil ? 2.0 : 0.3 }
+    /// Short, and easing out: it moves most right after the click, so it feels immediate.
+    static var transitionSeconds: Double { ProcessInfo.processInfo.environment["TRACKPAD_DRAW_SLOW_TRANSITION"] != nil ? 2.0 : 0.22 }
 
     /// An image of the page animates between the two rects (container coordinates), then goes away.
-    private func transition(kind: String, page: Int, image: NSImage?, from: CGRect, to: CGRect, then: @escaping () -> Void) {
-        let tv = NSImageView(frame: from)
-        tv.image = image; tv.imageScaling = .scaleAxesIndependently
-        tv.wantsLayer = true; tv.layer?.cornerRadius = 6; tv.layer?.masksToBounds = true
+    private func transition(kind: String, page: Int, image: CGImage?, from: CGRect, to: CGRect, then: @escaping () -> Void) {
+        // A plain layer with the image as its contents: no NSImage conversion or redraw on the main thread.
+        let tv = NSView(frame: from)
+        tv.wantsLayer = true
+        tv.layer?.contents = image; tv.layer?.contentsGravity = .resize
+        tv.layer?.cornerRadius = 6; tv.layer?.masksToBounds = true
         container.addSubview(tv)
         transitionView = tv
         lastTransition = ["kind": kind, "page": page, "from": [from.minX, from.minY, from.width, from.height], "to": [to.minX, to.minY, to.width, to.height],
                           "startFrame": [tv.frame.minX, tv.frame.minY, tv.frame.width, tv.frame.height]]
         // Driven by a run-loop timer (common modes), not Core Animation: it runs the same in a hidden or
         // background window, and every intermediate frame is a plain, inspectable view frame.
-        let t0 = CACurrentMediaTime(), dur = Self.transitionSeconds
-        let timer = Timer(timeInterval: 1.0 / 120, repeats: true) { [weak self] timer in
-            guard let self else { timer.invalidate(); return }
+        let start = CACurrentMediaTime(), dur = Self.transitionSeconds
+        let inputAt = TransitionTiming.inputAt; TransitionTiming.inputAt = nil
+        if let i = inputAt { lastTransition["inputToStartMs"] = (start - i) * 1000 }
+        lastTransition["durationS"] = dur
+        // Not coalesced or throttled while it runs (e.g. when the system is saving power).
+        let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "page transition")
+        // The clock starts one frame back so the first step is applied right now, not at the first timer tick.
+        let t0 = start - 1.0 / 120
+        var first = true, lastFrame = CACurrentMediaTime(), maxGap = 0.0, gaps: [Double] = []
+        func step(_ unused: Timer?) {
+            let now = CACurrentMediaTime(); maxGap = max(maxGap, now - lastFrame); gaps.append((now - lastFrame) * 1000); lastFrame = now
             let u = min((CACurrentMediaTime() - t0) / dur, 1)
-            let e = u < 0.5 ? 2 * u * u : 1 - pow(-2 * u + 2, 2) / 2   // ease in-out
+            let e = 1 - pow(1 - u, 3)   // ease out (cubic): most of the movement right after the click
             tv.frame = CGRect(x: from.minX + (to.minX - from.minX) * e, y: from.minY + (to.minY - from.minY) * e,
                               width: from.width + (to.width - from.width) * e, height: from.height + (to.height - from.height) * e)
+            if first {
+                first = false
+                if let i = inputAt { lastTransition["inputToFirstFrameMs"] = (CACurrentMediaTime() - i) * 1000 }
+                lastTransition["firstFrameProgress"] = e   // how far the first frame moved (0...1)
+            }
             guard u >= 1 else { return }
-            timer.invalidate()
-            self.lastTransition["endFrame"] = [tv.frame.minX, tv.frame.minY, tv.frame.width, tv.frame.height]
+            TransitionDriver.stop()
+            ProcessInfo.processInfo.endActivity(activity)
+            lastTransition["endFrame"] = [tv.frame.minX, tv.frame.minY, tv.frame.width, tv.frame.height]
+            lastTransition["totalMs"] = (now - start) * 1000; lastTransition["maxFrameGapMs"] = maxGap * 1000; lastTransition["gapsMs"] = gaps.map { ($0 * 10).rounded() / 10 }
             tv.removeFromSuperview()
-            self.transitionView = nil
+            transitionView = nil
             then()
         }
-        RunLoop.main.add(timer, forMode: .common)
+        step(nil)
+        // Paced by the window's display link (one step per screen refresh), not a timer: macOS throttles
+        // timers of apps whose windows are behind others (measured: one step every ~40 ms).
+        TransitionDriver.start(on: container) { step(nil) }
     }
 
     @objc func toggleGalleryAction() { toggleGallery() }
+}
+
+/// Calls a closure on every display refresh of a view's screen until stopped.
+final class TransitionDriver: NSObject {
+    nonisolated(unsafe) private static var current: TransitionDriver?
+    private var link: CADisplayLink?
+    private let onFrame: () -> Void
+    private init(_ f: @escaping () -> Void) { onFrame = f }
+    static func start(on view: NSView, _ f: @escaping () -> Void) {
+        stop()
+        let d = TransitionDriver(f)
+        let l = view.displayLink(target: d, selector: #selector(frame(_:)))
+        l.add(to: .main, forMode: .common)
+        d.link = l; current = d
+    }
+    static func stop() { current?.link?.invalidate(); current = nil }
+    @objc private func frame(_ l: CADisplayLink) { onFrame() }
 }

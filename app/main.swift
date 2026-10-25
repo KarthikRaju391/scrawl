@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var previousCrash = false
     var gallery: GalleryView?
     var galleryReturnsToDraw = false
-    var transitionView: NSImageView?
+    var transitionView: NSView?
     var lastTransition: [String: Any] = [:]
     private var lastBannerText = ""
     private var bannerFade: DispatchWorkItem?
@@ -302,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Returns true if the key was handled.
     func key(_ e: NSEvent) -> Bool {
         if galleryShown {   // the page overview: G or Esc goes back to the current page; other keys do nothing
-            if e.keyCode == 53 || e.charactersIgnoringModifiers?.lowercased() == "g" { openPage(canvas.pageIndex) }
+            if e.keyCode == 53 || e.charactersIgnoringModifiers?.lowercased() == "g" { TransitionTiming.inputAt = CACurrentMediaTime(); openPage(canvas.pageIndex) }
             return e.modifierFlags.intersection([.command, .control, .option]).isEmpty
         }
         if e.keyCode == 36 || e.keyCode == 76, canvas.writingMode { canvas.newLineByHand(); return true }   // Return: next line
@@ -319,7 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "h": s.tool = s.tool == .highlighter ? .pen : .highlighter
         case "e": s.tool = s.tool == .eraser ? .pen : .eraser
         case "w": toggleWriting(); return true
-        case "g": toggleGallery(); return true
+        case "g": TransitionTiming.inputAt = CACurrentMediaTime(); toggleGallery(); return true
         case "n": page(0); return true
         case "l", "z": s.zoomLocked.toggle()   // L (or Z) locks / unlocks the zoom
         case "k" where canvas.showPageHint: canvas.dismissPageHint(); return true
@@ -375,6 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
+        if a.contains("--test-gallery-speed") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGallerySpeed.run(app: self) } }
         if let i = a.firstIndex(of: "--test-meta"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMeta.run(a[i + 1], app: self) } }
         if let i = a.firstIndex(of: "--test-arrows"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestArrows.run(a[i + 1], app: self) } }
         if let i = a.firstIndex(of: "--test-gallery"), i + 1 < a.count { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGallery.run(a[i + 1], app: self) } }

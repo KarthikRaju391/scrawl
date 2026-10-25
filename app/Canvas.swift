@@ -417,7 +417,7 @@ final class CanvasView: MTKView {
     /// What is changing the camera/tools right now (for the event log).
     var source = "unknown"
     func changing(_ src: String, _ body: () -> Void) { let old = source; source = src; body(); source = old }
-    private var renderer: Renderer!
+    private(set) var renderer: Renderer!
     private let gestures = GestureEngine()
     private var builder: StrokeBuilder?
     var liveStrokePointCountForTest: Int { builder?.points.count ?? 0 }
@@ -645,7 +645,7 @@ final class CanvasView: MTKView {
         perf.inputsPerTick.append(perf.inputsSinceTick); perf.inputsSinceTick = 0
         advanceClock()
         if camAnim != nil { stepSlide(); needsRender = true }
-        guard needsRender else { return }
+        guard needsRender, !renderingPaused else { return }
         needsRender = false
         // Prediction slider at 0 = draw only where the finger has been (no look-ahead at all).
         predictAhead = settings.predictMs <= 0 ? 0 : max(l.targetTimestamp - CACurrentMediaTime(), 0) + settings.predictMs / 1000
@@ -657,6 +657,9 @@ final class CanvasView: MTKView {
     override func draw(_ dirtyRect: NSRect) { render(predictAhead: predictAhead) }
 
     func setNeedsRender() { needsRender = true }
+    /// While the pages overview covers the canvas (and during its transitions): no frames. Each frame waits
+    /// on the window server for a drawable, which stalled the transition's animation by ~40 ms.
+    var renderingPaused = false { didSet { if !renderingPaused { needsRender = true } } }
 
     private var lastDrain = 0.0
     private func drainInput() {

@@ -4,10 +4,16 @@
 // page and are cached per page until its contents change (Document.version), so reopening is instant.
 import AppKit
 
+/// When the click or key that starts a transition arrived (for the click-to-first-frame measurement).
+enum TransitionTiming { nonisolated(unsafe) static var inputAt: Double? }
+
 /// CPU rendering of part of a page (the same stroke outlines the PDF export uses).
 enum PageImage {
     /// `rect` (page units) drawn into an image of `px` pixels; off-page space is the grey desk.
     static func render(_ doc: Document, rect: CGRect, pageWidth: Double, pageTop: Double, px: CGSize, background: Int = 0, spacing: Double = 48) -> CGImage? {
+        render(doc.strokes, rect: rect, pageWidth: pageWidth, pageTop: pageTop, px: px, background: background, spacing: spacing)
+    }
+    static func render(_ strokes: [Stroke], rect: CGRect, pageWidth: Double, pageTop: Double, px: CGSize, background: Int = 0, spacing: Double = 48) -> CGImage? {
         let w = max(Int(px.width), 1), h = max(Int(px.height), 1)
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
@@ -33,7 +39,7 @@ enum PageImage {
             if background == 1 { var x = x0; while x <= rect.maxX { ctx.fill(CGRect(x: x - lw / 2, y: rect.minY, width: lw, height: rect.height)); x += spacing } }
             ctx.restoreGState()
         }
-        for s in doc.strokes where s.bounds.intersects(rect) {
+        for s in strokes where s.bounds.intersects(rect) {
             ctx.setFillColor(CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: CGFloat(s.color.w)))
             ctx.addPath(strokePath(s.points, size: s.size, brush: Brush.of(s.tool)))
             ctx.fillPath(using: .winding)
@@ -42,24 +48,57 @@ enum PageImage {
     }
 }
 
-/// Thumbnails by page, re-rendered only when the page's contents change.
+/// Thumbnails by page, re-rendered only when the page's contents change. Rendering happens on a background
+/// queue: the grid draws whatever is cached (an older version while a page's new one renders) and redraws
+/// when it's ready, so opening the overview never waits for a render.
 final class ThumbnailCache {
     private var cache: [ObjectIdentifier: (version: Int, image: CGImage)] = [:]
-    private(set) var renders = 0
+    private var pending = Set<ObjectIdentifier>()
+    private let lock = NSLock()
+    private let queue = DispatchQueue(label: "scrawl.thumbnails", qos: .userInitiated)
+    private var renderCount = 0
+    var renders: Int { lock.lock(); defer { lock.unlock() }; return renderCount }
     static let pixelWidth = 480.0
 
-    func image(for doc: Document, page: CGSize) -> CGImage? {
-        let key = ObjectIdentifier(doc)
-        if let c = cache[key], c.version == doc.version { return c.image }
+    private func render(_ strokes: [Stroke], version: Int, key: ObjectIdentifier, page: CGSize) -> CGImage? {
+        lock.lock(); let have = cache[key]; lock.unlock()
+        if let have, have.version == version { return have.image }   // rendered meanwhile
         let rect = CGRect(x: 0, y: 0, width: page.width, height: page.height)   // the top screen of the page
-        guard let img = PageImage.render(doc, rect: rect, pageWidth: page.width, pageTop: page.height,
+        guard let img = PageImage.render(strokes, rect: rect, pageWidth: page.width, pageTop: page.height,
                                          px: CGSize(width: Self.pixelWidth, height: Self.pixelWidth * page.height / page.width)) else { return nil }
-        renders += 1
-        cache[key] = (doc.version, img)
+        lock.lock(); renderCount += 1; cache[key] = (version, img); lock.unlock()
         return img
     }
+    /// The cached image and whether it is up to date (no rendering).
+    func cached(_ doc: Document) -> (image: CGImage?, fresh: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        let c = cache[ObjectIdentifier(doc)]
+        return (c?.image, c?.version == doc.version)
+    }
+    /// Up to date, rendering now if needed (tests).
+    func image(for doc: Document, page: CGSize) -> CGImage? {
+        let (img, fresh) = cached(doc)
+        if fresh { return img }
+        let strokes = doc.strokes, v = doc.version, key = ObjectIdentifier(doc)
+        return queue.sync { render(strokes, version: v, key: key, page: page) }
+    }
+    /// Render in the background if out of date; `ready` runs on the main queue afterwards.
+    func refresh(_ doc: Document, page: CGSize, ready: @escaping () -> Void) {
+        let key = ObjectIdentifier(doc)
+        lock.lock()
+        let fresh = cache[key]?.version == doc.version, busy = pending.contains(key)
+        if !fresh && !busy { pending.insert(key) }
+        lock.unlock()
+        guard !fresh && !busy else { return }
+        let strokes = doc.strokes, v = doc.version   // a copy: the page may change while this renders
+        queue.async { [weak self] in
+            _ = self?.render(strokes, version: v, key: key, page: page)
+            self?.lock.lock(); self?.pending.remove(key); self?.lock.unlock()
+            DispatchQueue.main.async(execute: ready)
+        }
+    }
     /// Drop pages that no longer exist.
-    func keep(_ docs: [Document]) { let ids = Set(docs.map(ObjectIdentifier.init)); cache = cache.filter { ids.contains($0.key) } }
+    func keep(_ docs: [Document]) { let ids = Set(docs.map(ObjectIdentifier.init)); lock.lock(); cache = cache.filter { ids.contains($0.key) }; lock.unlock() }
 }
 
 final class GalleryView: NSView {
@@ -85,6 +124,11 @@ final class GalleryView: NSView {
         hintLabel.font = .systemFont(ofSize: 12); hintLabel.textColor = NSColor(white: 0.45, alpha: 1)
         addSubview(title); addSubview(hintLabel)
         grid.gallery = self
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in
+            guard let g = self?.grid else { return }
+            g.setNeedsDisplay(g.visibleRect)
+        }
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -145,13 +189,15 @@ final class GalleryView: NSView {
             let r = cellRectInGrid(i)
             guard r.insetBy(dx: -8, dy: -40).intersects(dirty) else { continue }
             _ = cols
-            NSGraphicsContext.saveGraphicsState()
-            let sh = NSShadow(); sh.shadowBlurRadius = 6; sh.shadowOffset = NSSize(width: 0, height: -2); sh.shadowColor = NSColor(white: 0, alpha: 0.18); sh.set()
+            // A cheap shadow (offset soft rects, no blur: a blurred NSShadow per tile cost ~20 ms when the grid appears).
+            NSColor(white: 0, alpha: 0.05).setFill(); NSBezierPath(roundedRect: r.offsetBy(dx: 0, dy: 2).insetBy(dx: -1, dy: -1), xRadius: 7, yRadius: 7).fill()
+            NSColor(white: 0, alpha: 0.07).setFill(); NSBezierPath(roundedRect: r.offsetBy(dx: 0, dy: 1), xRadius: 6, yRadius: 6).fill()
             NSColor.white.setFill(); NSBezierPath(roundedRect: r, xRadius: 6, yRadius: 6).fill()
-            NSGraphicsContext.restoreGraphicsState()
             let labelText: String
             if i < pages.count {
-                if let img = thumbnails.image(for: pages[i], page: pageSize), let ctx = NSGraphicsContext.current?.cgContext {
+                let (cachedImage, fresh) = thumbnails.cached(pages[i])
+                if !fresh { thumbnails.refresh(pages[i], page: pageSize) { [weak self] in self?.grid.needsDisplay = true } }
+                if let img = cachedImage, let ctx = NSGraphicsContext.current?.cgContext {
                     ctx.saveGState()
                     ctx.addPath(CGPath(roundedRect: r, cornerWidth: 6, cornerHeight: 6, transform: nil)); ctx.clip()
                     // The grid view is flipped: draw the (y-up) image the right way up.
@@ -181,11 +227,53 @@ final class GalleryView: NSView {
     final class GridView: NSView {
         weak var gallery: GalleryView?
         override var isFlipped: Bool { true }
-        override func draw(_ dirtyRect: NSRect) { gallery?.drawGrid(dirtyRect) }
+        // Only what's on screen: the first display marks the whole (tall) grid dirty, and drawing every tile
+        // took ~30 ms. Scrolling redraws what comes into view (see GalleryView.init).
+        override func draw(_ dirtyRect: NSRect) { gallery?.drawGrid(dirtyRect.intersection(visibleRect)) }
         override func mouseDown(with e: NSEvent) {
+            TransitionTiming.inputAt = CACurrentMediaTime()
             let p = convert(e.locationInWindow, from: nil)
             if let i = gallery?.cellIndex(at: p) { gallery?.clicked(i) }
         }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    }
+}
+
+extension CanvasView {
+    /// The current page as the canvas shows it (its view, paper pattern, ink), rendered offscreen on the
+    /// GPU with the canvas's own renderer: a few milliseconds, versus hundreds for the CPU stroke outlines.
+    func snapshot(scale requested: Double? = nil) -> CGImage? {
+        let scale = requested ?? Double(window?.backingScaleFactor ?? 2)
+        let w = Int(bounds.width * scale), h = Int(bounds.height * scale)
+        guard w > 0, h > 0 else { return nil }
+        let dev = renderer.device, vis = renderRect
+        let pxPerUnit = ptPerUnit * camera.zoom * scale
+        let items: [Renderer.DrawItem] = doc.strokes.compactMap { s in
+            guard s.bounds.intersects(vis) else { return nil }
+            if s.mesh.buffer == nil { s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: pxPerUnit * 2)) }
+            let c = s.color
+            return .init(mesh: s.mesh, verts: nil, color: SIMD4(c.x * c.w, c.y * c.w, c.z * c.w, c.w))
+        }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        d.usage = .renderTarget; d.storageMode = .shared
+        let md = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        md.usage = .renderTarget; md.storageMode = .private; md.textureType = .type2DMultisample; md.sampleCount = Renderer.sampleCount
+        let sd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .stencil8, width: w, height: h, mipmapped: false)
+        sd.usage = .renderTarget; sd.storageMode = .private; sd.textureType = .type2DMultisample; sd.sampleCount = Renderer.sampleCount
+        guard let out = dev.makeTexture(descriptor: d), let ms = dev.makeTexture(descriptor: md), let st = dev.makeTexture(descriptor: sd),
+              let cb = renderer.queue.makeCommandBuffer() else { return nil }
+        let p = MTLRenderPassDescriptor()
+        p.colorAttachments[0].texture = ms; p.colorAttachments[0].resolveTexture = out
+        p.colorAttachments[0].loadAction = .clear; p.colorAttachments[0].storeAction = .multisampleResolve
+        p.stencilAttachment.texture = st; p.stencilAttachment.loadAction = .clear
+        renderer.encode(cb, p, visible: vis, background: tools.background, spacing: 48, pxPerUnit: pxPerUnit,
+                        page: CGRect(x: 0, y: -1e9, width: camera.page.width, height: camera.page.height + 1e9), items: items)
+        cb.commit(); cb.waitUntilCompleted()
+        var px = [UInt8](repeating: 0, count: w * h * 4)
+        out.getBytes(&px, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
+        guard let provider = CGDataProvider(data: Data(px) as CFData) else { return nil }
+        return CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                       bitmapInfo: CGBitmapInfo(rawValue: CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue),
+                       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 }
