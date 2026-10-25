@@ -43,6 +43,7 @@ enum HelpText {
         ("P", "Pen; on the pen, back to the last other tool"),
         ("1 – 5", "Pen size"),
         ("W", "Writing mode on / off (pans along the line, then to the next line)"),
+        ("Return", "Writing mode: next line, back at the left margin"),
         ("A", "Aim first on / off: touch lightly to aim, press to ink"),
         ("L", "Lock / unlock zoom"),
         ("N", "New page (K keeps writing on this one)"),
