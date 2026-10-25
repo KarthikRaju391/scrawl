@@ -45,7 +45,8 @@ for s in r["scenarios"]:
             im = Image.open(d + "/" + s["screenshot"]).convert("RGB"); W, H = im.size
             # Corners and side edges of the content area, inside the rounded window corners, below the title bar.
             title = int(H * 0.0) + 70
-            pts = [(30, title + 10), (W - 30, title + 10), (30, H - 30), (W - 30, H - 30), (6, (H + title) // 2), (W - 6, (H + title) // 2)]
+            # (bottom samples sit above the toolbar, which spans nearly the whole width of a narrow window)
+            pts = [(30, title + 10), (W - 30, title + 10), (30, H - 150), (W - 30, H - 150), (6, (H + title) // 2), (W - 6, (H + title) // 2)]
             px = [im.getpixel(q) for q in pts]
             grey = [q for q in px if all(abs(c - g) <= 4 for c, g in zip(q, (241, 243, 244)))]
             checks["paper to the edges (screenshot)"] = all(min(q) >= 250 for q in px) and not grey

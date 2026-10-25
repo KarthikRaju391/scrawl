@@ -31,13 +31,15 @@ the pointer or the trackpad, so they're safe to run while you use the Mac. The s
 
 | suite | what it covers |
 |---|---|
-| `build/bench` | Offline checks:<br>• ink filter, renderer meshes, gestures<br>• the 400 ms pause before page moves<br>• the notebook file round trip, export (PDF read back with PDFKit)<br>• device arbitration, the update check parser, display parking |
+| `build/bench` | Offline checks:<br>• scratch-out over every recorded stroke, fast letters, circles and synthetic scratches<br>• usage counts never block or touch the main thread<br>• ink filter, renderer meshes, gestures<br>• the 400 ms pause before page moves<br>• the notebook file round trip, export (PDF read back with PDFKit)<br>• device arbitration, the update check parser, display parking |
 | `checks/persist.sh` | kill -9 and a real crash mid-stroke, then reopen: the notebook is identical and renders the same. Also covers:<br>• quitting straight after a stroke<br>• kill -9 while writing continuously<br>• kill -9 during large saves<br>• an unreadable file |
 | `checks/cursor.sh` | The pointer comes back after:<br>• kill -9 and a crash<br>• SIGTERM, quit and Esc<br>• display sleep, system sleep and a user switch<br>• display changes<br>Uses a dry-run lock (`TRACKPAD_DRAW_DRYLOCK`): every step runs except the CoreGraphics pointer calls. |
 | `checks/input.sh` | MultitouchSupport off (`--input-nstouch`); MT going quiet mid-use; welcome and help text |
 | `checks/mapping.sh` | The trackpad covers the whole view (window and three full-screen sizes); corners at zoom 1 and zoom 3 (panned) |
 | `checks/edge.sh`, `checks/edge_cf.sh` | Edge guard: synthetic palm and thumb cases with a guard-off control; Karthik's sessions replayed with the guard off and at 5% |
-| `checks/keys.sh` | Every mode key pressed twice; toolbar in sync |
+| `checks/keys.sh`, `checks/modes.sh` | Every mode key pressed twice; the state × input matrix (every key, toolbar button and menu item from all 32 mode states, 592 cases) |
+| `checks/pan.sh` | Horizontal page moves in every window shape: hand pans both ways, writing after a hand pan right, auto-pan and new lines |
+| `make robot` | The robot user: the real app driven like a person in 30 scenarios, with screenshots (see `robot/README.md`) |
 | `checks/zoomlock.sh`, `autopan.sh`, `ui.sh` | zoom lock on every path, writing-mode panning, toolbar clicks |
 | `checks/gallery.sh` | Pages overview:<br>• open/close round trips<br>• transition rects (cell ↔ canvas)<br>• thumbnails vs page contents, caching<br>• 40 pages scrolling, the New page tile<br>• persistence across a restart, screenshots |
 | `checks/arrowkeys.sh` | Arrow keys:<br>• pan steps and clamps, windowed and full screen, zoom 1 and 3, lock on and off<br>• draw and writing mode (no new line or page change)<br>• a focused text field keeps its keys<br>• overview selection over first, last and row edges and a partial last row<br>• Return, Space and New page |

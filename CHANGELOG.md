@@ -1,11 +1,27 @@
 # Changelog
 
-## 0.1.0 (unreleased, 2026-10-25)
+## 0.1.0 (unreleased, 2026-10-26, build 2)
 
 Licensed under the MIT License.
 
 First public release. Scrawl was called Trackpad Draw during development. On first launch it moves the
 old pages and settings over.
+
+### Build 2 (2026-10-26)
+- Scratch-out: a quick zig-zag over a word erases it (pen or marker; one undo brings it back).
+- Undo scrub: two-finger double tap, hold the second tap and slide.
+- Writing flow: the last 2-3 words stay on screen after a pan, pans move at most half the view, a new line
+  sits below the middle, a hand pan right is respected (no jump back to the margin), no early new line at
+  the page's end. Page map when zoomed in past 1.5x (View › Page Map).
+- Draw mode starts where you last wrote. Quiet draw mode: short note that fades (it used to stay all
+  session), status capsule, accent frame.
+- One rule set for tools and modes from keys, toolbar, menu and hotkey; every one toggles. Tools menu; Zoom
+  Lock menu item; checkmarks. Toolbar regrouped with Draw first and tooltips; sliders moved to Settings (⌘,).
+- Tips in context (each at most twice) and Help › Practice Page.
+- Haptic ticks, a chevron while the page waits to move, undo fade.
+- Overview: thumbnails cropped to the ink, handwriting titles (on-device OCR), ⌘F search, ⌘C copy page,
+  File › Share Page.
+- Anonymous usage counts (local log; remote only with a configured app ID; off in Settings).
 
 ### Drawing
 - Finger drawing on the trackpad with pressure, from MultitouchSupport. The public macOS touch API is

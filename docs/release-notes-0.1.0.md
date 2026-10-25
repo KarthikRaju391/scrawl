@@ -12,10 +12,33 @@ mode that pans along your line.
      click **Open Anyway** next to "Scrawl was blocked", and confirm.
 3. Press **⌃⌥D** to start drawing and **Esc** to get the pointer back.
 
-The app asks for no permissions. Your pages stay on your Mac, and the only network request is
-**Check for Updates**, when you choose it.
+The app asks for no permissions. Your pages stay on your Mac. Scrawl keeps anonymous usage counts (which
+features you use; never your ink or text) in a local log; Settings › Share anonymous usage counts turns
+them off ([what's counted](https://github.com/KarthikRaju391/trackpad-draw/blob/main/docs/analytics.md)).
+The only other network request is **Check for Updates**, when you choose it.
 
 ## What's in 0.1.0
+
+New in this build:
+
+- **Fix a word without the eraser:** scratch it out with a quick zig-zag, or double-tap with two fingers,
+  hold the second tap and slide to scrub back through your strokes.
+- **Writing flow:** after a pan your last two or three words stay on screen, the page never jumps more than
+  half a view, a new line sits low enough to keep the lines above in sight, and panning right by hand to
+  keep writing no longer sends you back to the margin. A page map shows where you are when zoomed in.
+- **Pick up where you left off:** draw mode starts at the end of your last word, at the zoom you wrote at.
+- **Quieter draw mode:** a short note that fades, a small capsule with the tool and modes, a thin frame
+  that says you're drawing.
+- **Toolbar:** Draw first and labelled, grouped by what you do, a tooltip with the shortcut on every button;
+  the tuning sliders moved to Settings (⌘,). Every tool and mode toggles the same way from keys, toolbar
+  and menus.
+- **Help when you need it:** short tips (each at most twice) and a 30-second practice page.
+- **Feedback:** a haptic tick when an undo lands or a line ends, a hint while the page is about to move,
+  and undone strokes fade out.
+- **Find and share:** thumbnails show your ink, titled with the first handwritten line; ⌘F searches your
+  handwriting; ⌘C copies a page as an image; File › Share Page.
+
+Also:
 
 - The paper fills the window at any shape, and in full screen (⌃⌘F). The trackpad maps without distortion to
   the largest trackpad-shaped area, outlined in draw mode.
@@ -43,3 +66,10 @@ Full list: [CHANGELOG.md](https://github.com/KarthikRaju391/trackpad-draw/blob/m
 6bcb52c479926d062c09a86ca5a65a1e1057e2f7459c83e18d7b5fcd1b0377da  Scrawl-0.1.0.dmg
 aad28975689fa21c70f0bac80b6e13a8a5a614c58330048763dda3dea588570e  Scrawl-0.1.0.zip
 ```
+
+## Tested
+
+Every automated check passes ([what they cover](https://github.com/KarthikRaju391/trackpad-draw/blob/main/DEVELOPMENT.md#tests)),
+including a robot user that drives the real app like a person: it writes, scratches out, scrubs, pans,
+searches and shares, and checks what's on screen
+([results and screenshots](https://github.com/KarthikRaju391/trackpad-draw/blob/main/docs/robot-report.md)).

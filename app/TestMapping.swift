@@ -8,6 +8,7 @@ import AppKit
 
 enum TestMapping {
     static func run(app: AppDelegate) {
+        PageMapView.enabled = false   // this checks paper to the window edges; the map covers a corner when zoomed in
         let canvas = app.canvas, container = app.container!, dir = AppPaths.dataDir, pad = Multitouch.padMM
         var r: [String: Any] = ["padAspect": AppDelegate.padAspect, "fullScreenPrimary": app.window.collectionBehavior.contains(.fullScreenPrimary),
                                 "aspectLocked": app.window.contentAspectRatio != .zero && app.window.contentAspectRatio.width > 0,
