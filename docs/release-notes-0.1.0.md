@@ -63,8 +63,8 @@ Full list: [CHANGELOG.md](https://github.com/KarthikRaju391/trackpad-draw/blob/m
 ## Checksums (SHA-256)
 
 ```
-6bcb52c479926d062c09a86ca5a65a1e1057e2f7459c83e18d7b5fcd1b0377da  Scrawl-0.1.0.dmg
-aad28975689fa21c70f0bac80b6e13a8a5a614c58330048763dda3dea588570e  Scrawl-0.1.0.zip
+c1eb69693d2392cde6402415a84839f118514119c134415dc65ab4fb3a81f382  Scrawl-0.1.0.dmg
+97f0b0030419a904e2d4d60dd8b10bf454da590add0c474ed11102a95cab7f45  Scrawl-0.1.0.zip
 ```
 
 ## Tested

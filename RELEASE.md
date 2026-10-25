@@ -21,6 +21,7 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 | Recorded handwriting in `data/` | 59 MB of your strokes and sessions are in the repo; the replay tests need them | Before making the repo public: keep them, or have them removed from the history first (removing them later doesn't erase them from a public history). |
 | Publish | The repo is **private**, and the release is a **draft** | GitHub: make the repo public, then publish the draft. Check for Updates only works once both are public: until then it says "No published release found." |
 | Developer ID + notarization (later) | Not done: needs the Apple Developer Program ($99/year) | Then run `SIGN_ID=… NOTARY_PROFILE=… scripts/release.sh`. The Gatekeeper prompt goes away. |
+| Usage counts sent remotely | **Off**: `TELEMETRY_APP_ID` in `release.conf` is empty, so counts stay in the local log | Create a TelemetryDeck account and an app "Scrawl", put its app ID in `release.conf`, rebuild. Nothing else (see `docs/analytics.md`). |
 | Update host | GitHub releases API (`release.conf` `UPDATE_URL`) | Change it if releases move elsewhere. Only the Check for Updates menu uses it. |
 
 ## Done and tested
@@ -130,18 +131,13 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 
 ## Not verified (needs a person or other hardware)
 
-- **Hand-test in 0.1.0:**
-  - **Window shapes:** snap Scrawl to half the screen beside another app. Then, in draw mode, touch each trackpad corner just inside the edge band (about 6 mm in from the sides, 4 mm from top and bottom): ink should start at the corners of the faint outline. Try the same wide and in full screen (⌃⌘F). Check there's no grey anywhere and that panning reaches the paper outside the outline.
-  - **New line:** in writing mode, write to the end of a line at ½ and full width. Pan right by hand first, then write: the view should go one line down and back to the left margin. Return should do the same.
-  - **Edge guard:**
-    - rest your palm or thumb on the edge while writing: no pans or zooms;
-    - start a stroke right at the edge: no ink;
-    - start inside and run off the edge: the ink follows;
-    - pinch with a thumb resting on the bottom edge;
-    - try the ⚙︎ slider at 0% and 10%.
-  - **Toggles:** D twice, W twice, M/H/E twice, P on the pen.
-  - **Full screen:** enter and leave it with the green button and ⌃⌘F, in and out of draw mode. The toolbar hides in draw mode, and the banner fades after 3 s.
-  - **Writing at zoom 3** in full screen: line width, the 0.4 s pause and new lines.
+- **Hand-test (short: everything else is covered by the robot user, see docs/robot-report.md):**
+  - **Feel on the real trackpad:** write a few lines at zoom 3 in writing mode; scratch out a word with
+    your finger (does a natural zig-zag trigger it, and does fast cursive never trigger it?); the undo scrub
+    (double tap, hold, slide); whether the haptic tick is felt on a double-tap undo (it fires at lift).
+  - **macOS gestures:** with three-finger Look Up / Mission Control / swipes between spaces turned on in
+    System Settings › Trackpad, check that the three-finger double tap (redo) and the scrub aren't taken by
+    the system first. Injected test touches skip the system, so only your fingers can check this.
 
 - **Real touches through the public-touch fallback.** The conversion and the drawing were tested with synthetic touch samples. Real NSTouch delivery while the pointer is frozen wasn't, because that needs fingers on the pad.
 - **The real pointer after kill -9.** The tests use a dry-run lock so they never take your pointer. An older real-lock test showed the pointer visible again. Whether the trackpad moves it again needs `checks/kill_test.sh` with you.
@@ -150,39 +146,18 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 - **Frame presentation timing.** The background tests measure render CPU/GPU time per frame. Presented-frame gaps need the window in front (`checks/e2e.sh --test-front`).
 - **Atomic saves under kill -9.** The kill-during-save test passes, but a non-atomic write also passed it, so it doesn't prove the atomic write. The write itself uses `Data.write(options: .atomic)`, which renames a complete temporary file into place.
 
-## Test results (2026-10-25, `checks/run_all.sh`, everything in the background)
+## Test results (2026-10-26, build 2, everything in the background)
 
-All 28 suites pass:
+- `checks/run_all.sh`, 30 suites: 29 passed in one run. The 30th, mapping, sampled two
+  "paper" pixels where the regrouped toolbar now reaches in a narrow window; the samples moved above the
+  toolbar and it passes 7/7. The DMG smoke test passed again on the final build (28/28).
+- Bench 94/94: scratch-out over every recorded stroke, the scrub over every recorded session (0 false
+  starts; the 14 logged gesture undos/redos still replay exactly), usage counts never on the main thread.
+- `make robot`: 115/115 checks in 30 scenarios (docs/robot-report.md), including failing-first proof for
+  every item in this round and three old bugs caught on their old commits.
+- Mutation checks: 5 for the mode rules, 7 for scratch-out and the scrub, 3 for usage counts. All caught.
+- Nothing slower: the longest main-thread stall writing on a 9,000-stroke notebook is 26 ms (25 before);
+  ink jitter is 0.59 pt (0.66 at the jitter fix).
 
-| suite | result |
-|---|---|
-| bench | 69/69 |
-| persist | 11/11 |
-| cursor | 11/11 |
-| input | 12/12 |
-| mapping | 7/7 |
-| edge guard | 11/11 |
-| keys | 23/23 |
-| tool enters draw | 10/10 |
-| tap gestures | 14/14 |
-| arrow keys | 20/20 |
-| overview highlight | 8/8 |
-| ink jitter | 2/2 |
-| pill labels | 7/7 |
-| newline | 108 cases + palm + Return |
-| page edges | 9/9 |
-| gallery | 12/12 |
-| gallery speed | 7/7 |
-| page arrows | 9/9 |
-| page dates | 8/8 |
-| zoom lock | all steps |
-| auto-pan (centre, left, off) | 90 letters each |
-| ui | screenshots |
-| e2e replay | 27 strokes |
-| session replay | fidelity exact |
-| edge replay | see the edge guard results above |
-| release DMG smoke test | 28/28 |
-
-**On hold (Karthik):**
-- **Pan after a hand pan right:** a new line pulls the view back. This is the regression from the line-end rule in 8ae637d. The failing test is in a stash.
-- **The new-line trigger.**
+The parked pan bug (a hand pan right, then a new line pulled the view back) is fixed as part of the writing
+flow work: its test, `checks/pan.sh`, is committed and passes 34/34.
