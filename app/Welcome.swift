@@ -72,6 +72,7 @@ enum HelpText {
 /// The welcome / help window. `firstRun` shows the welcome title and a Start button.
 final class InfoWindow: NSWindowController {
     var onClose: (() -> Void)?
+    var onPractice: (() -> Void)?
 
     convenience init(status: InputStatus, firstRun: Bool) {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -106,13 +107,17 @@ final class InfoWindow: NSWindowController {
         stack.addArrangedSubview(label(HelpText.privacy, .systemFont(ofSize: 12), .secondaryLabelColor))
         let ok = NSButton(title: firstRun ? "Start Drawing" : "Close", target: nil, action: #selector(InfoWindow.closeWindow))
         ok.target = self; ok.keyEquivalent = "\r"
-        stack.addArrangedSubview(ok)
+        let practice = NSButton(title: "Try a 30-second practice", target: nil, action: #selector(InfoWindow.startPractice))
+        practice.target = self
+        let row = NSStackView(views: [ok, practice]); row.spacing = 10
+        stack.addArrangedSubview(row)
         w.contentView = stack
         w.setContentSize(stack.fittingSize)
         w.center()
     }
 
     @objc func closeWindow() { window?.close(); onClose?() }
+    @objc func startPractice() { window?.close(); onClose?(); onPractice?() }
     @objc func openInputMonitoring() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")!)
     }

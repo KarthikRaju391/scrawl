@@ -16,6 +16,7 @@ final class ContainerView: NSView {
     let pageMap = PageMapView()
     let capsule = StatusCapsule()
     let drawFrame = DrawModeFrame(frame: .zero)
+    let practice = PracticeView()
 
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
@@ -48,6 +49,7 @@ final class ContainerView: NSView {
         addSubview(pageMap)
         capsule.isHidden = true; addSubview(capsule)
         drawFrame.isHidden = true; addSubview(drawFrame)
+        practice.isHidden = true; addSubview(practice)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -70,6 +72,8 @@ final class ContainerView: NSView {
         capsule.isHidden = !canvas.drawMode; drawFrame.isHidden = !canvas.drawMode
         capsule.frame = CGRect(x: bounds.midX - capsule.fittingWidth / 2, y: 14, width: capsule.fittingWidth, height: 26)
         drawFrame.frame = bounds
+        let ps = practice.fittingSize
+        practice.frame = CGRect(x: 16, y: bounds.height - ps.height - 16, width: ps.width, height: ps.height)
         hint.frame = CGRect(x: bounds.midX - hint.fittingWidth / 2, y: bounds.height - 27, width: hint.fittingWidth, height: 18)
         canvas.setNeedsRender()
     }
@@ -101,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func showInfo(firstRun: Bool) {
         let w = InfoWindow(status: inputStatus, firstRun: firstRun)
         w.onClose = { [weak self] in self?.infoWindow = nil }
+        w.onPractice = { [weak self] in self?.startPractice() }
         infoWindow = w
         if firstRun { UserDefaults.standard.set(true, forKey: "welcomed") }
         guard !Launch.background else { return }
@@ -150,7 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.canvas.changing("toolbar") { self.canvas.tools = s }; self.updateBanner()
         }
         tb.onMode = { [weak self] i in self?.apply(i, from: "toolbar") }
-        tb.onUndo = { [weak self] in self?.canvas.undo() }
+        tb.onUndo = { [weak self] in self?.tips.undoByKeyOrToolbar(inDrawMode: self?.canvas.drawMode ?? false); self?.canvas.undo() }
         tb.onRedo = { [weak self] in self?.canvas.redo() }
         tb.onPage = { [weak self] d in self?.page(d) }
         tb.onGallery = { [weak self] in self?.toggleGallery() }
@@ -168,6 +173,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if !down { m.refresh() }
         }
         cv.onTapCommand = { [weak self] text in self?.updateUndoState(); self?.showToast(text) }
+        tips.show = { [weak self] text in self?.showToast(text, seconds: 4) }
+        cv.onAct = { [weak self] name, extra in self?.canvasAct(name, extra) }
 
         // Input: MultitouchSupport (pressure) unless turned off (Help menu, or --input-nstouch), else the
         // public NSTouch path. Tests never start MT: real touches would interleave with the test input.
@@ -287,13 +294,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func updateUndoState() { container.toolbar.canUndo = canvas.doc.canUndo; container.toolbar.canRedo = canvas.doc.canRedo }
 
     /// A short message in the middle of the top edge ("Undo", "Redo"), fading out.
-    func showToast(_ text: String) {
+    func showToast(_ text: String, seconds: Double = 0.9) {
         let t = container.toast
         t.stringValue = text
         t.frame = CGRect(x: container.bounds.midX - t.fittingWidth / 2, y: container.bounds.height - 64, width: t.fittingWidth, height: 24)
         toastFade?.cancel(); t.alphaValue = 1; t.isHidden = false
         let w = DispatchWorkItem { [weak t] in NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; t?.animator().alphaValue = 0 }, completionHandler: { t?.isHidden = true }) }
-        toastFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + 0.9, execute: w)
+        toastFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: w)
     }
 
     func updatePageArrows() {
@@ -305,7 +312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// -1 previous, +1 next, 0 new page.
     func page(_ d: Int) {
         if d == -1 && !container.toolbar.canGoBack || d == 1 && !container.toolbar.canGoForward { return }
-        if d == 0 { canvas.newPage() } else { canvas.goToPage(canvas.pageIndex + d) }
+        if d == 0 { canvas.newPage() } else { canvas.goToPage(canvas.pageIndex + d); tips.pageByArrow() }
         updateBanner()
     }
 
@@ -403,6 +410,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             canvas.changing(source) { canvas.tools = t }
             container.toolbar.state = t
         }
+        if new.tool == .eraser && old.tool != .eraser { tips.pickedEraser() }
+        if new.locked && !old.locked { tips.zoomLocked() }
         if new.writing != old.writing { toggleWriting() }
         if new.draw != old.draw { if new.draw { enterDrawMode(lock: !canvas.testMode) } else { exitDrawMode(source) } }   // tests never freeze the pointer
         container.toolbar.hidePanel()
@@ -412,6 +421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// The last tool other than the pen (marker, highlighter or eraser), for P on the pen.
     private(set) var lastOtherTool: ToolKind?
+    let tips = Tips()
     var robot: AnyObject?   // the robot user's hook (Robot.swift, dev builds only)
     func noteTool(_ t: ToolKind) { if t != .pen { lastOtherTool = t } }
 
@@ -572,7 +582,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: menu
 
-    @objc func undo() { canvas.undo() }
+    @objc func undo() { tips.undoByKeyOrToolbar(inDrawMode: canvas.drawMode); canvas.undo() }
     @objc func redoAction() { canvas.redo() }
     @objc func clearPage() { canvas.clearPage() }
     @objc func resetZoom() { canvas.resetZoom() }
@@ -585,6 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let w = SettingsWindow(switches: [
             .init(title: "Scratch out: a quick zig-zag over a word erases it", key: "scratchOut", get: { ScratchOut.enabled }, set: { ScratchOut.enabled = $0 }),
             .init(title: "Page map when zoomed in", key: "pageMap", get: { PageMapView.enabled }, set: { PageMapView.enabled = $0 }),
+            .init(title: "Tips (each shows at most twice)", key: "tipsEnabled", get: { Tips.enabled }, set: { Tips.enabled = $0 }),
         ])
         w.onChange = { [weak self] in self?.container.needsLayout = true }
         return w
@@ -593,6 +604,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsWindow.refresh()
         if Launch.background { settingsWindow.window?.orderFront(nil) } else { settingsWindow.showWindow(nil); settingsWindow.window?.makeKeyAndOrderFront(nil) }
     }
+    // MARK: tips and the practice page (Tips.swift)
+
+    func canvasAct(_ name: String, _ extra: [String: Any]) {
+        switch name {
+        case "gestureUndo": tips.gestureUndo(); practiceTick(.undo)
+        case "scrubStart": tips.gestureUndo(); practiceTick(.undo)
+        case "pinchZoom": tips.pinchZoom(at: CACurrentMediaTime())
+        case "scratchOut": tips.scratchedOut(); practiceTick(.scratch)
+        case "newLineByHand": tips.manualNewLine()
+        case "commit": if practiceActive { practiceStrokes += 1; if practiceStrokes >= 3 { practiceTick(.write) } }
+        default: break
+        }
+    }
+    var practiceActive: Bool { !container.practice.isHidden }
+    private(set) var practiceStrokes = 0
+    func practiceTick(_ s: PracticeView.Step) { if practiceActive { container.practice.tick(s) } }
+    @objc func startPracticeAction() { startPractice() }
+    func startPractice() {
+        if galleryShown { openPage(canvas.pageIndex) }
+        page(0)
+        practiceStrokes = 0
+        let p = container.practice
+        p.reset(); p.isHidden = false; p.alphaValue = 1
+        p.onFinished = { [weak self] in
+            self?.showToast("Practice done. That's the whole app!", seconds: 2.5)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { self?.container.practice.isHidden = true }
+        }
+        container.needsLayout = true
+        if !canvas.drawMode { enterDrawMode(lock: !canvas.testMode) }
+    }
+
     @objc func togglePageMapAction() {
         PageMapView.enabled.toggle()
         if !canvas.testMode { UserDefaults.standard.set(PageMapView.enabled, forKey: "pageMap") }

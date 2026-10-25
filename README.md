@@ -87,7 +87,9 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   version show "date unknown".
 - **Export:** ⌘E saves every page as one PDF (vector, sharp at any size), and ⇧⌘E saves the current
   page as a PNG.
-- **Help › Scrawl Help** (⌘?) lists every shortcut.
+- **Help › Scrawl Help** (⌘?) lists every shortcut, and **Help › Practice Page** walks you through the
+  gestures in 30 seconds. Short tips appear when they'd help (each at most twice; Settings › Tips turns
+  them off).
 
 If you used it under its development name, Trackpad Draw, the first launch moves your pages and
 settings over.

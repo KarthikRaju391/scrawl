@@ -72,6 +72,7 @@ extension AppDelegate {
         menu("Help", [
             item("\(name) Help", #selector(showHelp), "?"),
             item("Keyboard Shortcuts", #selector(showHelp)),
+            item("Practice Page", #selector(startPracticeAction)),
             .separator(),
             diag,
             item("Show Logs in Finder", #selector(showLogs)),

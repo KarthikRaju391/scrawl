@@ -560,6 +560,56 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "settingsSwitch", "index": idx, "on": True})
         app.press("d", until=lambda s: not s["draw"])
 
+    @scenario("tips-practice", "Tips show in context and at most twice: three ⌘Z undos in draw mode suggest the double tap, three pinches suggest the zoom lock; Settings turns tips off. Help › Practice Page ticks each step as the robot does it.")
+    def _():
+        if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
+        app.press("n"); app.press("d", until=lambda s: s["draw"])
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        cid = 10000
+        for i in range(6):
+            fr, cid = hand.frames(hand.word("ab", pad_w * (0.1 + 0.12 * i), pad_h * 0.5, hand.roman), cid); app.touch(fr, settle=0.1)
+        counts = []
+        for i in range(9):
+            app.cmd({"cmd": "menu", "action": "undo"}); time.sleep(0.15)
+            counts.append(app.state()["tips"]["undoGesture"])
+        tipped = [i + 1 for i in range(9) if counts[i] > (counts[i - 1] if i else 0)]
+        rep.check(tipped == [3, 6], "the double-tap tip shows on the 3rd and 6th ⌘Z undo, then never again", f"tip after undo #{tipped}")
+        rep.shot(app, "the undo tip")
+        for k in range(3):
+            app.touch(two_finger(pad_w / 2, pad_h * 0.5, 20, 26 if k % 2 == 0 else 15, dur=0.3)); time.sleep(0.1)
+        rep.check("locks the zoom" in app.state().get("toast", ""), "three pinches within a minute: the zoom-lock tip", app.state().get("toast", ""))
+        sw = app.state().get("settingsSwitches") or []
+        ti = next((i for i, x in enumerate(sw) if x[0].startswith("Tips")), None)
+        if ti is not None:
+            app.cmd({"cmd": "settingsSwitch", "index": ti, "on": False})
+            before = app.state()["tips"]
+            for k in range(6): app.press("e", until=lambda s: True)
+            rep.check(app.state()["tips"] == before, "with tips off in Settings, no tip shows", f"{before} -> {app.state()['tips']}")
+            app.cmd({"cmd": "settingsSwitch", "index": ti, "on": True})
+        if app.state()["tool"] != "pen": app.press("p")
+        # The practice page.
+        app.cmd({"cmd": "menu", "action": "startPracticeAction"}); time.sleep(0.5)
+        p0 = app.state().get("practice")
+        rep.check(p0 == {"done": []}, "Help › Practice Page: a fresh page and an empty checklist", str(p0))
+        st = app.state()
+        for i, w in enumerate(["karthik"]):
+            fr, cid = hand.frames(hand.word(w, pad_w * 0.25, pad_h * 0.5), cid); app.touch(fr)
+        app.touch(double_tap(2, pad_w / 2, pad_h * 0.3))
+        a = app.state()
+        fr, cid = hand.frames(hand.word("oops", pad_w * 0.3, pad_h * 0.25, hand.roman), cid); app.touch(fr); b = app.state()
+        new = b["lastStrokes"][-(b["strokes"] - a["strokes"]):]
+        lo = app.cmd({"cmd": "toPad", "points": [[min(w[0] for w in new), min(w[1] for w in new)]]})["points"][0]
+        hi = app.cmd({"cmd": "toPad", "points": [[max(w[2] for w in new), max(w[3] for w in new)]]})["points"][0]
+        zig = [[(lo[0] + (hi[0] - lo[0]) * (k % 2), lo[1] + (hi[1] - lo[1]) * (0.25 + 0.5 * k / 6)) for k in range(7)]]
+        fr, cid = hand.frames(zig, cid, speed=140); app.touch(fr)
+        p1 = app.state().get("practice")
+        rep.shot(app, "practice: three of four done")
+        rep.check(p1 and set(p1["done"]) == {"write", "undo", "scratch"}, "writing, a double-tap undo and a scratch-out tick their lines", str(p1))
+        app.press("g", until=lambda s: s["gallery"] >= 0, wait=3); time.sleep(0.5)
+        rep.check("Practice done" in app.state().get("toast", ""), "G ticks the last one: 'Practice done'", app.state().get("toast", ""))
+        app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+        if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
+
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])

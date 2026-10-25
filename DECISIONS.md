@@ -49,3 +49,8 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - The smoothing / prediction / edge-guard sliders moved to Settings (⌘,), with switches for scratch-out and the page map (tips and analytics join it later). Tests never save settings.
 - Every button has a tooltip naming its shortcut (14/14; the paper button has no key).
 - The capsule and the draw-mode frame never take clicks, and hide the moment draw mode ends: the capsule sat over the toolbar and swallowed a zoom-lock click (caught by checks/zoomlock.sh).
+
+## Tips and the practice page (item 6)
+- Five tips, each shown at most twice and only on a sign it's needed: every 3rd undo by ⌘Z/toolbar in draw mode (double tap and scrub), the first Return in writing mode (new lines are automatic), 3 pinches within a minute (L locks the zoom), the 2nd time the eraser is picked (scratch-out), 3 page changes by arrows (G). Using the gesture, the lock, scratch-out or the overview marks its tip as known, so it never shows.
+- Tips show in the toast for 4 s; Settings › Tips turns them off.
+- Practice page (Help › Practice Page, and a button in the welcome window): a new page, draw mode on, and a 4-line checklist (write your name, undo with a double tap, scratch out, G) that ticks itself; "Practice done" at the end. The page stays: it's ink you wrote.

@@ -487,7 +487,11 @@ final class CanvasView: MTKView {
     func act(_ name: String, _ extra: [String: Any] = [:]) {
         var d = extra; d["k"] = "act"; d["a"] = name
         recorder.record(d, sensorT: frameSensorT)
+        onAct?(name, extra)
     }
+    /// Every action the session log records (tips, the practice page and usage counts listen here).
+    var onAct: ((String, [String: Any]) -> Void)?
+    private var pinchedThisTouch = false
 
     /// Frames encoded / frames the display actually showed (test mode reports both).
     private(set) var renderCount = 0
@@ -564,6 +568,7 @@ final class CanvasView: MTKView {
     /// Return in writing mode: next line now (one line down, back to the line start).
     func newLineByHand() {
         guard writingMode else { return }
+        act("newLineByHand")
         cancelPendingMove(); finishSlide()
         let v = camera.visible, layout = WritingLayout()
         let midY = lineInk?.midY ?? v.midY
@@ -815,7 +820,7 @@ final class CanvasView: MTKView {
             needsRender = true
             return
         }
-        if counted.isEmpty { tapViewAnchor = nil }
+        if counted.isEmpty { tapViewAnchor = nil; pinchedThisTouch = false }
         gestures.frame(cs, t: arrival)
         needsRender = true
     }
@@ -945,7 +950,9 @@ final class CanvasView: MTKView {
         gestures.onNavigate = { [weak self] prev, now, ratio in
             guard let self else { return }
             let x0 = self.camera.visible.minX
+            let z0 = self.camera.zoom
             self.changing("pinch") { self.camera.navigate(from: prev, to: now, ratio: ratio, zoomLocked: self.tools.zoomLocked) }  // moved by hand: the next stroke starts a new line where it lands
+            if abs(self.camera.zoom - z0) > 1e-6 && !self.pinchedThisTouch { self.pinchedThisTouch = true; self.act("pinchZoom") }
             // With auto-pan on, panning right by hand is a choice of where to write; with No pan it's how you
             // move along the line, which still ends at the line width.
             if self.writingMode && self.tools.autoPan != .off && self.lineInk != nil && self.camera.visible.minX > x0 + 1e-6 { self.lineFree = true }

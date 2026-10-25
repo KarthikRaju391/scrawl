@@ -9,6 +9,7 @@ extension AppDelegate {
 
     /// The canvas shrinks into the current page's cell; the grid shows every page.
     func showGallery() {
+        tips.openedOverview(); practiceTick(.overview)
         guard !galleryShown, transitionView == nil else { return }
         var ms: [String: Double] = [:]; var tl = CACurrentMediaTime()
         func lap(_ k: String) { let n = CACurrentMediaTime(); ms[k] = (n - tl) * 1000; tl = n }
