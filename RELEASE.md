@@ -107,9 +107,15 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 - [x] **Tool keys and buttons outside draw mode** turn draw mode on with that tool. Tested by `tooldraw.sh`, which fails on the old build.
 - [x] **Two-finger double tap = undo, three-finger double tap = redo** (draw mode).
   - The tap rules come from Karthik's recorded sessions.
-  - Replaying all 7 sessions gives 0 false double taps; looser rules give 1, which fails the check.
+  - Replaying the 7 sessions recorded before the gestures gives 0 false double taps; looser rules give 1, which fails the check. Karthik's session recorded with the gestures replays to exactly the 14 undos and redos the app made.
   - Fixed along the way: an eraser pan could erase under the first finger.
   - Tested by `taps.sh`, which fails on the old build, and the bench replay.
+- [x] **Arrow keys.**
+  - They pan the page: 10% of the view, or a screen with Shift, clamped at the page edges.
+  - In the overview they move a selection, and Return or Space opens it.
+  - Fixed along the way: shortcut letters typed into a text field (e.g. the save panel) were taken as shortcuts.
+  - Tested by `arrowkeys.sh`, which fails on the old build.
+- [x] **Pill labels centred.** The toast and banners had text 1.8–4.2 pt above centre; now it's within 0.8 pt. Tested by `toast.sh`, which measures screenshots.
 - [x] **Aim-first mode removed** (Karthik: the finger rings already show where you'll write).
   - The toggle, the A key, the panel checkbox, the help and doc mentions, and its test suite are gone.
   - Old settings that still contain `aimFirst` load fine; the key is ignored and not written back (bench check).
@@ -141,11 +147,11 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 
 ## Test results (2026-10-25, `checks/run_all.sh`, everything in the background)
 
-All 24 suites pass:
+All 26 suites pass:
 
 | suite | result |
 |---|---|
-| bench | 68/68 |
+| bench | 69/69 |
 | persist | 11/11 |
 | cursor | 11/11 |
 | input | 12/12 |
@@ -154,6 +160,8 @@ All 24 suites pass:
 | keys | 23/23 |
 | tool enters draw | 10/10 |
 | tap gestures | 14/14 |
+| arrow keys | 20/20 |
+| pill labels | 7/7 |
 | newline | 108 cases + palm + Return |
 | page edges | 9/9 |
 | gallery | 12/12 |
