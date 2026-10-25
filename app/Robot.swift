@@ -255,6 +255,14 @@ final class Robot {
         ]
         s["toast"] = app.container.toast.isHidden ? "" : app.container.toast.stringValue   // robot:needs let toast
         s["panelMode"] = tb.panel.isHidden ? "" : "\(tb.panel.mode)"
+        // Chrome over the page: what's on screen and how much of it (points squared).
+        let b = app.container.banner
+        var chrome: [String: Any] = ["banner": (!b.isHidden && b.alphaValue > 0.01) ? b.stringValue : "", "bannerArea": (!b.isHidden && b.alphaValue > 0.01) ? b.frame.width * b.frame.height : 0,
+                                     "toolbarArea": tb.isHidden ? 0 : 15 * 44 * 44.0]
+        chrome["capsule"] = app.container.capsule.isHidden ? "" : "\(app.container.capsule.info.map { "\($0.tool.title)\($0.writing ? " writing" : "")\($0.locked ? " locked" : "") \($0.page)/\($0.pages)" } ?? "")"   // robot:needs class StatusCapsule
+        chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
+        chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
+        s["chrome"] = chrome
         s["gallery"] = app.galleryShown ? (app.gallery?.selected ?? -1) : -2   // robot:needs var galleryShown
         s["canUndo"] = canvas.doc.canUndo   // robot:needs var canUndo
         s["pageMap"] = app.container.pageMap.isHidden ? [:] : ["w": app.container.pageMap.frame.width, "h": app.container.pageMap.frame.height, "alpha": app.container.pageMap.alphaValue]   // robot:needs class PageMapView

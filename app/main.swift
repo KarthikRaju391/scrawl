@@ -14,6 +14,8 @@ final class ContainerView: NSView {
     let hint = PillLabel()
     let toast = PillLabel()
     let pageMap = PageMapView()
+    let capsule = StatusCapsule()
+    let drawFrame = DrawModeFrame(frame: .zero)
 
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
@@ -44,6 +46,8 @@ final class ContainerView: NSView {
         pageMap.canvas = canvas
         pageMap.isHidden = true
         addSubview(pageMap)
+        capsule.isHidden = true; addSubview(capsule)
+        drawFrame.isHidden = true; addSubview(drawFrame)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -63,6 +67,9 @@ final class ContainerView: NSView {
         toolbar.isHidden = canvas.drawMode
         if canvas.drawMode { toolbar.hidePanel() }
         banner.frame = CGRect(x: bounds.midX - banner.fittingWidth / 2, y: bounds.height - 28, width: banner.fittingWidth, height: 20)
+        capsule.isHidden = !canvas.drawMode; drawFrame.isHidden = !canvas.drawMode
+        capsule.frame = CGRect(x: bounds.midX - capsule.fittingWidth / 2, y: 14, width: capsule.fittingWidth, height: 26)
+        drawFrame.frame = bounds
         hint.frame = CGRect(x: bounds.midX - hint.fittingWidth / 2, y: bounds.height - 27, width: hint.fittingWidth, height: 18)
         canvas.setNeedsRender()
     }
@@ -314,28 +321,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             container.banner.stringValue = "\(pageText): you've filled a screen. N = new page, or K to keep writing here."
             container.banner.fillColor = NSColor(srgbRed: 0.85, green: 0.45, blue: 0.05, alpha: 1)
         } else {
-            container.banner.stringValue = canvas.writingMode
-                ? "\(pageText) · Writing: pans at the right edge, next line at the line width\(canvas.tools.zoomLocked ? " · zoom locked" : ""). W = off, Esc exits."
-                : "\(pageText) · Drawing: one finger draws, two fingers pan\(canvas.tools.zoomLocked ? " (zoom locked, L unlocks)" : " and pinch"). W = writing, Esc exits."
+            // Short, and only for 2 s on entry or a mode change; the capsule at the bottom keeps the state.
+            container.banner.stringValue = canvas.writingMode ? "Writing · W off · Esc to stop" : "Drawing · Esc to stop"
             container.banner.fillColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1)
         }
+        let wasHidden = container.banner.isHidden
         container.banner.isHidden = !canvas.drawMode && !canvas.showPageHint
-        // In draw mode the banner sits on the writing area: show it when it changes, then fade it out
-        // (the page-full hint stays until answered).
-        if container.banner.stringValue != lastBannerText || container.banner.isHidden {
+        // In draw mode the banner sits on the writing area: show it when it appears or changes, then fade
+        // it out (the page-full hint stays until answered). It used to fade only when its text changed, so
+        // entering draw mode with the same text as before left it on screen for the whole session.
+        if container.banner.stringValue != lastBannerText || container.banner.isHidden || wasHidden {
             lastBannerText = container.banner.stringValue
             bannerFade?.cancel(); container.banner.alphaValue = 1
             if canvas.drawMode && !canvas.showPageHint {
                 let w = DispatchWorkItem { [weak self] in
                     NSAnimationContext.runAnimationGroup { $0.duration = 0.4; self?.container.banner.animator().alphaValue = 0 }
                 }
-                bannerFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: w)
+                bannerFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
             }
         }
         container.hint.stringValue = previousCrash && notebookStatus.hasPrefix("loaded")
             ? "\(AppInfo.name) closed unexpectedly last time. Your pages were restored from the last autosave."
             : "\(pageText)  ·  created \(PageDate.short(canvas.doc.created))  ·  ⌃⌥D to draw with the trackpad\(input)"
         container.hint.isHidden = !container.banner.isHidden
+        let t = canvas.tools
+        container.capsule.info = StatusCapsule.Info(tool: t.tool, color: t.tool == .eraser ? .gray : ToolState.colors[t.colorIndex[t.tool] ?? 0],
+                                                    writing: canvas.writingMode, locked: t.zoomLocked, page: canvas.pageIndex + 1, pages: canvas.pages.count)
         container.needsLayout = true
     }
 

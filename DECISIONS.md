@@ -37,3 +37,8 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - No 600 ms "finger here" pulse: the blue finger rings already show where a touch lands, and a pulse would flash on every draw start.
 - After a relaunch the zoom the last stroke was written at isn't known, so it uses 3x (Karthik's median is 3.6x).
 - Off in test modes (they check exact views); the robot turns it on.
+
+## Quiet draw mode (item 4)
+- The draw-mode banner is a 4-5 word note ("Drawing · Esc to stop"), shown 2 s on entry and on a mode change. It used to stay up all session: it only faded when its text changed, and the text was set at launch while hidden (found by the robot; it's what the UX review saw in the recording).
+- A small capsule at the bottom (where the toolbar sits outside draw mode) shows the tool with its colour, writing, zoom lock and page n/N; a 3 pt accent frame round the window marks draw mode. Robot: chrome over the page after 3 s fell from 10,880 to about 5,400 pt².
+- The capsule doesn't expand on hover: the pointer is frozen in draw mode.

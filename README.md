@@ -37,7 +37,9 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   zoomed in somewhere else yourself.
   The paper fills the window, whatever its shape, and full screen works too (green button or ⌃⌘F). The
   trackpad (apart from a thin edge band, below) maps without distortion to the largest trackpad-shaped area
-  in the window, centred. In draw mode a faint outline shows that area, and you pan to reach the rest. The pointer freezes and hides. **Esc** gives the pointer back. So do ⌃⌥D,
+  in the window, centred. In draw mode a faint outline shows that area, and you pan to reach the rest. The pointer freezes and hides,
+  a thin blue frame marks the window, and a small capsule at the bottom shows the tool, writing mode, the
+  zoom lock and the page. **Esc** gives the pointer back. So do ⌃⌥D,
   switching apps, the display sleeping, and quitting.
 - **One finger** draws. **Two fingers** pan, and pinching zooms. In draw mode, a **two-finger double
   tap** undoes and a **three-finger double tap** redoes (a short "Undo" / "Redo" shows). Keep the second

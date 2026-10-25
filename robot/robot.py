@@ -506,6 +506,27 @@ def run_scenarios(app, rep, only, hand):
                   "moved somewhere else yourself (zoomed in): D stays there", f"view y {b['y']:.0f} -> {c['y']:.0f}")
         app.press("d", until=lambda s: not s["draw"])
 
+    @scenario("draw-chrome", "Draw mode is quiet but unmistakable: a short note on entry that fades in about 2 s, a small capsule with the tool, writing, zoom lock and page, and a thin frame round the window.")
+    def _():
+        if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
+        app.press("d", until=lambda s: s["draw"])
+        time.sleep(0.3); a = app.state()["chrome"]
+        rep.shot(app, "just entered draw mode")
+        words = len(a["banner"].split())
+        rep.check(0 < words <= 8, "the entry note is short", f"{words} words: {a['banner']!r}")
+        time.sleep(2.6); b = app.state()["chrome"]
+        rep.check(b["banner"] == "", "the note is gone after about 2 s", repr(b["banner"]))
+        rep.check(bool(b.get("capsule")) and b.get("frame") is True, "a capsule shows the state, a frame marks draw mode", f"capsule {b.get('capsule')!r}, frame {b.get('frame')}")
+        area = b["bannerArea"] + b.get("capsuleArea", 0) + b["toolbarArea"]
+        rep.step("chrome over the page after 3 s (pt²)", area=round(area), banner=round(b["bannerArea"]), capsule=round(b.get("capsuleArea", 0)))
+        rep.check(area < 6000, "little chrome over the page while drawing", f"{area:.0f} pt² after 3 s")
+        app.press("e", until=lambda s: s["tool"] == "eraser"); app.press("w", until=lambda s: s["writing"]); time.sleep(0.2)
+        c = app.state()["chrome"]
+        rep.check("Eraser" in c.get("capsule", "") and "writing" in c.get("capsule", ""), "the capsule follows the tool and writing mode", c.get("capsule"))
+        time.sleep(2.2); rep.shot(app, "draw mode: eraser, writing on (capsule at the bottom, frame round the window)")
+        app.press("w", until=lambda s: not s["writing"]); app.press("e", until=lambda s: s["tool"] == "pen")
+        app.press("d", until=lambda s: not s["draw"])
+
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
