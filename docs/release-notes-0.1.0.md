@@ -17,7 +17,9 @@ The app asks for no permissions. Your pages stay on your Mac, and the only netwo
 
 ## What's in 0.1.0
 
-- The trackpad covers the whole window, or the whole screen in full screen (⌃⌘F).
+- The paper fills the window at any shape, and in full screen (⌃⌘F). The trackpad maps without distortion to
+  the largest trackpad-shaped area, outlined in draw mode.
+- Writing mode: a new line goes back to the left margin (also by hand with Return).
 - Edge guard: a palm or thumb resting on the trackpad's edge no longer draws, pans or zooms.
 - Every mode key toggles: press it again to turn the mode off.
 - Finger drawing with pressure. A public-API fallback keeps drawing working if the private touch

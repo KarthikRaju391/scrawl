@@ -63,7 +63,18 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
   - No network at launch (lsof, from the DMG build).
   - Crash notes and diagnostics stay in `~/Library/Logs/Scrawl`.
 - [x] **Performance.** Render time per frame with 2,000 and 3,000 strokes (release build), p95: 5.4 ms on AC power, under the 120 Hz budget of 8.3 ms. On battery the same build measures 9.4 ms, because macOS slows the main thread. That still fits a 60 Hz frame, but a full page may drop some frames at 120 Hz on battery. The check uses the 8.3 ms bar on AC and 16.7 ms on battery, and prints which one applied.
-- [x] **The trackpad covers the whole writing area.** Windowed, the window keeps the pad's shape (1.625:1, no stretch). In full screen (green button, ⌃⌘F) it stretches per axis: 2.1% on the built-in display, 9.4% on 16:9. `mapping.sh` checks zero gap and the corners at zoom 1 and zoom 3 (panned), in the window and at three full-screen sizes. A 16 pt-margin mutation fails it.
+- [x] **Any window shape, and paper everywhere.**
+  - The window resizes freely: tall beside another app, wide, or full screen.
+  - The paper fills the window with no grey margins.
+  - The pad's inner 90% maps without distortion to the largest pad-shaped rectangle in the window, centred, outlined in draw mode. The paper around it is reached by panning.
+  - Full screen uses the same rule, with no stretch.
+  - `mapping.sh` covers a pad-shaped window, a wide window, a tall half-screen window (with screenshots), and full screen at 1512x950 and 1920x1080. In each it checks: no gap, white paper at the window's edges, pad shape, centring, equal scale on both axes, corners and real ink from the corners, outline only in draw mode, edge guard, two-finger pan, zoom lock.
+  - Rendering with the old stretched mapping fails all five shapes.
+- [x] **New lines go back to the left margin.**
+  - The bug: the line start came from the current line's first stroke. After a hand pan, an undo or a page switch it was mid-page, so new lines went down but not left. Seen in the recordings: new lines landing at the page's right edge.
+  - Lines now start at the page margin, and Return does a new line by hand.
+  - A palm resting in the edge band no longer cancels or holds back a pending page move.
+  - `newline.sh`: 108 cases (auto-pan off/centre/left × line width ½/¾/full × zoom 2/3/5 × lock off/on × a start at the page left or after a hand pan right) plus Return and the palm case. On the previous code: 0/108.
 - [x] **Edge guard** (5% default, ⚙︎ slider, 0 = off).
   - Touches that start in the band never draw, pan or pinch, and don't count as a second finger. The inner 90% maps to the whole writing area.
   - `edge.sh` covers:
@@ -87,7 +98,8 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 ## Not verified (needs a person or other hardware)
 
 - **Hand-test in 0.1.0:**
-  - **Full-area map:** touch each trackpad corner just inside the edge band (about 6 mm in from the sides, 4 mm from top and bottom). Ink should start at the window's corner. Try the same in full screen (⌃⌘F).
+  - **Window shapes:** snap Scrawl to half the screen beside another app. Then, in draw mode, touch each trackpad corner just inside the edge band (about 6 mm in from the sides, 4 mm from top and bottom): ink should start at the corners of the faint outline. Try the same wide and in full screen (⌃⌘F). Check there's no grey anywhere and that panning reaches the paper outside the outline.
+  - **New line:** in writing mode, write to the end of a line at ½ and full width. Pan right by hand first, then write: the view should go one line down and back to the left margin. Return should do the same.
   - **Edge guard:**
     - rest your palm or thumb on the edge while writing: no pans or zooms;
     - start a stroke right at the edge: no ink;

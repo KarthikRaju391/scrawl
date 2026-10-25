@@ -107,10 +107,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window = NSWindow(contentRect: CGRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = AppInfo.name
-        window.minSize = CGSize(width: 640, height: 640 / Self.padAspect)
-        // Windowed: the content keeps the trackpad's shape, so the pad maps 1:1 without stretching.
-        // Full screen (green button, ⌃⌘F): the screen's shape wins and the map stretches per axis.
-        window.contentAspectRatio = CanvasView.pageUnits
+        window.minSize = CGSize(width: 360, height: 300)
+        // Any window shape (e.g. tall beside another app) and full screen (green button, ⌃⌘F): the trackpad
+        // maps without distortion to the largest pad-shaped rectangle in the window (CanvasView.padRect).
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.delegate = self
         let cv = CanvasView(frame: .zero, device: nil)

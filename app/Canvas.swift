@@ -583,8 +583,36 @@ final class CanvasView: MTKView {
     }
     required init(coder: NSCoder) { fatalError() }
 
+    /// Where the trackpad's active area lands in this view: the largest rectangle with the pad's shape
+    /// that fits, centred. The paper fills the whole view; outside this rectangle it shows the page around
+    /// it at the same scale (reach it by panning). Same rule windowed (any shape) and in full screen: no stretch.
+    var padRect: CGRect {
+        let a = Self.pageUnits.width / Self.pageUnits.height
+        var w = bounds.width, h = w / a
+        if h > bounds.height { h = bounds.height; w = h * a }
+        return CGRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
+    }
     /// Screen points per canvas unit at zoom 1.
-    var ptPerUnit: Double { bounds.width / camera.page.width }
+    var ptPerUnit: Double { max(padRect.width, 1) / camera.page.width }
+    /// The part of the page drawn in the view (the pad's area, `camera.visible`, plus the paper around it).
+    var renderRect: CGRect {
+        let v = camera.visible, r = padRect, k = v.width / max(r.width, 1)
+        return CGRect(x: v.minX - r.minX * k, y: v.minY - r.minY * k, width: bounds.width * k, height: bounds.height * k)
+    }
+    /// Page point under a view point.
+    func canvasPoint(fromView p: CGPoint) -> CGPoint {
+        let rr = renderRect
+        return CGPoint(x: rr.minX + p.x / bounds.width * rr.width, y: rr.minY + p.y / bounds.height * rr.height)
+    }
+    /// View point of a page point.
+    func viewPoint(fromCanvas c: CGPoint) -> CGPoint {
+        let rr = renderRect
+        return CGPoint(x: (c.x - rr.minX) / rr.width * bounds.width, y: (c.y - rr.minY) / rr.height * bounds.height)
+    }
+    /// Test hook: whether the last frame drew the pad-area outline, and where (view points).
+    private(set) var outlineDrawn: CGRect?
+    /// Test hook: the page rectangle the last frame was drawn with (what the renderer maps onto the view).
+    private(set) var renderedRect: CGRect?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -742,13 +770,12 @@ final class CanvasView: MTKView {
     override func magnify(with e: NSEvent) {
         guard !drawMode, !tools.zoomLocked else { return }
         let p = convert(e.locationInWindow, from: nil)
-        let pad = CGPoint(x: p.x / bounds.width, y: p.y / bounds.height)
-        let anchor = camera.canvas(fromPad: pad)
-        changing("magnify") {
+        let anchor = canvasPoint(fromView: p), r = padRect
+        changing("magnify") {   // the page point under the pointer stays under it
             var c = camera
             c.zoom = min(max(c.zoom * (1 + e.magnification), 1), Camera.maxZoom)
-            let v = c.visible
-            c.center = CGPoint(x: anchor.x - pad.x * v.width + v.width / 2, y: anchor.y - pad.y * v.height + v.height / 2)
+            let v = c.visible, k = v.width / max(r.width, 1)
+            c.center = CGPoint(x: anchor.x - (p.x - r.minX) * k + v.width / 2, y: anchor.y - (p.y - r.minY) * k + v.height / 2)
             c.clamp(); camera = c
         }
         needsRender = true
@@ -975,7 +1002,7 @@ final class CanvasView: MTKView {
 
     private func render(predictAhead: Double) {
         let cpu0 = CACurrentMediaTime()
-        let vis = camera.visible
+        let vis = renderRect   // everything drawn in the view, not just the pad's area
         var items: [Renderer.DrawItem] = []
         // Dashed line at every screen height down the page: where a screen's worth of writing ends.
         do {
@@ -1037,7 +1064,22 @@ final class CanvasView: MTKView {
         let arrival = pendingArrival
         pendingArrival = nil
         renderCount += 1
-        renderer.render(in: self, visible: camera.visible, background: tools.background,
+        // Draw mode: a faint outline where the trackpad's area is (the paper around it is reached by panning).
+        outlineDrawn = nil
+        if drawMode {
+            let v = camera.visible, k = 1 / (ptPerUnit * camera.zoom), t = 1.0 * k
+            var q: [SIMD2<Float>] = []
+            for r in [CGRect(x: v.minX, y: v.minY, width: v.width, height: t), CGRect(x: v.minX, y: v.maxY - t, width: v.width, height: t),
+                      CGRect(x: v.minX, y: v.minY, width: t, height: v.height), CGRect(x: v.maxX - t, y: v.minY, width: t, height: v.height)] {
+                let a = SIMD2<Float>(Float(r.minX), Float(r.minY)), b = SIMD2<Float>(Float(r.maxX), Float(r.minY))
+                let c = SIMD2<Float>(Float(r.maxX), Float(r.maxY)), d = SIMD2<Float>(Float(r.minX), Float(r.maxY))
+                q += [a, b, c, a, c, d]
+            }
+            items.append(.init(mesh: Mesh(), verts: q, color: premul(SIMD4(0.10, 0.45, 0.91, 0.22))))
+            outlineDrawn = padRect
+        }
+        renderedRect = vis
+        renderer.render(in: self, visible: vis, background: tools.background,
                         spacing: 48, pxPerUnit: ptPerUnit * camera.zoom * Double(window?.backingScaleFactor ?? 2),
                         items: items, presented: { [weak self] t in
                             guard t > 0 else { return }  // 0 = dropped frame

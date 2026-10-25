@@ -33,8 +33,9 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 ## Using it
 
 - **⌃⌥D** (or **D** when the app is in front) starts drawing, and pressing it again stops.
-  The whole trackpad covers the whole window, or the whole screen in full screen (green button or ⌃⌘F),
-  apart from a thin edge band (below). The pointer freezes and hides, and the
+  The paper fills the window, whatever its shape, and full screen works too (green button or ⌃⌘F). The
+  trackpad (apart from a thin edge band, below) maps without distortion to the largest trackpad-shaped area
+  in the window, centred. In draw mode a faint outline shows that area, and you pan to reach the rest. The pointer freezes and hides, and the
   whole trackpad becomes the visible part of the page. **Esc** gives the pointer back. So do ⌃⌥D,
   switching apps, the display sleeping, and quitting.
 - **One finger** draws. **Two fingers** pan, and pinching zooms. Blue rings show where your fingers

@@ -13,8 +13,10 @@ old pages and settings over.
 - Keep-style tools: pen, marker, highlighter, eraser, and none / square / dot / ruled backgrounds.
 - Smoothing and Prediction sliders. Every stroke ends exactly where the finger lifts.
 - Aim first (A): touch lightly to aim, press to ink.
-- The trackpad covers the whole window, or the whole screen in full screen (green button or ⌃⌘F). There
-  are no margins. Windowed, the window keeps the trackpad's shape, so nothing is stretched.
+- The paper fills the whole window, at any window shape (tall beside another app, wide, full screen with
+  the green button or ⌃⌘F). The trackpad maps without distortion to the largest trackpad-shaped area in
+  the window, centred and outlined in draw mode. Pan to reach the paper around it.
+- Return in writing mode starts the next line.
 - Edge guard: touches that start within 5% of the trackpad's edges are ignored, so a resting palm or
   thumb no longer draws, pans or zooms. The inner 90% covers the whole writing area. You can change it
   under ⚙︎ › Edge guard, and 0 turns it off.
