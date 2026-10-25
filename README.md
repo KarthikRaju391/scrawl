@@ -56,13 +56,14 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 - **Zoom lock (L)** keeps the zoom fixed while two fingers still pan.
 - **Arrow keys** pan the page by a tenth of the view, and Shift+arrows by a whole screen. They stop at the
   page's sides and top; at zoom 1, where the page already fills the width, ← → do nothing and ↑ ↓ scroll.
-  In the pages overview the arrows move a selection (orange ring) and Return or Space opens it. ⌘[ and ⌘]
-  still change pages.
+  In the pages overview the arrows move the blue selection ring. ⌘[ and ⌘] still change pages.
 - **Pages:** N or ⌘N adds a page, ⌘[ and ⌘] move between them. Each page keeps its own view. The arrows dim
   (and ⌘[ / ⌘] do nothing) when there's no page that way; Next never adds a page, + does.
-- **Pages overview (G, or the grid button):** every page as a thumbnail. Click one to open it: it grows
-  from its spot in the grid to fill the window. G from a page shrinks it back. The "+ New page" tile is
-  last. Opening the overview leaves draw mode, and opening a page puts you back in it.
+- **Pages overview (G, or the grid button):** every page as a thumbnail. The blue ring is your selection:
+  it starts on the page you came from (marked with a small dot), and the arrow keys or the pointer move it.
+  Return, Space, G or a click opens it: the page grows from its spot to fill the window. Esc goes back to
+  the page you came from. The "+ New page" tile is last. Opening the overview leaves draw mode, and opening a
+  page puts you back in it.
 - **Page dates:** every page remembers when it was created (shown under its tile in the overview and in
   the small label at the top of the open page) and when it was last edited. Pages from before this
   version show "date unknown".

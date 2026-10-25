@@ -28,6 +28,7 @@ extension AppDelegate {
         g.frame = container.bounds
         g.reload(pages: canvas.pages, pageSize: canvas.camera.page, current: canvas.pageIndex); lap("reload")
         g.isHidden = false
+        window.acceptsMouseMovedEvents = true; window.makeFirstResponder(g)   // hover moves the highlight
         let to = g.cellRect(canvas.pageIndex, in: container); lap("cellRect")
         g.display(); lap("display")
         CATransaction.flush(); lap("flush")   // draw and commit the grid now, before the first frame, not during the animation
@@ -66,6 +67,7 @@ extension AppDelegate {
             guard let self else { return }
             self.canvas.renderingPaused = false   // renders the opened page under the transition's last frame
             self.gallery?.isHidden = true
+            self.window.makeFirstResponder(self.canvas)
             if self.galleryReturnsToDraw { self.enterDrawMode(lock: !self.canvas.testMode) }
         }
     }

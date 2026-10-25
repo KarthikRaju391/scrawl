@@ -332,7 +332,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             canvas.panByArrow(dx: a.0, dy: a.1, screen: e.modifierFlags.contains(.shift)); return true
         }
         if galleryShown {   // the page overview: G or Esc goes back to the current page; other keys do nothing
-            if e.keyCode == 53 || e.charactersIgnoringModifiers?.lowercased() == "g" { TransitionTiming.inputAt = CACurrentMediaTime(); openPage(canvas.pageIndex) }
+            // G (like Return / Space) opens the highlighted tile; Esc goes back to the page that was open.
+            if e.keyCode == 53 { TransitionTiming.inputAt = CACurrentMediaTime(); openPage(canvas.pageIndex) }
+            else if e.charactersIgnoringModifiers?.lowercased() == "g" { TransitionTiming.inputAt = CACurrentMediaTime(); openSelectedTile() }
             return e.modifierFlags.intersection([.command, .control, .option]).isEmpty
         }
         if e.keyCode == 36 || e.keyCode == 76, canvas.writingMode { canvas.newLineByHand(); return true }   // Return: next line
@@ -410,6 +412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if let i = a.firstIndex(of: "--test-cursor"), i + 1 < a.count { testCursor(a[i + 1]) }
         if a.contains("--test-jitter") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestJitter.run(app: self) } }
+        if a.contains("--test-gallerykeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryKeys.run(app: self) } }
         if a.contains("--test-toast") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestToast.run(app: self) } }
         if a.contains("--test-arrowkeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestArrowKeys.run(app: self) } }
         if a.contains("--test-taps") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestTaps.run(app: self) } }

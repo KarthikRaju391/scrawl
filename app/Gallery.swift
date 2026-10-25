@@ -106,7 +106,7 @@ final class GalleryView: NSView {
     let scroll = NSScrollView()
     private let grid = GridView()
     private let title = NSTextField(labelWithString: "Pages")
-    private let hintLabel = NSTextField(labelWithString: "Click a page to open it  ·  G or Esc goes back")
+    private let hintLabel = NSTextField(labelWithString: "Arrows or the pointer choose  ·  Return, Space or G opens  ·  Esc goes back  ·  • = the page you came from")
     var onOpen: ((Int) -> Void)?
     var onNewPage: (() -> Void)?
     let thumbnails = ThumbnailCache()
@@ -199,9 +199,24 @@ final class GalleryView: NSView {
         grid.needsDisplay = true
     }
 
-    fileprivate func clicked(_ i: Int) { if i < pages.count { onOpen?(i) } else { onNewPage?() } }
+    fileprivate func clicked(_ i: Int) { selected = i; grid.needsDisplay = true; if i < pages.count { onOpen?(i) } else { onNewPage?() } }
+    /// Test hook: draw the grid now.
+    func displayGridNow() { grid.display() }
+    override var acceptsFirstResponder: Bool { true }
+    // Pointer moves reach the overview as first responder (and the grid through its tracking area).
+    override func mouseMoved(with e: NSEvent) { hovered(cellIndex(at: grid.convert(e.locationInWindow, from: nil))) }
+    /// The pointer over a tile moves the highlight there (the same highlight the arrow keys move).
+    fileprivate func hovered(_ i: Int?) {
+        guard let i, i != selected else { return }
+        selected = i; grid.needsDisplay = true
+    }
+
+    /// Test hook: rings drawn around tiles in the last full draw of the visible grid (tile index -> count).
+    private(set) var ringsDrawn: [Int: Int] = [:]
+    private(set) var currentDotDrawn = false
 
     fileprivate func drawGrid(_ dirty: CGRect) {
+        ringsDrawn = [:]; currentDotDrawn = false
         let cols = columns
         for i in 0..<cellCount {
             let r = cellRectInGrid(i)
@@ -223,10 +238,6 @@ final class GalleryView: NSView {
                     ctx.draw(img, in: CGRect(x: 0, y: 0, width: r.width, height: r.height))
                     ctx.restoreGState()
                 }
-                if i == current {
-                    NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).setStroke()
-                    let p = NSBezierPath(roundedRect: r.insetBy(dx: -3, dy: -3), xRadius: 8, yRadius: 8); p.lineWidth = 3; p.stroke()
-                }
                 labelText = tileLabel(i)
             } else {
                 NSColor(white: 0.55, alpha: 1).setStroke()
@@ -236,13 +247,21 @@ final class GalleryView: NSView {
                 plus.draw(at: CGPoint(x: r.midX - plus.size().width / 2, y: r.midY - plus.size().height / 2))
                 labelText = "New page"
             }
-            if i == selected {   // the arrow-key selection: an orange ring outside the tile (and outside the current page's blue one)
-                NSColor(srgbRed: 0.96, green: 0.55, blue: 0.10, alpha: 1).setStroke()
-                let p = NSBezierPath(roundedRect: r.insetBy(dx: -8, dy: -8), xRadius: 11, yRadius: 11); p.lineWidth = 2.5; p.stroke()
+            // One highlight: the blue ring, moved by the arrow keys and the pointer (it starts on the current page).
+            if i == selected {
+                NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).setStroke()
+                let p = NSBezierPath(roundedRect: r.insetBy(dx: -3, dy: -3), xRadius: 8, yRadius: 8); p.lineWidth = 3; p.stroke()
+                ringsDrawn[i, default: 0] += 1
             }
             let l = NSAttributedString(string: labelText, attributes: [.font: NSFont.systemFont(ofSize: 12, weight: i == current ? .semibold : .regular),
                                                                        .foregroundColor: NSColor(white: 0.3, alpha: 1)])
-            l.draw(at: CGPoint(x: r.midX - l.size().width / 2, y: r.maxY + 5))
+            let lx = r.midX - l.size().width / 2
+            l.draw(at: CGPoint(x: lx, y: r.maxY + 5))
+            if i == current {   // the page that was open: a small blue dot before its (semibold) label
+                NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1).setFill()
+                NSBezierPath(ovalIn: CGRect(x: lx - 11, y: r.maxY + 5 + l.size().height / 2 - 3, width: 6, height: 6)).fill()
+                currentDotDrawn = true
+            }
         }
     }
 
@@ -258,6 +277,12 @@ final class GalleryView: NSView {
             if let i = gallery?.cellIndex(at: p) { gallery?.clicked(i) }
         }
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self))
+        }
+        override func mouseMoved(with e: NSEvent) { gallery?.hovered(gallery?.cellIndex(at: convert(e.locationInWindow, from: nil))) }
     }
 }
 
