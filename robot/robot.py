@@ -463,6 +463,7 @@ def run_scenarios(app, rep, only, hand):
     @scenario("scratch-out", "Write two words, scratch out the first with a quick zig-zag: it goes, the second stays, and one two-finger double tap brings it back. A zig-zag on blank paper stays ink.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
+        app.press("n", until=lambda s: s["strokes"] == 0)   # a fresh page
         st = app.state(); pad_w, pad_h = st["padMM"]
         n0 = st["strokes"]
         fr, cid = hand.frames(hand.word("wrong", pad_w * 0.2, pad_h * 0.45, hand.roman), 9000)

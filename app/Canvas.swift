@@ -141,6 +141,8 @@ final class Document {
         return strokes.count != n
     }
     func clear() { guard !strokes.isEmpty else { return }; snapshot(); strokes.removeAll() }
+    /// Scratch-out: the strokes under a scratch go in one undo step (the scratch itself is never added).
+    func scratchOut(erasing gone: [Stroke]) { snapshot(); strokes.removeAll { s in gone.contains { $0 === s } } }
     /// Swap the last stroke (no new undo step: it's a correction of the stroke just added).
     func replaceLast(_ s: Stroke) { guard !strokes.isEmpty else { return }; version += 1; strokes[strokes.count - 1] = s }
     func undo() { guard let s = undoStack.popLast() else { return }; version += 1; redoStack.append(strokes); strokes = s }
@@ -380,6 +382,9 @@ final class CanvasView: MTKView {
     /// A two-finger (undo) or three-finger (redo) double tap was recognised: "Undo", "Redo", "Nothing to undo"...
     var onTapCommand: ((String) -> Void)?
     private var taps = MultiTapDetector()
+    /// The undo scrub in progress: where the fingers started (pad mm, x) and the steps taken (- undo, + redo).
+    private var scrub: (startX: Double, steps: Int, sliding: Bool, ended: Bool)?
+    static let scrubStepMM = 7.0, scrubStartMM = 4.0
     private var tapViewAnchor: Camera?
 
     func restorePages(_ docs: [Document], cameras: [Camera], index: Int, nextStrokeId: Int) {
@@ -725,12 +730,38 @@ final class CanvasView: MTKView {
         if let ev = taps.frame(counted, t: arrival) {
             if let c = tapViewAnchor { changing("tap") { camera = c } }   // a tap is not a pan or a pinch
             switch ev {
+            case .hold(2):
+                // Undo scrub: slide left to step back through history, right to step forward, live.
+                let x = counted.map(\.mm.x).reduce(0, +) / Double(counted.count)
+                scrub = (x, 0, false, false)   // armed: it starts when the fingers slide (a resting hold does nothing)
             case .doubleTap(2):
                 act("gestureUndo"); let could = doc.canUndo; undo(); onTapCommand?(could ? "Undo" : "Nothing to undo")
             case .doubleTap(3):
                 act("gestureRedo"); let could = doc.canRedo; redo(); onTapCommand?(could ? "Redo" : "Nothing to redo")
             default: break
             }
+        }
+        if var sc = scrub {
+            // Only the two fingers that held count. If one lifts, the scrub is over (what's shown stays) and
+            // the other finger does nothing until it lifts too.
+            if counted.count == 2 && !sc.ended {
+                let x = counted.map(\.mm.x).reduce(0, +) / Double(counted.count)
+                if !sc.sliding && abs(x - sc.startX) >= Self.scrubStartMM { sc.sliding = true; act("scrubStart"); onTapCommand?("← Undo · Redo →") }
+                let target = sc.sliding ? Int(((x - sc.startX) / Self.scrubStepMM).rounded(.towardZero)) : 0
+                let was = sc.steps
+                while sc.steps > target && doc.canUndo { undo(); sc.steps -= 1 }
+                while sc.steps < target && doc.canRedo { redo(); sc.steps += 1 }
+                if sc.steps != target { sc.startX = x - Double(sc.steps) * Self.scrubStepMM }   // at an end of history
+                if sc.steps != was { onTapCommand?(sc.steps < 0 ? "Undo ×\(-sc.steps)" : sc.steps > 0 ? "Redo ×\(sc.steps)" : "← Undo · Redo →") }
+            } else if !sc.ended {
+                sc.ended = true
+                if sc.sliding { act("scrubEnd", ["steps": sc.steps]) }
+            }
+            if counted.isEmpty { scrub = nil; tapViewAnchor = nil } else { scrub = sc }
+            if let c = tapViewAnchor { camera = c }
+            gestures.frame([], t: arrival)   // no pan, pinch or ink while scrubbing
+            needsRender = true
+            return
         }
         if counted.isEmpty { tapViewAnchor = nil }
         gestures.frame(cs, t: arrival)
@@ -956,6 +987,18 @@ final class CanvasView: MTKView {
                 dir = CGPoint(x: dx / l, y: dy / l)
             }
             lastLift = (raw, frameSensorT, dir)
+        }
+        // Scratch-out (Scratch.swift): a fast zig-zag over ink erases what it covers; the zig-zag isn't kept.
+        if ScratchOut.enabled, liveTool == .pen || liveTool == .marker,
+           ScratchOut.shapeMatches(ScratchOut.features(mm: rawSamples.map(\.mm), t: rawSamples.map(\.t))) {
+            let unitsPerMM = camera.visible.width / (Multitouch.padMM.width * (1 - 2 * Camera.margin))
+            if let gone = ScratchOut.covered(scratch: b.points.map(\.p), in: doc.strokes, reach: ScratchOut.reachMM * unitsPerMM) {
+                doc.scratchOut(erasing: gone)
+                act("scratchOut", ["ids": gone.map(\.id)])
+                markDirty()
+                onTapCommand?("Scratched out")
+                return
+            }
         }
         let s = Stroke(tool: liveTool, color: liveColor, size: liveSize, points: b.points, maxStep: smoothStep)
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))

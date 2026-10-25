@@ -1,4 +1,5 @@
-// Multi-finger taps in draw mode: two-finger double tap = undo, three-finger double tap = redo.
+// Multi-finger taps in draw mode: two-finger double tap = undo, three-finger double tap = redo. Keeping the
+// second tap of a double tap down (still, 0.25 s) is a hold: the undo scrub (slide to step through history).
 // Rules from Karthik's 7 recorded sessions (1,209 two-or-more-finger episodes, mostly pans and pinches):
 // with these, none of them makes a double tap; looser rules (e.g. 120 ms / 300 ms / 3 mm / 350 ms) let one
 // through. tools/tap_analysis.py has the numbers.
@@ -10,8 +11,10 @@ struct MultiTapDetector {
     var maxDuration = 0.20  // first touch-down to last lift
     var maxMove = 1.5       // mm, any finger
     var doubleGap = 0.30    // second tap starts within 300 ms of the first one's lift
+    var holdTime = 0.25     // second tap still down (and still) this long: a hold
 
-    enum Event: Equatable { case tap(Int), doubleTap(Int) }
+    enum Event: Equatable { case tap(Int), doubleTap(Int), hold(Int) }
+    private var held = false
 
     private var down: [Int32: (t: Double, at: CGPoint)] = [:]
     private var lifted: [Int32: Double] = [:]
@@ -27,7 +30,17 @@ struct MultiTapDetector {
             if let d = down[f.id] { moved = max(moved, hypot(f.mm.x - d.at.x, f.mm.y - d.at.y)) }
         }
         for id in down.keys where !ids.contains(id) && lifted[id] == nil { lifted[id] = t }
+        // The second tap of a double tap, held: all its fingers landed together soon after the first tap,
+        // none has lifted or moved, and it has lasted `holdTime`.
+        if !fingers.isEmpty, !held, lifted.isEmpty, let l = lastTap, l.fingers == down.count {
+            let downs = down.values.map(\.t), start = downs.min()!
+            if downs.max()! - start <= landWindow && start - l.end <= doubleGap && t - start >= holdTime && moved <= maxMove {
+                held = true; lastTap = nil
+                return .hold(down.count)
+            }
+        }
         guard fingers.isEmpty, !down.isEmpty else { return nil }
+        if held { held = false; down = [:]; lifted = [:]; moved = 0; return nil }
         // The episode is over: was it a tap?
         let downs = down.values.map(\.t), ups = Array(lifted.values)
         let n = down.count, start = downs.min()!, end = ups.max() ?? t
@@ -42,5 +55,5 @@ struct MultiTapDetector {
         lastTap = (n, end)
         return .tap(n)
     }
-    mutating func reset() { down = [:]; lifted = [:]; moved = 0; lastTap = nil }
+    mutating func reset() { down = [:]; lifted = [:]; moved = 0; lastTap = nil; held = false }
 }

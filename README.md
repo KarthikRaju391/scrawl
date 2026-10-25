@@ -38,7 +38,11 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   in the window, centred. In draw mode a faint outline shows that area, and you pan to reach the rest. The pointer freezes and hides. **Esc** gives the pointer back. So do ⌃⌥D,
   switching apps, the display sleeping, and quitting.
 - **One finger** draws. **Two fingers** pan, and pinching zooms. In draw mode, a **two-finger double
-  tap** undoes and a **three-finger double tap** redoes (a short "Undo" / "Redo" shows). Outside draw mode
+  tap** undoes and a **three-finger double tap** redoes (a short "Undo" / "Redo" shows). Keep the second
+  tap down and **slide**: left steps back through your strokes, right brings them back, live; lift to keep
+  what you see.
+- **Scratch out** a mistake: a quick zig-zag over a word (pen or marker) erases it, and the zig-zag goes
+  too. One undo brings it all back. A zig-zag on blank paper stays as ink, and a highlighter never erases. Outside draw mode
   a two-finger tap stays your normal right-click. Blue rings show where your fingers
   are, since there's no pointer.
 - **Tools:** M marker, H highlighter, E eraser; press the same key again to go back to the pen.

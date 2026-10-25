@@ -41,6 +41,8 @@ enum HelpText {
         ("Two fingers", "Pan; pinch to zoom"),
         ("2-finger double tap", "Undo (in draw mode)"),
         ("3-finger double tap", "Redo (in draw mode)"),
+        ("2-finger double tap, hold, slide", "Scrub through undo: slide left to go back, right to come forward"),
+        ("Scratch out", "A quick zig-zag over a word erases it (pen or marker; one undo brings it back)"),
         ("M  H  E", "Marker, highlighter, eraser; press again for the pen"),
         ("P", "Pen; on the pen, back to the last other tool"),
         ("1 – 5", "Pen size"),

@@ -17,6 +17,14 @@ func tapReplayChecks(_ check: (Bool, String) -> Void) {
     check(run([(0, fingers(2)), (0.1, fingers(2)), (0.11, []), (0.6, fingers(2)), (0.7, []), ]) == [.tap(2), .tap(2)], "detector: 0.5 s apart = two single taps, no double tap")
     check(run([(0, fingers(2)), (0.1, fingers(2, dx: 4)), (0.11, []), (0.2, fingers(2)), (0.25, []), ]) == [.tap(2)], "detector: a finger moving 4 mm is not a tap")
     check(run([(0, fingers(2)), (0.25, fingers(2)), (0.26, []), (0.3, fingers(2)), (0.35, []), ]) == [.tap(2)], "detector: a 260 ms touch is not a tap")
+    check(run([(0, fingers(2)), (0.08, fingers(2)), (0.09, []), (0.25, fingers(2)), (0.43, fingers(2)), (0.44, [])]) == [.tap(2), .doubleTap(2)],
+          "detector: a slow second tap (190 ms) is still a double tap, not a hold")
+    // Undo scrub: the second tap held still for 0.25 s is a hold (once), and it is no double tap.
+    let hold: [(Double, [Contact])] = [(0, fingers(2)), (0.08, fingers(2)), (0.09, []), (0.25, fingers(2)), (0.4, fingers(2)), (0.52, fingers(2)), (0.6, fingers(2, dx: 20)), (0.9, [])]
+    check(run(hold) == [.tap(2), .hold(2)], "detector: a double tap whose second tap stays down = one hold (scrub), not an undo (\(run(hold)))")
+    check(run([(0, fingers(2)), (0.08, fingers(2)), (0.09, []), (0.25, fingers(2)), (0.42, fingers(2, dx: 3)), (0.6, [])]) == [.tap(2)],
+          "detector: a second tap that moves before 0.25 s is neither a hold nor a double tap (it's a pan)")
+    check(run([(0, fingers(2)), (0.5, fingers(2)), (0.6, [])]) == [], "detector: two fingers resting 0.5 s without a first tap: no hold")
     var stag = MultiTapDetector()
     _ = stag.frame(Array(fingers(2).prefix(1)), t: 0); _ = stag.frame(fingers(2), t: 0.1)
     check(stag.frame([], t: 0.15) == nil, "detector: fingers landing 100 ms apart are not a tap")
@@ -24,12 +32,13 @@ func tapReplayChecks(_ check: (Bool, String) -> Void) {
     // Sessions from before the gestures existed must give none; sessions recorded with them must give
     // exactly the gesture undos / redos the app logged.
     let files = (try? FileManager.default.contentsOfDirectory(atPath: "data"))?.filter { $0.hasPrefix("session-2026") && $0.hasSuffix(".jsonl") }.sorted() ?? []
-    var frames = 0, singles = 0, falseDoubles = [Int: Int](), matched = 0, mismatched: [String] = [], before = 0, withGestures = 0
+    var frames = 0, singles = 0, falseDoubles = [Int: Int](), matched = 0, mismatched: [String] = [], before = 0, withGestures = 0, holds = 0
     for f in files {
         guard let text = try? String(contentsOfFile: "data/" + f, encoding: .utf8) else { continue }
         var det = MultiTapDetector()
         var banned = Set<Int32>(), seen = Set<Int32>()
         var replayed = [Int: Int](), logged = [Int: Int]()
+        var armed: Double?   // after a hold: where the fingers were (x mm); a scrub starts once they slide 4 mm
         for line in text.split(separator: "\n") {
             if line.contains("\"gestureUndo\"") { logged[2, default: 0] += 1; continue }
             if line.contains("\"gestureRedo\"") { logged[3, default: 0] += 1; continue }
@@ -39,10 +48,16 @@ func tapReplayChecks(_ check: (Bool, String) -> Void) {
             let contacts = cs.map { Contact(id: Int32($0[0]), state: 4, norm: CGPoint(x: $0[2], y: $0[3]), mm: CGPoint(x: $0[2] * 124.8, y: $0[3] * 76.8), pressure: $0[4], size: 0.5, major: 7.5) }
             for c in contacts where !seen.contains(c.id) && GestureEngine.inBand(c.norm, Settings.defaultEdgeGuard) { banned.insert(c.id) }
             let ids = Set(contacts.map(\.id)); seen = ids; banned = banned.intersection(ids)
-            switch det.frame(contacts.filter { !banned.contains($0.id) }, t: t) {
+            let counted = contacts.filter { !banned.contains($0.id) }
+            let cx = counted.isEmpty ? 0 : counted.map(\.mm.x).reduce(0, +) / Double(counted.count)
+            if let a = armed {
+                if counted.count != 2 { armed = nil } else if abs(cx - a) >= CanvasView.scrubStartMM { holds += 1; armed = nil }
+            }
+            switch det.frame(counted, t: t) {
             case .doubleTap(let n): replayed[n, default: 0] += 1
             case .tap: singles += 1
-            case nil: break
+            case .hold(2): armed = cx
+            case .hold, nil: break
             }
         }
         if logged.isEmpty {
@@ -55,5 +70,6 @@ func tapReplayChecks(_ check: (Bool, String) -> Void) {
     }
     check(before >= 7 && frames > 10_000 && falseDoubles.isEmpty,
           "replay of \(before) sessions recorded before the gestures (\(frames) touch frames in all): no false double tap (\(singles) multi-finger touches counted as single taps, which do nothing; doubles: \(falseDoubles))")
+    check(holds == 0, "replay of every recorded session: no undo scrub would start (\(holds) holds that slid)")
     check(mismatched.isEmpty, "sessions recorded with the gestures (\(withGestures)): the replay finds exactly the \(matched) undos / redos the app made\(mismatched.isEmpty ? "" : ": \(mismatched)")")
 }
