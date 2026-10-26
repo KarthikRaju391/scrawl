@@ -85,6 +85,9 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 - **Find and share:** tiles show each page's ink, titled with its first handwritten line (read on this
   Mac, never uploaded). **⌘F** searches your handwriting across pages; Return opens the match. **⌘C**
   copies the page as an image, and **File › Share Page…** sends it to Messages, Notes, Mail and the rest.
+- **Delete a page:** Delete on the highlighted tile in the overview, right-click a tile › Delete Page, or
+  Edit › Delete Page (⌥⌘⌫) for the open page. There's no confirm dialog: ⌘Z brings it back. Deleting the
+  last page leaves a blank one.
 - **Page dates:** every page remembers when it was created (shown under its tile in the overview and in
   the small label at the top of the open page) and when it was last edited. Pages from before this
   version show "date unknown".

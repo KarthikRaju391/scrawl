@@ -145,6 +145,10 @@ final class Robot {
             var ok = false
             ok = { app.settingsWindow.setSwitchForTest(c["index"] as? Int ?? 0, c["on"] as? Bool ?? true); return true }()   // robot:needs class SettingsWindow
             done(ok ? ["ok": true] : ["error": "no settings window"])
+        case "tileMenu":   // the overview tile's context menu: its items, then "Delete Page" picked
+            var r: [String: Any] = ["error": "no tile menu"]
+            r = app.robotTileMenu(c["index"] as? Int ?? 0)   // robot:needs func robotTileMenu
+            done(r)
         case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
@@ -267,6 +271,7 @@ final class Robot {
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        s["pageArrows"] = [tb.canGoBack, tb.canGoForward]
         s["analyticsSession"] = Analytics.shared.context.sessionID   // robot:needs final class Analytics
         if let g = app.gallery, app.galleryShown {   // robot:needs class PageTitles
             s["galleryTitles"] = canvas.pages.map { g.titles.title($0) }   // robot:needs class PageTitles

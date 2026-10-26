@@ -44,6 +44,7 @@ extension AppDelegate {
             item("Find in Pages…", #selector(findInPagesAction), "f"),
             .separator(),
             item("Clear Page", #selector(clearPage), "\u{8}"),
+            item("Delete Page", #selector(deletePageAction), "\u{8}", [.command, .option]),
         ])
         let basic = item("Use Basic Touch Input (no pressure)", #selector(toggleBasicInput))
         basic.state = Settings().inputSource == "nstouch" ? .on : .off

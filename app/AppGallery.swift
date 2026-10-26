@@ -22,6 +22,7 @@ extension AppDelegate {
             g.autoresizingMask = [.width, .height]
             g.onOpen = { [weak self] i in self?.openPage(i) }
             g.onNewPage = { [weak self] in self?.openNewPage() }
+            g.onDelete = { [weak self] i in self?.deletePage(i) }
             g.onSearchReturn = { [weak self] in
                 self?.usage.record("overview_search", ["result": (self?.gallery?.matching.isEmpty ?? true) ? "none" : "found"])
                 self?.openSelectedTile()
@@ -143,6 +144,41 @@ extension AppDelegate {
     }
 
     @objc func toggleGalleryAction() { toggleGallery() }
+
+    // MARK: deleting pages (no confirm dialog: ⌘Z brings a page back)
+
+    func deletePage(_ i: Int) {
+        guard let d = canvas.deletePage(i) else { return }
+        deletedPages.append(d)
+        usage.record("delete_page", ["pages": canvas.pages.count])
+        afterPagesChanged(select: min(i, canvas.pages.count - 1))
+        showToast(d.blank != nil ? "Page deleted (a blank page stays) · ⌘Z to undo" : "Page \(i + 1) deleted · ⌘Z to undo", seconds: 3)
+    }
+    /// ⌘Z or the toolbar's undo right after deleting a page: put it back. False if there's nothing to restore.
+    func undoPageDelete() -> Bool {
+        guard let d = deletedPages.popLast() else { return false }
+        canvas.restorePage(d)
+        usage.record("restore_page")
+        afterPagesChanged(select: min(d.index, canvas.pages.count - 1))
+        showToast("Page \(min(d.index, canvas.pages.count - 1) + 1) restored")
+        return true
+    }
+    private func afterPagesChanged(select: Int) {
+        updateBanner(); updateUndoState()
+        container.pageMap.refresh(); container.needsLayout = true
+        if galleryShown, let g = gallery {
+            g.reload(pages: canvas.pages, pageSize: canvas.camera.page, current: canvas.pageIndex)
+            g.selected = select; g.moveSelection(dx: 0, dy: 0)
+        }
+    }
+    @objc func deletePageAction() { deletePage(actionPageIndex) }
+    /// Test hook: the tile's context menu, then its Delete Page item picked.
+    func robotTileMenu(_ i: Int) -> [String: Any] {
+        guard let g = gallery, galleryShown, let m = g.tileMenu(i) else { return ["error": "no menu"] }
+        let items = m.items.map(\.title)
+        if let d = m.items.first(where: { $0.title == "Delete Page" }), let a = d.action { NSApp.sendAction(a, to: d.target, from: d) }
+        return ["items": items]
+    }
 
     /// ⌘F: the overview with its search field focused.
     @objc func findInPagesAction() {

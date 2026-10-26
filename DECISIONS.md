@@ -86,3 +86,10 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Anonymous events only: `$process_person_profile: false`, `$geoip_disable: true`, distinct_id = SHA-256 of the random install ID.
 - EU Cloud by default (GDPR); "Discard client IP data" must be turned on in the project (a PostHog setting, not something the app can do).
 - Checked against a local fixture server (checks/posthog.sh); real PostHog ingestion is unverified until a token exists.
+
+## Delete page
+- No confirm dialog: deleting shows "Page N deleted · ⌘Z to undo" for 3 s, and ⌘Z (or the toolbar's undo) puts the page back in its place, ink, view and history intact. Several deletes undo newest first.
+- ⌘Z restores pages only while a delete was the last change: new ink, an erase, a scratch-out, Clear Page or a new page hands ⌘Z back to the ink (the deleted pages are let go then).
+- Keys: Delete (or ⌦) on the overview's highlighted tile; Control-click / right-click a tile: Open, Delete Page; Edit › Delete Page is **⌥⌘⌫** (⌘⌫ was already Clear Page). It acts on the overview's selection, or the open page.
+- Deleting the open page opens the next one (the previous one at the end); deleting the only page leaves one blank page.
+- Deletes aren't kept across a relaunch for undo (the autosave writes the notebook without the page).

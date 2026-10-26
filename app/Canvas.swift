@@ -541,6 +541,60 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
+    /// A deleted page, kept so ⌘Z can put it back where it was.
+    struct DeletedPage { let doc: Document; let camera: Camera; let index: Int; let wasCurrent: Bool; let blank: Document? }
+
+    /// Delete page i. The open page moves to the next one (or the previous, at the end); deleting the only
+    /// page leaves one blank page.
+    func deletePage(_ i: Int) -> DeletedPage? {
+        guard pages.indices.contains(i) else { return nil }
+        act("deletePage", ["page": i, "pages": pages.count])
+        endWritingLine(); cancelPendingMove(); finishSlide()
+        while pageCameras.count < pages.count { pageCameras.append(camera) }
+        pageCameras[pageIndex] = camera
+        let doc = pages[i], cam = pageCameras[i], wasCurrent = i == pageIndex
+        if pages.count == 1 {
+            let blank = Document.new()
+            pages = [blank]; pageIndex = 0
+            changing("deletePage") { camera.home() }
+            pageCameras = [camera]
+            afterPageChange()
+            return DeletedPage(doc: doc, camera: cam, index: i, wasCurrent: true, blank: blank)
+        }
+        pages.remove(at: i); pageCameras.remove(at: i)
+        if i < pageIndex { pageIndex -= 1 }
+        else if wasCurrent {
+            pageIndex = min(i, pages.count - 1)
+            changing("deletePage") { var c = pageCameras[pageIndex]; if tools.zoomLocked { c.zoom = camera.zoom; c.clamp() }; camera = c }
+        }
+        afterPageChange()
+        return DeletedPage(doc: doc, camera: cam, index: i, wasCurrent: wasCurrent, blank: nil)
+    }
+
+    /// Undo a delete: the page goes back in its place (and is opened if it was the open page).
+    func restorePage(_ d: DeletedPage) {
+        act("restorePage", ["page": d.index])
+        endWritingLine(); cancelPendingMove(); finishSlide()
+        while pageCameras.count < pages.count { pageCameras.append(camera) }
+        pageCameras[pageIndex] = camera
+        if let blank = d.blank, pages.count == 1, pages[0] === blank, blank.strokes.isEmpty {
+            pages = [d.doc]; pageCameras = [d.camera]; pageIndex = 0
+            changing("restorePage") { camera = d.camera }
+        } else {
+            let at = min(d.index, pages.count)
+            pages.insert(d.doc, at: at); pageCameras.insert(d.camera, at: at)
+            if d.wasCurrent { pageIndex = at; changing("restorePage") { camera = d.camera } }
+            else if at <= pageIndex { pageIndex += 1 }
+        }
+        afterPageChange()
+    }
+
+    private func afterPageChange() {
+        screensFilled = 0; hintDismissedAt = 0; updateScreensFilled(); hintDismissedAt = screensFilled
+        markDirty()
+        needsRender = true; onStatus?()
+    }
+
     /// A page's saved view (the current page: the live camera).
     func cameraForPage(_ i: Int) -> Camera { i == pageIndex || !pageCameras.indices.contains(i) ? camera : pageCameras[i] }
 

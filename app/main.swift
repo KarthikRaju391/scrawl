@@ -162,7 +162,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.canvas.changing("toolbar") { self.canvas.tools = s }; self.updateBanner()
         }
         tb.onMode = { [weak self] i in self?.apply(i, from: "toolbar") }
-        tb.onUndo = { [weak self] in self?.tips.undoByKeyOrToolbar(inDrawMode: self?.canvas.drawMode ?? false); self?.usage.record("undo", ["source": "toolbar"]); self?.canvas.undo() }
+        tb.onUndo = { [weak self] in
+            guard let self, !self.undoPageDelete() else { return }
+            self.tips.undoByKeyOrToolbar(inDrawMode: self.canvas.drawMode); self.usage.record("undo", ["source": "toolbar"]); self.canvas.undo()
+        }
         tb.onRedo = { [weak self] in self?.usage.record("redo", ["source": "toolbar"]); self?.canvas.redo() }
         tb.onPage = { [weak self] d in self?.page(d) }
         tb.onGallery = { [weak self] in self?.toggleGallery() }
@@ -380,6 +383,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let plainOrShift = e.modifierFlags.intersection([.command, .control, .option]).isEmpty
         if galleryShown, let a = arrow, plainOrShift { gallery?.moveSelection(dx: a.0, dy: a.1); return true }
         if galleryShown, e.keyCode == 36 || e.keyCode == 76 || e.keyCode == 49 { openSelectedTile(); return true }   // Return, Enter, Space
+        if galleryShown, e.keyCode == 51 || e.keyCode == 117, plainOrShift, let g = gallery, g.selected >= 0, g.selected < canvas.pages.count {   // Delete, ⌦
+            deletePage(g.selected); return true
+        }
         if !galleryShown, let a = arrow, plainOrShift {
             canvas.panByArrow(dx: a.0, dy: a.1, screen: e.modifierFlags.contains(.shift)); return true
         }
@@ -437,6 +443,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private(set) var lastOtherTool: ToolKind?
     let tips = Tips()
     let usageState = UsageState()
+    /// Pages deleted since the last ink change: ⌘Z puts them back, newest first.
+    var deletedPages: [CanvasView.DeletedPage] = []
     var robot: AnyObject?   // the robot user's hook (Robot.swift, dev builds only)
     func noteTool(_ t: ToolKind) { if t != .pen { lastOtherTool = t } }
 
@@ -597,7 +605,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: menu
 
-    @objc func undo() { tips.undoByKeyOrToolbar(inDrawMode: canvas.drawMode); usage.record("undo", ["source": "key"]); canvas.undo() }
+    @objc func undo() {
+        if undoPageDelete() { return }
+        tips.undoByKeyOrToolbar(inDrawMode: canvas.drawMode); usage.record("undo", ["source": "key"]); canvas.undo()
+    }
     @objc func redoAction() { usage.record("redo", ["source": "key"]); canvas.redo() }
     @objc func clearPage() { canvas.clearPage() }
     @objc func resetZoom() { canvas.resetZoom() }
@@ -625,6 +636,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func canvasAct(_ name: String, _ extra: [String: Any]) {
         usageAct(name, extra)
+        if ["commit", "scratchOut", "erase", "clear", "newPage"].contains(name) { deletedPages = [] }   // ⌘Z is for the ink again
         switch name {
         case "gestureUndo": tips.gestureUndo(); practiceTick(.undo); Haptics.tick()
         case "gestureRedo", "scrubStep": Haptics.tick()

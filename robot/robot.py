@@ -22,7 +22,7 @@ import argparse, glob, html, json, math, os, random, shutil, subprocess, sys, ti
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEY = {"a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7, "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14,
        "r": 15, "y": 16, "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "]": 30, "o": 31, "u": 32, "[": 33,
-       "i": 34, "p": 35, "return": 36, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46, "space": 49, "esc": 53,
+       "i": 34, "p": 35, "return": 36, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46, "space": 49, "delete": 51, "esc": 53,
        "left": 123, "right": 124, "down": 125, "up": 126}
 SENTENCE = "the quick brown fox jumps over the lazy dog"
 
@@ -913,6 +913,61 @@ def run_scenarios(app, rep, only, hand):
         app.quit(); app.launch()
         ev2 = [e["event"] for e in events() if e.get("session") == sess2]
         rep.check(not ({"draw_mode", "first_stroke", "strokes", "session_end"} & set(ev2)), "turned off: nothing after that point is written", f"events from that session: {ev2}")
+
+    @scenario("delete-page", "Delete pages: the Delete key on the overview's highlighted tile, the tile's context menu, and Edit › Delete Page on the open page. Undo brings a deleted page back with its ink; deleting the last page leaves one blank page; the deletion survives a relaunch.")
+    def _():
+        ensure(app, "draw", False, "d")
+        if app.state()["gallery"] >= 0: app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+        cid = 11000
+        base = app.state()["pages"]
+        for w in ["one", "two", "three"]:
+            app.press("n"); ensure(app, "draw", True, "d")
+            st = app.state(); pad_w, pad_h = st["padMM"]
+            fr, cid = hand.frames(hand.word(w, pad_w * 0.3, pad_h * 0.6, hand.roman), cid); app.touch(fr)
+            ensure(app, "draw", False, "d")
+        s0 = app.state(); n = s0["pages"]; spp = s0["strokesPerPage"]
+        two = n - 2   # the page with "two"
+        app.press("g", until=lambda s: s["gallery"] >= 0, wait=3)
+        while app.state()["gallery"] > two: app.press("left")
+        time.sleep(0.3)
+        rep.shot(app, "before: 'two' highlighted")
+        app.key("delete"); time.sleep(0.6)
+        s1 = app.state()
+        rep.check(s1["pages"] == n - 1 and s1["strokesPerPage"] == spp[:two] + spp[two + 1:], "Delete on the highlighted tile deletes that page", f"{n} -> {s1['pages']} pages")
+        rep.check(s1["gallery"] == min(two, s1["pages"] - 1), "the highlight moves to the next page", f"selected {s1['gallery']}")
+        rep.check("Undo" in s1.get("toast", "") or "⌘Z" in s1.get("toast", ""), "a note says how to undo (no confirm dialog)", s1.get("toast", ""))
+        rep.shot(app, "after Delete: page gone, undo note")
+        app.cmd({"cmd": "menu", "action": "undo"}); time.sleep(0.5)
+        s2 = app.state()
+        rep.check(s2["pages"] == n and s2["strokesPerPage"] == spp, "⌘Z brings it back, ink and all, in its place", f"{s1['pages']} -> {s2['pages']} pages")
+        r = app.cmd({"cmd": "tileMenu", "index": two})
+        time.sleep(0.5); s3 = app.state()
+        rep.check("Delete Page" in (r.get("items") or []) and s3["pages"] == n - 1, "the tile's context menu has Delete Page, and it works", f"menu {r.get('items')}, pages {s3['pages']}")
+        app.cmd({"cmd": "menu", "action": "undo"}); time.sleep(0.4)
+        app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+        # The open page.
+        cur = app.state()["page"]
+        app.cmd({"cmd": "menu", "action": "deletePageAction"}); time.sleep(0.5)
+        s4 = app.state()
+        rep.check(s4["pages"] == n - 1 and s4["page"] == min(cur, s4["pages"] - 1), "Edit › Delete Page deletes the open page and shows the next", f"page {cur + 1} of {n} -> page {s4['page'] + 1} of {s4['pages']}")
+        rep.check(s4.get("pageArrows") == [s4["page"] > 0, s4["page"] < s4["pages"] - 1], "the page arrows dim right away", str(s4.get("pageArrows")))
+        app.cmd({"cmd": "menu", "action": "undo"}); time.sleep(0.4)
+        # Down to the last page: one blank page stays.
+        before_all = app.state()["strokesPerPage"]
+        k = len(before_all)
+        for _ in range(k): app.cmd({"cmd": "menu", "action": "deletePageAction"}); time.sleep(0.15)
+        s5 = app.state()
+        rep.check(s5["pages"] == 1 and s5["strokes"] == 0, "deleting the last page leaves one blank page", f"{s5['pages']} page, {s5['strokes']} strokes")
+        rep.shot(app, "every page deleted: one blank page")
+        for _ in range(k): app.cmd({"cmd": "menu", "action": "undo"}); time.sleep(0.15)
+        s6 = app.state()
+        rep.check(s6["strokesPerPage"] == before_all, "undoing each delete brings the whole notebook back, in order", f"{before_all} -> {s6['strokesPerPage']}")
+        # Then delete one for real and check it stays deleted after a relaunch.
+        app.cmd({"cmd": "menu", "action": "deletePageAction"}); time.sleep(0.4)
+        s6 = app.state()
+        app.quit(); app.launch()
+        s7 = app.state()
+        rep.check(s7["strokesPerPage"] == s6["strokesPerPage"], "the result survives a relaunch", f"{s6['strokesPerPage']} -> {s7['strokesPerPage']}")
 
     @scenario("quit-relaunch", "Quit, start again: every page and stroke is back, on the same page.")
     def _():

@@ -131,6 +131,18 @@ final class GalleryView: NSView {
     let search = NSSearchField()
     var query = "" { didSet { if query != oldValue { applyQuery() } } }
     var onSearchReturn: (() -> Void)?
+    var onDelete: ((Int) -> Void)?
+    /// A tile's context menu (Control-click or right-click): Open, Delete Page.
+    func tileMenu(_ i: Int) -> NSMenu? {
+        guard i < pages.count else { return nil }
+        let m = NSMenu()
+        let open = NSMenuItem(title: "Open", action: #selector(menuOpen(_:)), keyEquivalent: ""); open.tag = i; open.target = self
+        let del = NSMenuItem(title: "Delete Page", action: #selector(menuDelete(_:)), keyEquivalent: ""); del.tag = i; del.target = self
+        m.addItem(open); m.addItem(.separator()); m.addItem(del)
+        return m
+    }
+    @objc private func menuOpen(_ i: NSMenuItem) { clicked(i.tag) }
+    @objc private func menuDelete(_ i: NSMenuItem) { onDelete?(i.tag) }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -331,6 +343,11 @@ final class GalleryView: NSView {
             addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseMoved, .activeAlways, .inVisibleRect], owner: self))
         }
         override func mouseMoved(with e: NSEvent) { gallery?.hovered(gallery?.cellIndex(at: convert(e.locationInWindow, from: nil))) }
+        override func menu(for event: NSEvent) -> NSMenu? {
+            guard let g = gallery, let i = g.cellIndex(at: convert(event.locationInWindow, from: nil)) else { return nil }
+            g.selected = i; needsDisplay = true
+            return g.tileMenu(i)
+        }
     }
 }
 
