@@ -556,7 +556,7 @@ def run_scenarios(app, rep, only, hand):
         if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
         st = app.state()
         tips = st.get("toolbarTips") or []
-        rep.check(len(tips) > 0 and all(tips) and len(tips) <= 14, "every toolbar button has a tooltip; 14 buttons or fewer", f"{sum(1 for t in tips if t)}/{len(tips)} buttons")
+        rep.check(len(tips) > 0 and all(tips) and len(tips) <= 15, "every toolbar button has a tooltip; 15 buttons or fewer (with the zoom)", f"{sum(1 for t in tips if t)}/{len(tips)} buttons")
         rep.check(bool(tips) and tips[0].startswith("Draw"), "Draw is the first button", tips[0] if tips else "")
         withkey = sum(1 for t in tips if "(" in t)
         rep.check(withkey >= len(tips) - 1, "tooltips name the shortcut", f"{withkey}/{len(tips)}")
@@ -700,6 +700,37 @@ def run_scenarios(app, rep, only, hand):
         rep.check(app.state().get("pasteboardPNG", 0) > 1000, "Edit › Copy Page as Image puts a PNG on the pasteboard", f"{app.state().get('pasteboardPNG', 0)} bytes")
         app.cmd({"cmd": "menu", "action": "sharePageAction"}); time.sleep(0.3)
         rep.check(app.state().get("shareFile") == "ok", "File › Share Page… shares the page as an image file", app.state().get("shareFile", ""))
+
+    @scenario("zoom-percent", "The zoom as a percentage: a badge while pinching, always in the capsule (draw mode) and the toolbar; a pinch ending near 300% snaps to exactly 300%; the toolbar's zoom menu has presets and a field to type one; a page keeps its zoom after a relaunch.")
+    def _():
+        ensure(app, "draw", False, "d")
+        app.press("n"); app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        ensure(app, "draw", True, "d")
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        r = app.touch(two_finger(pad_w / 2, pad_h * 0.5, 15, 15 * 2.94, dur=0.7), settle=0.15)   # ends at ~294%
+        s1 = app.state()
+        rep.check(abs(s1["view"]["zoom"] - 3.0) < 1e-6, "a pinch ending near 300% snaps to exactly 300%", f"zoom {s1['view']['zoom']:.4f}")
+        rep.check(s1.get("zoomBadge") == "300%", "a zoom badge shows while pinching", repr(s1.get("zoomBadge")))
+        rep.shot(app, "pinching: the zoom badge")
+        rep.check("300%" in (s1.get("chrome") or {}).get("capsule", ""), "the capsule always shows the zoom in draw mode", (s1.get("chrome") or {}).get("capsule", ""))
+        time.sleep(2.0)
+        rep.check(app.state().get("zoomBadge") == "", "the badge fades after the pinch", "")
+        app.touch(two_finger(pad_w / 2, pad_h * 0.5, 20, 23.5, dur=0.5), settle=0.15)
+        ensure(app, "draw", False, "d")
+        s2 = app.state()
+        rep.check(s2.get("toolbarZoom", "").endswith("%"), "the toolbar shows the zoom outside draw mode", repr(s2.get("toolbarZoom")))
+        rep.shot(app, "the zoom in the toolbar")
+        m = app.cmd({"cmd": "zoomMenu", "pick": "200%"}); time.sleep(0.5)
+        s3 = app.state()
+        rep.check("200%" in (m.get("items") or []) and abs(s3["view"]["zoom"] - 2.0) < 1e-6 and s3.get("toolbarZoom") == "200%",
+                  "the toolbar's zoom menu: picking 200% zooms to 200%", f"items {m.get('items')}, zoom {s3['view']['zoom']}")
+        app.cmd({"cmd": "zoomMenu", "type": "150"}); time.sleep(0.5)
+        s4 = app.state()
+        rep.check(abs(s4["view"]["zoom"] - 1.5) < 1e-6, "typing 150 in the menu's field zooms to 150%", f"zoom {s4['view']['zoom']}")
+        page = s4["page"]
+        app.quit(); app.launch()
+        s5 = app.state()
+        rep.check(s5["page"] == page and abs(s5["view"]["zoom"] - 1.5) < 1e-6 and s5.get("toolbarZoom") == "150%", "after a relaunch the page is at the same zoom, and says so", f"zoom {s5['view']['zoom']}, toolbar {s5.get('toolbarZoom')}")
 
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():

@@ -74,6 +74,10 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   writing never shows it. Point at it to keep it, then click or drag to move there (outside draw mode).
   View › Page Map turns it off.
 - **Zoom lock (L)** keeps the zoom fixed while two fingers still pan.
+- **Zoom percentage:** 100% is the page's width filling the view. The toolbar (and the capsule in draw mode)
+  always shows it, a badge shows it while you pinch, and a pinch that ends within 4% of 100, 150, 200, 250,
+  300, 400, 500, 600 or 800% lands on it exactly. Click the toolbar's zoom for those presets, the whole page,
+  or to type any zoom. Each page keeps its zoom, also after a relaunch.
 - **Arrow keys** pan the page by a tenth of the view, and Shift+arrows by a whole screen. They stop at the
   page's sides and top; at zoom 1, where the page already fills the width, ← → do nothing and ↑ ↓ scroll.
   In the pages overview the arrows move the blue selection ring. ⌘[ and ⌘] still change pages.

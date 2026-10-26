@@ -874,7 +874,7 @@ final class CanvasView: MTKView {
             needsRender = true
             return
         }
-        if counted.isEmpty { tapViewAnchor = nil; pinchedThisTouch = false }
+        if counted.isEmpty { tapViewAnchor = nil; if pinchedThisTouch { snapZoomAfterPinch() }; pinchedThisTouch = false }
         gestures.frame(cs, t: arrival)
         needsRender = true
     }
@@ -965,6 +965,7 @@ final class CanvasView: MTKView {
             c.center = CGPoint(x: anchor.x - (p.x - r.minX) * k + v.width / 2, y: anchor.y - (p.y - r.minY) * k + v.height / 2)
             c.clamp(); camera = c
         }
+        if e.phase == .ended { snapZoomAfterPinch() }
         needsRender = true
     }
 
@@ -1343,6 +1344,29 @@ final class CanvasView: MTKView {
 
     func setZoomForTest(settingsWritingZoom: Bool) {
         changing("test") { camera.zoom = 3; camera.home(); camera.clamp() }; needsRender = true
+    }
+
+    // MARK: zoom as a percentage (100% = the page's width fills the view)
+
+    static let zoomPresets: [Double] = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8]
+    /// "300%": rounded to 10% (5% under 200%), so it reads cleanly and is easy to pick again.
+    static func zoomText(_ z: Double) -> String {
+        let p = z * 100, step = p < 200 ? 5.0 : 10.0
+        return "\(Int((p / step).rounded() * step))%"
+    }
+    /// Zoom to `z`, keeping the middle of the view where it is (the zoom menu).
+    func setZoom(_ z: Double, src: String = "zoomMenu") {
+        guard !tools.zoomLocked else { NSSound.beep(); return }
+        var t = camera; t.zoom = min(max(z, 1), Camera.maxZoom); t.clamp()
+        animateCamera(to: t, src: src, duration: 0.2)
+        finishSlideSoon()
+    }
+    private func finishSlideSoon() { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.finishSlide() } }
+    /// A pinch that ends within 4% of a preset lands on it (297% -> 300%), so a zoom you like is easy to hit again.
+    func snapZoomAfterPinch() {
+        guard !tools.zoomLocked, let p = Self.zoomPresets.first(where: { abs(camera.zoom - $0) / $0 < 0.04 }), abs(camera.zoom - p) > 1e-9 else { return }
+        changing("zoomSnap") { var c = camera; c.zoom = p; c.clamp(); camera = c }
+        needsRender = true
     }
 
     func resetZoom() {

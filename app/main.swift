@@ -18,6 +18,7 @@ final class ContainerView: NSView {
     let drawFrame = DrawModeFrame(frame: .zero)
     let practice = PracticeView()
     let pendingMove = PendingMoveView()
+    let zoomBadge = PillLabel()
 
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
@@ -52,6 +53,8 @@ final class ContainerView: NSView {
         drawFrame.isHidden = true; addSubview(drawFrame)
         practice.isHidden = true; addSubview(practice)
         pendingMove.isHidden = true; addSubview(pendingMove)
+        zoomBadge.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold); zoomBadge.textColor = .white
+        zoomBadge.fillColor = NSColor(white: 0.15, alpha: 0.8); zoomBadge.isHidden = true; addSubview(zoomBadge)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -75,6 +78,9 @@ final class ContainerView: NSView {
         capsule.isHidden = !canvas.drawMode; drawFrame.isHidden = !canvas.drawMode
         capsule.frame = CGRect(x: bounds.midX - capsule.fittingWidth / 2, y: 14, width: capsule.fittingWidth, height: 26)
         drawFrame.frame = bounds
+        let bw = zoomBadge.fittingWidth
+        zoomBadge.frame = CGRect(x: bounds.width - max(bw, 56) - 12 - (PageMapView.width - max(bw, 56)) / 2, y: (pageMap.isHidden ? bounds.height - 12 : pageMap.frame.minY - 6) - 24,
+                                 width: max(bw, 56), height: 24)
         let ps = practice.fittingSize
         practice.frame = CGRect(x: 16, y: bounds.height - ps.height - 16, width: ps.width, height: ps.height)
         // Pan: at the right edge; next line: low on the left, where the line will start.
@@ -172,7 +178,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onGallery = { [weak self] in self?.toggleGallery() }
         cv.onStatus = { [weak self] in self?.updateBanner() }
         cv.onDocChanged = { [weak self] in self?.updateUndoState(); self?.container.pageMap.refresh() }
-        cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source) }
+        cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source); self?.zoomChanged(source: source) }
+        tb.onZoomMenu = { [weak self] view, r in self?.zoomMenu().popUp(positioning: nil, at: CGPoint(x: r.minX, y: r.maxY + 4), in: view) }
         cv.onTouching = { [weak self] down in if !down { self?.container.pageMap.refresh() } }
         cv.onTapCommand = { [weak self] text in self?.updateUndoState(); self?.showToast(text) }
         tips.show = { [weak self] text in self?.showToast(text, seconds: 4) }
@@ -361,7 +368,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         container.hint.isHidden = !container.banner.isHidden
         let t = canvas.tools
         container.capsule.info = StatusCapsule.Info(tool: t.tool, color: t.tool == .eraser ? .gray : ToolState.colors[t.colorIndex[t.tool] ?? 0],
-                                                    writing: canvas.writingMode, locked: t.zoomLocked, page: canvas.pageIndex + 1, pages: canvas.pages.count)
+                                                    writing: canvas.writingMode, locked: t.zoomLocked, page: canvas.pageIndex + 1, pages: canvas.pages.count,
+                                                    zoom: CanvasView.zoomText(canvas.camera.zoom))
+        container.toolbar.zoomText = CanvasView.zoomText(canvas.camera.zoom)
         container.needsLayout = true
     }
 
@@ -437,6 +446,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let usageState = UsageState()
     /// Pages deleted since the last ink change: ⌘Z puts them back, newest first.
     var deletedPages: [CanvasView.DeletedPage] = []
+    var lastBadgeZoom = 1.0
+    var badgeFade: DispatchWorkItem?
+    weak var zoomField: NSTextField?
     var robot: AnyObject?   // the robot user's hook (Robot.swift, dev builds only)
     func noteTool(_ t: ToolKind) { if t != .pen { lastOtherTool = t } }
 
@@ -624,6 +636,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsWindow.refresh()
         if Launch.background { settingsWindow.window?.orderFront(nil) } else { settingsWindow.showWindow(nil); settingsWindow.window?.makeKeyAndOrderFront(nil) }
     }
+    // MARK: zoom as a percentage
+
+    /// The view moved: the toolbar and capsule follow the zoom; a zoom you changed by hand shows a badge
+    /// (by the page map) for a moment.
+    func zoomChanged(source: String) {
+        let z = canvas.camera.zoom, text = CanvasView.zoomText(z)
+        container.toolbar.zoomText = text
+        if var i = container.capsule.info, i.zoom != text { i.zoom = text; container.capsule.info = i; container.needsLayout = true }
+        guard abs(z - lastBadgeZoom) > 1e-9 else { return }
+        lastBadgeZoom = z
+        guard ["pinch", "magnify", "zoomSnap", "zoomMenu"].contains(source) else { return }
+        let b = container.zoomBadge
+        b.stringValue = text; b.alphaValue = 1; b.isHidden = false; container.needsLayout = true
+        badgeFade?.cancel()
+        let w = DispatchWorkItem { [weak b] in NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; b?.animator().alphaValue = 0 }, completionHandler: { b?.isHidden = true }) }
+        badgeFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + PageMapView.holdSeconds, execute: w)
+    }
+    /// The toolbar's zoom menu: presets, the whole page, and a field to type any zoom.
+    func zoomMenu() -> NSMenu {
+        let m = NSMenu()
+        for (k, z) in CanvasView.zoomPresets.enumerated() {
+            let i = NSMenuItem(title: CanvasView.zoomText(z), action: #selector(zoomPresetPicked(_:)), keyEquivalent: ""); i.tag = k; i.target = self
+            i.state = abs(canvas.camera.zoom - z) < 1e-6 ? .on : .off
+            m.addItem(i)
+        }
+        m.addItem(.separator())
+        let whole = NSMenuItem(title: "Whole Page  (⌘0)", action: #selector(resetZoom), keyEquivalent: ""); whole.target = self; m.addItem(whole)
+        m.addItem(.separator())
+        let field = NSTextField(frame: CGRect(x: 16, y: 2, width: 120, height: 22))
+        field.placeholderString = "Type a zoom, e.g. 175"
+        field.target = self; field.action = #selector(zoomTyped(_:))
+        let holder = NSView(frame: CGRect(x: 0, y: 0, width: 152, height: 26)); holder.addSubview(field)
+        let fi = NSMenuItem(); fi.view = holder; m.addItem(fi)
+        zoomField = field
+        return m
+    }
+    @objc func zoomPresetPicked(_ i: NSMenuItem) { canvas.setZoom(CanvasView.zoomPresets[i.tag]); usage.record("zoom_preset", ["zoom": CanvasView.zoomPresets[i.tag]]) }
+    @objc func zoomTyped(_ f: NSTextField) {
+        let t = f.stringValue.replacingOccurrences(of: "%", with: "").trimmingCharacters(in: .whitespaces)
+        guard let v = Double(t), v > 0 else { NSSound.beep(); return }
+        canvas.setZoom(v / 100); usage.record("zoom_typed")
+        f.enclosingMenuItem?.menu?.cancelTracking()
+    }
+    /// Test hook: the zoom menu's items; pick one by title, or type into its field.
+    func robotZoomMenu(pick: String?, type: String?) -> [String: Any] {
+        let m = zoomMenu()
+        if let pick, let i = m.items.first(where: { $0.title == pick }), let a = i.action { NSApp.sendAction(a, to: i.target, from: i) }
+        if let type, let f = zoomField { f.stringValue = type; zoomTyped(f) }
+        return ["items": m.items.filter { $0.view == nil && !$0.isSeparatorItem }.map(\.title) + (zoomField != nil ? ["(type a zoom)"] : [])]
+    }
+
     // MARK: tips and the practice page (Tips.swift)
 
     func canvasAct(_ name: String, _ extra: [String: Any]) {

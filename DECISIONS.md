@@ -99,3 +99,9 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Fades (0.3 s) 1.2 s after the last hand move. It stays while the pointer is over it, so it can still be clicked outside draw mode.
 - The old "fade to 35% while a finger is down" is gone: the map is now only up while you navigate, which is when you want to see it.
 - Replay of the recorded sessions: 4,430 writing moves show it 0 times.
+
+## Zoom percentage
+- 100% = the page's width fills the view (the existing zoom 1). Shown rounded to 5% under 200% and 10% above, so it reads cleanly.
+- Persistent spot: the toolbar (a zoom button between the zoom lock and undo, which brings the toolbar to 15 buttons) and the draw-mode capsule. While pinching: a badge under the page map, fading with it.
+- Snap: a pinch (or trackpad magnify outside draw mode) that ends within 4% of a preset (100, 150, 200, 250, 300, 400, 500, 600, 800%) lands on it, so the same zoom is easy to hit again. Not while the zoom is locked.
+- Bonus done: clicking the toolbar's zoom opens the presets, Whole Page, and a field to type any zoom (e.g. 175). Each page already saves its zoom, so a relaunch comes back at the same zoom.

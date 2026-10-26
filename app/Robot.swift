@@ -152,6 +152,10 @@ final class Robot {
             var r: [String: Any] = ["error": "no tile menu"]
             r = app.robotTileMenu(c["index"] as? Int ?? 0)   // robot:needs func robotTileMenu
             done(r)
+        case "zoomMenu":   // the toolbar's zoom menu: its items; then pick `pick` or type `type` (percent) in its field
+            var r: [String: Any] = ["error": "no zoom menu"]
+            r = app.robotZoomMenu(pick: c["pick"] as? String, type: c["type"] as? String)   // robot:needs func robotZoomMenu
+            done(r)
         case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
@@ -270,10 +274,12 @@ final class Robot {
         let b = app.container.banner
         var chrome: [String: Any] = ["banner": (!b.isHidden && b.alphaValue > 0.01) ? b.stringValue : "", "bannerArea": (!b.isHidden && b.alphaValue > 0.01) ? b.frame.width * b.frame.height : 0,
                                      "toolbarArea": tb.isHidden ? 0 : 15 * 44 * 44.0]
-        chrome["capsule"] = app.container.capsule.isHidden ? "" : "\(app.container.capsule.info.map { "\($0.tool.title)\($0.writing ? " writing" : "")\($0.locked ? " locked" : "") \($0.page)/\($0.pages)" } ?? "")"   // robot:needs class StatusCapsule
+        chrome["capsule"] = app.container.capsule.isHidden ? "" : "\(app.container.capsule.info.map { "\($0.tool.title)\($0.writing ? " writing" : "")\($0.locked ? " locked" : "") \($0.zoom) \($0.page)/\($0.pages)" } ?? "")"   // robot:needs class StatusCapsule
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        s["zoomBadge"] = app.container.zoomBadge.isHidden || app.container.zoomBadge.alphaValue < 0.05 ? "" : app.container.zoomBadge.stringValue   // robot:needs let zoomBadge
+        s["toolbarZoom"] = tb.zoomText   // robot:needs var zoomText
         s["pageArrows"] = [tb.canGoBack, tb.canGoForward]
         s["analyticsSession"] = Analytics.shared.context.sessionID   // robot:needs final class Analytics
         if let g = app.gallery, app.galleryShown {   // robot:needs class PageTitles

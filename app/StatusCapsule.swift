@@ -4,7 +4,7 @@
 import AppKit
 
 final class StatusCapsule: NSView {
-    struct Info: Equatable { var tool: ToolKind; var color: NSColor; var writing: Bool; var locked: Bool; var page: Int; var pages: Int }
+    struct Info: Equatable { var tool: ToolKind; var color: NSColor; var writing: Bool; var locked: Bool; var page: Int; var pages: Int; var zoom = "" }
     var info: Info? { didSet { if info != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } } }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }   // shows state only; clicks go through
 
@@ -13,6 +13,7 @@ final class StatusCapsule: NSView {
         var p: [(NSImage?, String)] = [(nil, i.tool.title)]
         if i.writing { p.append((NSImage(systemSymbolName: "character.cursor.ibeam", accessibilityDescription: "Writing"), "Writing")) }
         if i.locked { p.append((NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Zoom locked"), "")) }
+        if !i.zoom.isEmpty { p.append((nil, i.zoom)) }
         p.append((nil, "\(i.page)/\(i.pages)"))
         return p
     }

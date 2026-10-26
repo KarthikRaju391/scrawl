@@ -4,7 +4,7 @@
 import AppKit
 
 final class ToolbarView: NSView {
-    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, zoomLock, draw, gallery, prevPage, nextPage, newPage }
+    enum Item: Equatable { case undo, redo, tool(ToolKind), background, writing, zoomLock, zoom, draw, gallery, prevPage, nextPage, newPage }
     var state = ToolState() { didSet { needsDisplay = true; panel.state = state; panel.needsDisplay = true } }
     var drawMode = false { didSet { needsDisplay = true } }
     var writingMode = false { didSet { needsDisplay = true } }
@@ -27,15 +27,18 @@ final class ToolbarView: NSView {
 
     // Grouped by what you do: Draw first (the main action, labelled), then the tools and paper, writing and
     // the zoom lock, undo/redo, and pages. The tuning sliders live in Settings (⌘,).
-    private let items: [Item] = [.draw, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .zoomLock, .undo, .redo, .gallery, .prevPage, .nextPage, .newPage]
-    private let separatorsAfter = [0, 5, 7, 9]
+    private let items: [Item] = [.draw, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .zoomLock, .zoom, .undo, .redo, .gallery, .prevPage, .nextPage, .newPage]
+    private let separatorsAfter = [0, 5, 8, 10]
+    /// The zoom as text ("300%"); a click opens presets and a field to type one.
+    var zoomText = "100%" { didSet { if zoomText != oldValue { needsDisplay = true } } }
+    var onZoomMenu: ((NSView, CGRect) -> Void)?
     /// Button width: 44 pt, smaller in a narrow window so the whole toolbar fits (down to 28 pt). Draw is
     /// two buttons wide (icon and label).
     private var cell: CGFloat {
         let fixed = 2 * 14 + CGFloat(separatorsAfter.count) * 12 + 16
-        return min(44, max(28, (bounds.width - fixed) / CGFloat(items.count + 1)))
+        return min(44, max(28, (bounds.width - fixed) / CGFloat(items.count + 2)))
     }
-    private func width(_ item: Item) -> CGFloat { item == .draw ? cell * 2 : cell }
+    private func width(_ item: Item) -> CGFloat { item == .draw || item == .zoom ? cell * (item == .draw ? 2 : 1.6) : cell }
     static let height: CGFloat = 56
 
     override init(frame: NSRect) {
@@ -71,6 +74,7 @@ final class ToolbarView: NSView {
         case .background: return "square.grid.3x3"
         case .writing: return "character.cursor.ibeam"
         case .zoomLock: return state.zoomLocked ? "lock.fill" : "lock.open"
+        case .zoom: return "plus.magnifyingglass"
         case .draw: return drawMode ? "hand.draw.fill" : "hand.draw"
         case .prevPage: return "chevron.left"
         case .nextPage: return "chevron.right"
@@ -99,6 +103,12 @@ final class ToolbarView: NSView {
             default: selected = false
             }
             if tint.brightnessComponent > 0.92 && tint.saturationComponent < 0.1 { tint = NSColor(white: 0.6, alpha: 1) }  // white pen: keep icon visible
+            if item == .zoom {   // text, not an icon
+                let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium), .foregroundColor: tint]
+                let t = zoomText as NSString, sz = t.size(withAttributes: attrs)
+                t.draw(at: CGPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2), withAttributes: attrs)
+                continue
+            }
             if item == .draw {
                 // A labelled button: blue when off (the thing to press), filled when on.
                 let pill = NSBezierPath(roundedRect: r.insetBy(dx: 3, dy: 7), xRadius: (r.height - 14) / 2, yRadius: (r.height - 14) / 2)
@@ -154,6 +164,7 @@ final class ToolbarView: NSView {
         case .draw: onMode?(.draw)
         case .writing: onMode?(.writing)
         case .zoomLock: onMode?(.zoomLock)
+        case .zoom: onZoomMenu?(self, rect(of: i))
         case .prevPage: onPage?(-1)
         case .nextPage: onPage?(1)
         case .newPage: onPage?(0)
@@ -207,6 +218,7 @@ final class ToolbarView: NSView {
         case .background: return "Paper: plain, grid, dots or lines"
         case .writing: return "Writing mode (W): pans along the line, then the next line · ⌃: line width and panning"
         case .zoomLock: return state.zoomLocked ? "Zoom locked (L): two fingers only pan" : "Lock the zoom (L)"
+        case .zoom: return "Zoom \(zoomText) (100% = the page's width): click for presets or type one"
         case .undo: return "Undo (⌘Z, or a two-finger double tap)"
         case .redo: return "Redo (⇧⌘Z, or a three-finger double tap)"
         case .gallery: return "Pages overview (G)"
