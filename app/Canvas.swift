@@ -284,12 +284,15 @@ final class GestureEngine {
         mode = .idle; palm.removeAll(); edgeIgnored.removeAll(); navPrev = nil; drewIds.removeAll(); seen.removeAll()
     }
 
-    /// Arm-on-click: false while disarmed, so a finger only aims (hovers) and never inks.
+    /// Click to draw: false unless a click just happened, so a finger only aims (hovers) and never inks by touch.
     var canInk: () -> Bool = { true }
-    /// These contacts never draw, pan or zoom until they lift (the finger that clicked to arm).
-    func suppressUntilLifted(_ ids: Set<Int32>) {
-        palm.formUnion(ids); seen.formUnion(ids)
-        if case let .hover(id) = mode, ids.contains(id) { mode = .waitLift }
+    private var aiming: Contact?, lastT = 0.0
+    /// Click to draw: the click is pen-down for the finger that's aiming. The stroke starts where it is now and
+    /// goes on (the click released or not) until it lifts. False if no single finger is aiming.
+    @discardableResult func beginNow() -> Bool {
+        guard case let .hover(id) = mode, let f = aiming, f.id == id else { return false }
+        mode = .drawing(id, lastT); drewIds.insert(id); onBegin?(f, lastT)
+        return true
     }
 
     /// Contacts already on the pad when draw mode starts (a resting palm) never draw.
@@ -311,6 +314,7 @@ final class GestureEngine {
             for c in down where c.major > settings.palmMajor || c.size > settings.palmSize || isPalm(c) { palm.insert(c.id) }
         }
         let fingers = down.filter { !palm.contains($0.id) && !edgeIgnored.contains($0.id) }.sorted { $0.id < $1.id }
+        lastT = t; aiming = fingers.count == 1 ? fingers[0] : nil
 
         switch mode {
         case .idle:
@@ -469,50 +473,22 @@ final class CanvasView: MTKView {
     private var needsRender = true
     private var link: CADisplayLink?
     private(set) var settings = Settings()
-    // MARK: arm on click (Settings): disarmed, a finger only aims; a click arms the tool; it disarms after
-    // `armTimeout` seconds without writing, counted from the last lift (or the click).
+    // MARK: click to draw (Settings): a touch only aims; a click is pen-down. The stroke starts where the finger
+    // is, goes on with the click released, and ends when the finger lifts. Nothing stays armed, so no timeout.
 
-    nonisolated(unsafe) static var armOnClick = Launch.testing ? false : UserDefaults.standard.bool(forKey: "armOnClick")
-    nonisolated(unsafe) static var armTimeout: Double = {
-        let v = UserDefaults.standard.object(forKey: "armTimeout") as? Double ?? 3
-        return Launch.testing ? 3 : min(max(v, 2), 5)
-    }()
-    private(set) var armed = false
-    private var armActivityAt = 0.0
-    private var armTimer: Timer?
-    /// Seconds left before it disarms (the full timeout while a stroke is being drawn).
-    private var armRemaining: Double { builder != nil ? Self.armTimeout : Self.armTimeout - (CACurrentMediaTime() - armActivityAt) }
-    /// How strongly to show "armed": 1, fading to 0 over the last second; 0 when disarmed; nil when the feature is off.
-    var armIndicatorAlpha: Double? { Self.armOnClick ? (armed ? min(1, max(0, armRemaining)) : 0) : nil }
-    var onArmChange: (() -> Void)?
-
-    /// A click in draw mode: arm the current tool (pen or eraser). The finger that clicked doesn't draw: it's
-    /// ignored until it lifts, so aiming and clicking leave no dot or stray line.
-    func armByClick() {
-        guard drawMode, Self.armOnClick else { return }
-        armed = true; armActivityAt = CACurrentMediaTime()
-        gestures.suppressUntilLifted(downIds)
-        act("armed")
-        if armTimer == nil {
-            let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in self?.armTick() }
-            RunLoop.main.add(t, forMode: .common); armTimer = t
-        }
-        needsRender = true; onArmChange?()
+    nonisolated(unsafe) static var clickToDraw = Launch.testing ? false : UserDefaults.standard.bool(forKey: "clickToDraw")
+    /// When the last click came; the finger's first frame may arrive just after it.
+    private var clickAt = -1.0
+    func clickDown() {
+        guard drawMode, Self.clickToDraw, builder == nil else { return }
+        act("click")
+        if !gestures.beginNow() { clickAt = CACurrentMediaTime() }
     }
-    private func armTick() {
-        guard armed else { armTimer?.invalidate(); armTimer = nil; return }
-        if builder == nil && armRemaining <= 0 { disarm() } else { needsRender = true; onArmChange?() }
-    }
-    private func disarm() {
-        guard armed else { return }
-        armed = false; act("disarmed")
-        armTimer?.invalidate(); armTimer = nil
-        needsRender = true; onArmChange?()
-    }
+    /// The aim mark: a blue ring around the finger.
+    static let aimRingColor = SIMD4<Float>(0.10, 0.45, 0.91, 0.8)
 
     var drawMode = false {
         didSet {
-            if !drawMode { disarm() }
             if drawMode != oldValue { act("drawMode", ["on": drawMode]) }
             gestures.reset(); contacts = []; needsRender = true
             if drawMode { gestures.ignoreUntilLifted(downIds) }
@@ -998,8 +974,8 @@ final class CanvasView: MTKView {
     override func touchesEnded(with e: NSEvent) { nsTouchFrame(e) }
     override func touchesCancelled(with e: NSEvent) { nsTouchFrame(e) }
     // In draw mode physical clicks land on the frozen cursor over this view: swallow them.
-    override func mouseDown(with e: NSEvent) { if drawMode { armByClick() } else { super.mouseDown(with: e) } }
-    /// In draw mode a click arms (arm on click), even if it's the click that brings the window forward.
+    override func mouseDown(with e: NSEvent) { if drawMode { clickDown() } else { super.mouseDown(with: e) } }
+    /// In draw mode a click draws (click to draw), even if it's the click that brings the window forward.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { drawMode }
     // A two-finger tap is also the system's right-click; in draw mode it lands on the frozen pointer here.
     override func rightMouseDown(with e: NSEvent) { if !drawMode { super.rightMouseDown(with: e) } }
@@ -1057,7 +1033,7 @@ final class CanvasView: MTKView {
         }
         gestures.strokeLengthMM = { [weak self] in self?.builder?.lengthMM ?? 0 }
         gestures.onBegin = { [weak self] c, t in self?.beginStroke(c, t) }
-        gestures.canInk = { [weak self] in guard let self else { return true }; return !Self.armOnClick || self.armed }
+        gestures.canInk = { [weak self] in guard let self else { return true }; return !Self.clickToDraw || CACurrentMediaTime() - self.clickAt < 0.15 }
         gestures.onMove = { [weak self] c, t in self?.moveStroke(c, t) }
         gestures.onEnd = { [weak self] commit in self?.endStroke(commit) }
         gestures.onNavigate = { [weak self] prev, now, ratio in
@@ -1088,6 +1064,7 @@ final class CanvasView: MTKView {
     var nextStrokeIdForSave: Int { nextStrokeIdValue }
 
     private func beginStroke(_ c: Contact, _ t: Double) {
+        clickAt = -1
         finishSlide()
         strokeOffset = .zero; pendingSnap = nil; rawSamples = []
         if settings.rejoinSnap, tools.tool != .eraser, let l = lastLift,
@@ -1143,7 +1120,7 @@ final class CanvasView: MTKView {
     }
 
     private func endStroke(_ commit: Bool) {
-        defer { builder = nil; needsRender = true; if armed { armActivityAt = CACurrentMediaTime() } }
+        defer { builder = nil; needsRender = true }
         guard var b = builder else { return }
         b.finish()
         logger.end(committed: commit)
@@ -1354,14 +1331,7 @@ final class CanvasView: MTKView {
                     func pt(_ a: Double, _ rr: Double) -> SIMD2<Float> { SIMD2(Float(p.x + cos(a) * rr), Float(p.y + sin(a) * rr)) }
                     v += [pt(a0, r - w), pt(a0, r + w), pt(a1, r + w), pt(a0, r - w), pt(a1, r + w), pt(a1, r - w)]
                 }
-                var ringColor = SIMD4<Float>(0.10, 0.45, 0.91, 0.8)
-                if let a = armIndicatorAlpha {   // arm on click: the tool's colour when armed (fading out), grey when not
-                    if armed {
-                        let col = (tools.tool == .eraser ? NSColor.systemPink : tools.color).usingColorSpace(.sRGB)!
-                        ringColor = SIMD4(Float(col.redComponent), Float(col.greenComponent), Float(col.blueComponent), Float(0.25 + 0.7 * a))
-                    } else { ringColor = SIMD4(0.55, 0.57, 0.6, 0.6) }
-                }
-                items.append(.init(mesh: Mesh(), verts: v, color: premul(ringColor)))
+                items.append(.init(mesh: Mesh(), verts: v, color: premul(Self.aimRingColor)))
             }
         }
         let arrival = pendingArrival

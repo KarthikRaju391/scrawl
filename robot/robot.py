@@ -1341,80 +1341,87 @@ def run_scenarios(app, rep, only, hand):
         rep.check(ok, "after editing a page its thumbnail is up to date when the overview opens", f"{round((time.time() - t1) * 1000)} ms")
         app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
 
-    @scenario("arm-on-click", "Arm-on-click (Settings): disarmed, touching only aims; a click arms the pen, and then finger-down draws until the finger lifts; 3 s without writing disarms it. Two- and three-finger gestures never draw. The eraser works the same way. The finger that clicked doesn't draw.")
+    @scenario("click-to-draw", "Click to draw (Settings): a touch only aims (the blue aim mark); a click is pen-down: the stroke starts where the finger is, goes on with the click released, and ends when the finger lifts. Two- and three-finger gestures never draw. The eraser works the same way. No arm state, no timeout.")
     def _():
         ensure(app, "draw", False, "d")
         if app.state()["gallery"] >= 0: app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
         app.press("n"); ensure(app, "writing", False, "w")
         app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.4)
         sw = app.state().get("settingsSwitches") or []
-        ai = next((i for i, x in enumerate(sw) if x[0].lower().startswith("arm")), None)
-        rep.check(ai is not None, "Settings has an Arm-on-click switch", str([x[0] for x in sw]))
-        if ai is None: app.cmd({"cmd": "closeSettings"}); return
-        app.cmd({"cmd": "settingsSwitch", "index": ai, "on": True}); app.cmd({"cmd": "closeSettings"})
+        ci = next((i for i, x in enumerate(sw) if x[0].lower().startswith("click to draw")), None)
+        rep.check(ci is not None, "Settings has a Click to draw switch (off by default)", str([x[0] for x in sw]))
+        if ci is None: app.cmd({"cmd": "closeSettings"}); return
+        rep.check(not sw[ci][1], "the switch starts off", str(sw[ci]))
+        app.cmd({"cmd": "settingsSwitch", "index": ci, "on": True}); app.cmd({"cmd": "closeSettings"})
         ensure(app, "draw", True, "d")
         st = app.state(); pad_w, pad_h = st["padMM"]; n0 = st["strokes"]
+        rep.check(st["draw"], "in draw mode", "")
         cid = 16000
         def word(w, x, y):
             nonlocal cid
             fr, cid = hand.frames(hand.word(w, pad_w * x, pad_h * y, hand.roman), cid); app.touch(fr, settle=0.1)
+        def line(y, click_at=None, n=60, x0=0.25, fid=None):
+            """One finger sliding right; a trackpad click (down and straight up) at frame `click_at`. Returns pad points."""
+            nonlocal cid
+            cid += 1; f = fid or cid
+            pts = [(pad_w * x0 + i * 0.35, pad_h * y) for i in range(n)]
+            fr = [[0.008, [[f, x, yy, 40, 0.5, 7.5]]] for x, yy in pts]
+            if click_at is not None: fr[click_at] = fr[click_at] + ["click"]
+            app.touch(fr + [[0.008, []], [0.2, []]], settle=0.1)
+            return pts
         word("aim", 0.2, 0.7)
-        a = app.state()
-        rep.check(a["strokes"] == n0 and not a.get("armed"), "disarmed: touching only aims, nothing is drawn", f"{a['strokes'] - n0} strokes, armed {a.get('armed')}")
-        rep.check("click to arm" in (a.get("chrome") or {}).get("capsule", "").lower(), "the capsule says to click to arm", (a.get("chrome") or {}).get("capsule", ""))
-        time.sleep(2.2); rep.shot(app, "arm on click: disarmed, the capsule says 'Click to arm'")
-        app.cmd({"cmd": "canvasClick"}); time.sleep(0.1)
+        a = app.state(); cap = (a.get("chrome") or {}).get("capsule", "")
+        rep.check(a["strokes"] == n0, "a touch only aims: nothing is drawn", f"{a['strokes'] - n0} strokes")
+        rep.check("arm" not in cap.lower(), "no arm state in the capsule", cap)
+        rep.check(a.get("aimRing") == [0.10, 0.45, 0.91, 0.8], "the aim mark is the blue one from before", str(a.get("aimRing")))
+        # Click, release the click, keep moving, lift.
+        pts = line(0.6, click_at=12)
         b = app.state()
-        rep.check(b.get("armed") and "armed" in (b.get("chrome") or {}).get("capsule", "").lower(), "a click arms the pen (shown in the capsule)", (b.get("chrome") or {}).get("capsule", ""))
-        word("ink", 0.2, 0.6)
+        rep.check(b["strokes"] == n0 + 1, "the click starts one stroke", f"{b['strokes'] - n0} strokes")
+        ends = b.get("lastStrokeEnds") or []
+        exp = app.cmd({"cmd": "toPage", "points": [list(pts[12]), list(pts[-1])]})["points"]
+        if len(ends) == 2:
+            d0 = math.dist(ends[0], exp[0]); d1 = math.dist(ends[1], exp[1]); span = math.dist(exp[0], exp[1])
+            rep.check(d0 < span * 0.08, "the stroke starts where the finger was at the click (nothing from the aiming before it)", f"{d0:.1f} from the click point, stroke span {span:.0f}")
+            rep.check(d1 < span * 0.08, "with the click released, the stroke keeps following the finger to where it lifts", f"{d1:.1f} from the lift point")
+        else: rep.check(False, "the stroke follows the finger from the click to the lift", str(ends))
+        rep.shot(app, "click to draw: a line started by a click, drawn on with the click released")
+        line(0.5)
         c = app.state()
-        rep.check(c["strokes"] > n0, "armed: finger-down draws, finger-up stops (no need to hold the click)", f"{c['strokes'] - n0} strokes")
-        rep.shot(app, "armed: the word is drawn, the capsule says 'Armed'")
-        time.sleep(2.0); word("more", 0.5, 0.6); d = app.state()
-        rep.check(d["strokes"] > c["strokes"], "writing again within 3 s keeps it armed (the timer counts from the last lift)", f"{d['strokes'] - c['strokes']} more")
-        time.sleep(2.5); fa = app.state().get("armAlpha", 1)
-        rep.check(fa is not None and fa < 1 and app.state().get("armed"), "in the last second the armed sign fades", f"alpha {fa}")
-        time.sleep(0.8); e = app.state()
-        rep.check(not e.get("armed"), "3 s after the last lift with no writing, it disarms", f"armed {e.get('armed')}")
-        word("gone", 0.5, 0.45); f = app.state()
-        rep.check(f["strokes"] == e["strokes"], "disarmed again: touching draws nothing", f"{f['strokes'] - e['strokes']} strokes")
-        # Gestures never draw, armed or not: a two-finger double tap undoes, a pan moves the page, no ink either way.
-        app.cmd({"cmd": "canvasClick"}); time.sleep(0.1)
+        rep.check(c["strokes"] == b["strokes"], "after the lift the stroke has ended: the next touch only aims", f"{c['strokes'] - b['strokes']} strokes")
+        line(0.45, click_at=0, n=20); line(0.45, click_at=0, n=20, x0=0.4)
+        rep.check(app.state()["strokes"] == c["strokes"] + 2, "each click starts a new stroke", "")
+        time.sleep(3.5); line(0.4, click_at=5, n=30)
+        d = app.state()
+        rep.check(d["strokes"] == c["strokes"] + 3, "no timeout: a click after a long pause still draws", "")
+        # Gestures never draw: a two-finger double tap undoes, a pan (even with a click) draws nothing, three fingers redo.
         g0 = app.state()
         app.touch(double_tap(2, pad_w / 2, pad_h * 0.3)); g1 = app.state()
-        app.touch(two_finger(pad_w / 2, pad_h * 0.4, 25, 25, shift=(-10, 0), dur=0.4)); g2 = app.state()
-        rep.check(g1["strokes"] == g0["strokes"] - 1 and g2["strokes"] == g1["strokes"], "armed: a two-finger double tap undoes and a pan draws nothing", f"{g0['strokes']} -> {g1['strokes']} -> {g2['strokes']}")
+        pan = two_finger(pad_w / 2, pad_h * 0.4, 25, 25, shift=(-10, 0), dur=0.4); pan[5] = pan[5] + ["click"]
+        app.touch(pan); g2 = app.state()
+        rep.check(g1["strokes"] == g0["strokes"] - 1 and g2["strokes"] == g1["strokes"], "a two-finger double tap undoes; a pan draws nothing, even with a click", f"{g0['strokes']} -> {g1['strokes']} -> {g2['strokes']}")
         app.touch(double_tap(3, pad_w / 2, pad_h * 0.3)); g3 = app.state()
         rep.check(g3["strokes"] == g0["strokes"], "a three-finger double tap redoes, no ink", f"{g2['strokes']} -> {g3['strokes']}")
-        # The finger that clicks doesn't draw: touch, click while it's down, keep moving it, lift.
-        time.sleep(3.3)
-        h0 = app.state()
-        path = [[0.008, [[16900, pad_w * 0.3 + i * 0.3, pad_h * 0.3, 40, 0.5, 7.5]]] for i in range(60)]
-        path[10] = path[10] + ["click"]
-        app.touch(path + [[0.008, []], [0.2, []]])
-        h1 = app.state()
-        rep.check(h1["strokes"] == h0["strokes"] and h1.get("armed"), "the finger that clicked doesn't draw (no stray line); the pen is armed for the next touch", f"{h1['strokes'] - h0['strokes']} strokes, armed {h1.get('armed')}")
-        word("next", 0.3, 0.2); h2 = app.state()
-        rep.check(h2["strokes"] > h1["strokes"], "the next touch draws", "")
-        # The eraser works the same way.
-        app.press("e", until=lambda s: s["tool"] == "eraser"); time.sleep(3.3)
+        # The eraser: rubbing without a click erases nothing; with a click it erases.
+        app.press("e", until=lambda s: s["tool"] == "eraser")
         ink = app.state()["lastStrokeMid"]; (ex, ey), = app.cmd({"cmd": "toPad", "points": [ink]})["points"]
-        rub = [[(ex - 6 + 12 * (k % 2), ey - 2 + k * 0.5) for k in range(9)]]
-        e0 = app.state()
-        fr, cid = hand.frames(rub, cid, speed=60); app.touch(fr)
-        e1 = app.state()
-        rep.check(e1["strokes"] == e0["strokes"], "eraser disarmed: rubbing erases nothing", f"{e0['strokes']} -> {e1['strokes']}")
-        app.cmd({"cmd": "canvasClick"}); time.sleep(0.1)
-        fr, cid = hand.frames(rub, cid, speed=60); app.touch(fr)
-        e2 = app.state()
-        rep.check(e2["strokes"] < e1["strokes"], "eraser armed by a click: rubbing erases", f"{e1['strokes']} -> {e2['strokes']}")
+        def rub(click):
+            nonlocal cid
+            cid += 1
+            fr = [[0.008, [[cid, ex - 6 + 12 * (k % 2) * (j / 4), ey - 2 + k * 0.5, 40, 0.5, 7.5]]] for k in range(9) for j in range(4)]
+            if click: fr[0] = fr[0] + ["click"]
+            app.touch(fr + [[0.008, []], [0.2, []]])
+        e0 = app.state(); rub(False); e1 = app.state()
+        rep.check(e1["strokes"] == e0["strokes"], "eraser: rubbing without a click erases nothing", f"{e0['strokes']} -> {e1['strokes']}")
+        rub(True); e2 = app.state()
+        rep.check(e2["strokes"] < e1["strokes"], "eraser: a click and rub erases", f"{e1['strokes']} -> {e2['strokes']}")
         app.press("p", until=lambda s: s["tool"] == "pen")
-        # The timeout is a setting (2-5 s): at 2 s it disarms after 2 s.
-        app.cmd({"cmd": "armTimeout", "seconds": 2}); app.cmd({"cmd": "canvasClick"}); time.sleep(2.3)
-        rep.check(not app.state().get("armed"), "with the timeout set to 2 s it disarms after 2 s", "")
-        app.cmd({"cmd": "armTimeout", "seconds": 3})
+        # Off again: a touch draws as usual.
         app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.3)
-        app.cmd({"cmd": "settingsSwitch", "index": ai, "on": False}); app.cmd({"cmd": "closeSettings"})
+        app.cmd({"cmd": "settingsSwitch", "index": ci, "on": False}); app.cmd({"cmd": "closeSettings"})
+        ensure(app, "draw", True, "d")
+        h0 = app.state(); line(0.3); h1 = app.state()
+        rep.check(h1["strokes"] == h0["strokes"] + 1, "with the switch off, a touch draws as before", f"{h1['strokes'] - h0['strokes']} strokes")
         ensure(app, "draw", False, "d")
 
     @scenario("crash-no-dialog", "An unexpected crash during a robot run (a bug in the app or the hook) is reported as a failure here and never puts a 'quit unexpectedly' dialog on the screen of the person using the Mac.")

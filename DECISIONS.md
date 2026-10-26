@@ -129,13 +129,11 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - A last word much shorter than this line's typical word (under 60%) looks unfinished: the break waits 800 ms (1.5 s if it's also past the limit). Real word gaps are mostly longer; pauses inside words mostly shorter.
 - The limit is ½ / ¾ of the page width from the page's left edge (or after a start moved by a deliberate hand pan, which now also counts when no line is open yet).
 
-## Arm on click
-- Off by default (a Settings switch); the timeout is a Settings slider, 2-5 s, default 3 s, counted from the last lift (or the click); pans and taps don't count as writing.
-- The arming click doesn't draw: the finger that clicks is ignored until it lifts, and the next touch-down draws. Aiming, clicking and lifting can't leave a dot or a stray line.
-- Armed still needs the normal firm-touch pressure to ink, so a light slide to reposition doesn't draw.
-- Shown in the capsule ("Click to arm" / "Armed", fading in the last second) and by the finger ring: the tool's colour when armed (fading), grey when not.
-- Two- and three-finger gestures keep their rules (a second finger cancels a starting stroke), so they never draw, armed or not. The eraser is armed the same way.
-- A click in draw mode is the trackpad's own click (the frozen pointer sits on the canvas); the canvas accepts the first click in draw mode so it arms even if the window wasn't key.
+## Click to draw (replaced arm on click, 261315d)
+- Karthik: "the user should start drawing with the click and then can let go as they continue to draw". The click is pen-down: the stroke starts where the aiming finger is at the click, goes on with the click released, and ends when the finger lifts. There's no armed state, so no "Armed" capsule, ring colours or timeout: nothing outlasts a stroke, so there's nothing to time out. The aim mark is the blue ring from before 261315d.
+- Off by default (Settings switch); with it off a touch draws as it always did.
+- The click lands on the canvas (the frozen pointer sits over it in draw mode). If the finger's first frame comes just after the click, a touch within 0.15 s still starts the stroke.
+- Two- and three-finger gestures keep their rules: a click during a pan or pinch draws nothing. The eraser erases only between a click and the lift.
 
 ## Rebuilds never break the app you have open
 - build.sh builds and signs in build/.staging-<config>/, then swaps the bundle in. Before, it deleted the bundle and compiled for 1-2 minutes, so opening build/release/Scrawl.app (Karthik's copy) while the checks rebuilt it found an empty app. checks/bundle-intact.sh polls the bundle during a rebuild.

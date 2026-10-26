@@ -186,9 +186,6 @@ final class Robot {
         case "canvasClick":   // a trackpad click in draw mode: the frozen pointer sits on the canvas, so it lands there
             app.robotCanvasClick()   // robot:needs func robotCanvasClick
             done(["ok": true])
-        case "armTimeout":
-            app.setArmTimeout(c["seconds"] as? Double ?? 3)   // robot:needs func setArmTimeout
-            done(["ok": true])
         case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
@@ -292,6 +289,7 @@ final class Robot {
             "view": Self.view(canvas),
             "padMM": [Multitouch.padMM.width, Multitouch.padMM.height],
             "pageW": canvas.camera.page.width,
+            "lastStrokeEnds": canvas.doc.strokes.last.map { s -> [[Double]] in [[s.points[0].p.x, s.points[0].p.y], [s.points[s.points.count - 1].p.x, s.points[s.points.count - 1].p.y]] } ?? [],
             "lastStrokeMid": canvas.doc.strokes.last.map { s -> [Double] in let p = s.points[s.points.count / 2].p; return [p.x, p.y] } ?? [],
             "lastStrokes": canvas.doc.strokes.suffix(40).map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] },
             "toolbarHidden": tb.isHidden, "panelOpen": !tb.panel.isHidden,
@@ -310,13 +308,12 @@ final class Robot {
         let b = app.container.banner
         var chrome: [String: Any] = ["banner": (!b.isHidden && b.alphaValue > 0.01) ? b.stringValue : "", "bannerArea": (!b.isHidden && b.alphaValue > 0.01) ? b.frame.width * b.frame.height : 0,
                                      "toolbarArea": tb.isHidden ? 0 : 15 * 44 * 44.0]
-        chrome["capsule"] = app.container.capsule.isHidden ? "" : "\(app.container.capsule.info.map { "\($0.tool.title)\($0.writing ? " writing" : "")\($0.locked ? " locked" : "")\($0.arm.isEmpty ? "" : " " + $0.arm) \($0.zoom) \($0.page)/\($0.pages)" } ?? "")"   // robot:needs class StatusCapsule
+        chrome["capsule"] = app.container.capsule.isHidden ? "" : "\(app.container.capsule.info.map { "\($0.tool.title)\($0.writing ? " writing" : "")\($0.locked ? " locked" : "") \($0.zoom) \($0.page)/\($0.pages)" } ?? "")"   // robot:needs class StatusCapsule
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
         s["newLines"] = canvas.newLineCount
-        s["armed"] = canvas.armed   // robot:needs var armed
-        s["armAlpha"] = canvas.armIndicatorAlpha   // robot:needs var armIndicatorAlpha
+        s["aimRing"] = [CanvasView.aimRingColor.x, CanvasView.aimRingColor.y, CanvasView.aimRingColor.z, CanvasView.aimRingColor.w].map { (Double($0) * 100).rounded() / 100 }   // robot:needs aimRingColor
         s["pageBounds"] = canvas.doc.strokes.map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] }
         s["nextLine"] = canvas.nextLineAt.map { [$0.x, $0.y] } ?? []   // robot:needs var nextLineAt
         if let g = app.gallery, app.galleryShown {   // robot:needs class GalleryView
