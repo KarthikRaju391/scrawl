@@ -1160,6 +1160,62 @@ def run_scenarios(app, rep, only, hand):
         s7 = app.state()
         rep.check(s7["strokesPerPage"] == s6["strokesPerPage"], "the result survives a relaunch", f"{s6['strokesPerPage']} -> {s7['strokesPerPage']}")
 
+    @scenario("gallery-thumbs", "A notebook of 9 pages full of writing (some seeded, some handwritten in this build), reopened from disk like after a relaunch: G opens the overview at once and every thumbnail shows within about half a second, none left blank. Editing a page refreshes its thumbnail.")
+    def _():
+        ensure(app, "draw", False, "d")
+        if app.state()["gallery"] >= 0: app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+        app.cmd({"cmd": "seed", "pages": 6, "perPage": 450}, timeout=300)
+        cid = 13800
+        for w in ["seven", "eight", "nine"]:
+            app.press("n"); ensure(app, "draw", True, "d")
+            st = app.state(); pad_w, pad_h = st["padMM"]
+            for row in range(3):
+                fr, cid = hand.frames(hand.word(w + " " + w, pad_w * 0.15, pad_h * (0.75 - 0.2 * row)), cid); app.touch(fr, settle=0.1)
+            ensure(app, "draw", False, "d")
+        app.quit(); app.launch()   # nothing cached: like opening the overview after a relaunch
+        n = app.state()["pages"]
+        t0 = time.time()
+        app.key("g")
+        seen_open, first_all, timeline = None, None, []
+        while time.time() - t0 < 15:
+            s = app.state()
+            if s["gallery"] >= 0 and seen_open is None: seen_open = (time.time() - t0) * 1000
+            th = s.get("thumbs") or []
+            if th: timeline.append((round((time.time() - t0) * 1000), sum(1 for x in th if x == 0)))
+            if th and all(x == 2 for x in th) and first_all is None: first_all = (time.time() - t0) * 1000; break
+            time.sleep(0.03)
+        open_ms = app.state().get("galleryOpenMs", 0)
+        rep.step("timeline (ms, blank tiles)", points=timeline[:12] + timeline[-2:], pages=n)
+        rep.check(open_ms < 250, "the overview opens at once (its own work under 250 ms)", f"{open_ms:.0f} ms of the app's work; seen open after {seen_open and round(seen_open)} ms")
+        rep.check(first_all is not None and first_all - (seen_open or 0) <= 600, "every thumbnail shows within about half a second of opening",
+                  f"all {n} up to date {round(first_all - (seen_open or 0)) if first_all else 'never (15 s)'} ms after the overview appeared")
+        rep.shot(app, "overview right after opening, 9 full pages")
+        # The worst case: nothing rendered yet when the overview opens (G right after launch).
+        app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+        app.cmd({"cmd": "dropThumbnails"})
+        t2 = time.time(); app.key("g"); opened = None; done_ms = None
+        while time.time() - t2 < 15:
+            s = app.state()
+            if s["gallery"] >= 0 and opened is None: opened = time.time()
+            th = s.get("thumbs") or []
+            if th and all(x == 2 for x in th): done_ms = (time.time() - (opened or t2)) * 1000; break
+            time.sleep(0.03)
+        rep.check(done_ms is not None and done_ms <= 600, "with nothing cached, every thumbnail still renders within about half a second of opening",
+                  f"all {n} in {round(done_ms) if done_ms is not None else 'never'} ms")
+        # Edit a page: its thumbnail refreshes.
+        app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+        ensure(app, "draw", True, "d")
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        fr, cid = hand.frames(hand.word("new", pad_w * 0.6, pad_h * 0.2, hand.roman), cid); app.touch(fr)
+        ensure(app, "draw", False, "d")
+        app.key("g"); t1 = time.time(); ok = False
+        while time.time() - t1 < 3:
+            th = app.state().get("thumbs") or []
+            if th and th[app.state()["page"]] == 2: ok = True; break
+            time.sleep(0.03)
+        rep.check(ok, "after editing a page its thumbnail is up to date when the overview opens", f"{round((time.time() - t1) * 1000)} ms")
+        app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+
     @scenario("quit-relaunch", "Quit, start again: every page and stroke is back, on the same page.")
     def _():
         a = app.state()

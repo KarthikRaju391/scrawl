@@ -117,3 +117,7 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - A hand pan counts when the view's centre moved sideways by ≥ 10% of the view since the last stroke (pinch frames don't count: their zoom moves the view around the fingers). Arrow keys count too.
 - After such a pan, the next stroke moves the line's start only if it lands away from where the line ended (more than a word gap): writing somewhere new. Carrying on after the last word keeps the start, so No-pan writing still wraps at the width.
 - The line then ends ½ or ¾ of the page after that start (clamped to the page margin). Auto-pans never move it. New lines start at the left margin as before.
+
+## Overview thumbnails
+- Thumbnails (and OCR titles and the page map) draw each stroke as one round line at its average width through points 1.5 px apart, not its exact pressure outline: identical at that size, 6 ms instead of ~5 s for a full page.
+- Pages render in parallel; every page is warmed in the background after launch and again a second after an edit, so the overview opens complete. OCR titles run at background priority, after the thumbnails.

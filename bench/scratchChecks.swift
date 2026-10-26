@@ -140,3 +140,20 @@ func pageMapRevealChecks(_ check: (Bool, String) -> Void) {
     check(writing > 100 && writingShown == 0 && handShown > 100,
           "page map: replaying the recorded sessions, \(writing) writing moves (auto-pans, new lines) show it 0 times; \(handShown) hand moves (pinch, scroll) show it")
 }
+
+/// Thumbnails: one full page (450 handwriting-sized strokes) at thumbnail size, exact outlines vs the fast path.
+func thumbnailSpeedChecks(_ check: (Bool, String) -> Void) {
+    var strokes: [Stroke] = []
+    for j in 0..<450 {
+        let x0 = 60 + Double(j % 15) * 100, y0 = 940 - Double(j / 15) * 30
+        var pts: [StrokePoint] = []
+        for i in 0..<60 { let u = Double(i); pts.append(StrokePoint(p: CGPoint(x: x0 + u * 1.2, y: y0 + sin(u / 3) * 10), pressure: 0.6)) }
+        strokes.append(Stroke(tool: .pen, color: SIMD4(0, 0, 0, 1), size: 3, points: pts, maxStep: 0.5))
+    }
+    let page = CGSize(width: 1600, height: 984), rect = ThumbnailCache.region(strokes, page: page)
+    let px = CGSize(width: ThumbnailCache.pixelWidth, height: ThumbnailCache.pixelWidth * page.height / page.width)
+    func time(_ fast: Bool) -> Double { let t = Date(); _ = PageImage.render(strokes, rect: rect, pageWidth: page.width, pageTop: page.height, px: px, fast: fast); return Date().timeIntervalSince(t) * 1000 }
+    _ = time(true)
+    let exact = time(false), fast = time(true)
+    check(fast < 40 && fast * 4 < exact, String(format: "thumbnails: a full page (450 strokes) renders in %.0f ms at thumbnail size (exact outlines: %.0f ms)", fast, exact))
+}

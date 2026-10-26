@@ -13,7 +13,9 @@ enum PageImage {
     static func render(_ doc: Document, rect: CGRect, pageWidth: Double, pageTop: Double, px: CGSize, background: Int = 0, spacing: Double = 48) -> CGImage? {
         render(doc.strokes, rect: rect, pageWidth: pageWidth, pageTop: pageTop, px: px, background: background, spacing: spacing)
     }
-    static func render(_ strokes: [Stroke], rect: CGRect, pageWidth: Double, pageTop: Double, px: CGSize, background: Int = 0, spacing: Double = 48) -> CGImage? {
+    /// `fast`: thumbnails. Each stroke is one round-capped line at its average width, through points at least
+    /// 1.5 px apart, instead of its exact pressure outline: the same at thumbnail size, and ~10x quicker.
+    static func render(_ strokes: [Stroke], rect: CGRect, pageWidth: Double, pageTop: Double, px: CGSize, background: Int = 0, spacing: Double = 48, fast: Bool = false) -> CGImage? {
         let w = max(Int(px.width), 1), h = max(Int(px.height), 1)
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
@@ -39,10 +41,27 @@ enum PageImage {
             if background == 1 { var x = x0; while x <= rect.maxX { ctx.fill(CGRect(x: x - lw / 2, y: rect.minY, width: lw, height: rect.height)); x += spacing } }
             ctx.restoreGState()
         }
-        for s in strokes where s.bounds.intersects(rect) {
-            ctx.setFillColor(CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: CGFloat(s.color.w)))
-            ctx.addPath(strokePath(s.points, size: s.size, brush: Brush.of(s.tool)))
-            ctx.fillPath(using: .winding)
+        if fast {
+            ctx.setLineCap(.round); ctx.setLineJoin(.round)
+            let minStep = 1.5 / sx
+            for s in strokes where s.bounds.intersects(rect) && !s.points.isEmpty {
+                let c = CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: CGFloat(s.color.w))
+                ctx.setStrokeColor(c)
+                let avgR = s.radii.isEmpty ? s.size / 2 : s.radii.reduce(0, +) / Double(s.radii.count)
+                ctx.setLineWidth(max(avgR * 2, 0.7 / sx))
+                var last = s.points[0].p
+                ctx.move(to: last)
+                for q in s.points.dropFirst() where hypot(q.p.x - last.x, q.p.y - last.y) >= minStep { ctx.addLine(to: q.p); last = q.p }
+                if let e = s.points.last?.p, e != last { ctx.addLine(to: e) }
+                if s.points.count == 1 { ctx.addLine(to: CGPoint(x: last.x + 0.01, y: last.y)) }
+                ctx.strokePath()
+            }
+        } else {
+            for s in strokes where s.bounds.intersects(rect) {
+                ctx.setFillColor(CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: CGFloat(s.color.w)))
+                ctx.addPath(strokePath(s.points, size: s.size, brush: Brush.of(s.tool)))
+                ctx.fillPath(using: .winding)
+            }
         }
         return ctx.makeImage()
     }
@@ -55,7 +74,10 @@ final class ThumbnailCache {
     private var cache: [ObjectIdentifier: (version: Int, image: CGImage)] = [:]
     private var pending = Set<ObjectIdentifier>()
     private let lock = NSLock()
-    private let queue = DispatchQueue(label: "scrawl.thumbnails", qos: .userInitiated)
+    private let queue = DispatchQueue(label: "scrawl.thumbnails", qos: .userInitiated, attributes: .concurrent)   // pages render in parallel
+    /// One cache for the app: warmed in the background after launch and after edits, so the overview opens
+    /// with every thumbnail ready.
+    static let shared = ThumbnailCache()
     private var renderCount = 0
     var renders: Int { lock.lock(); defer { lock.unlock() }; return renderCount }
     static let pixelWidth = 480.0
@@ -65,8 +87,8 @@ final class ThumbnailCache {
         if let have, have.version == version { return have.image }   // rendered meanwhile
         let rect = Self.region(strokes, page: page)
         guard let img = PageImage.render(strokes, rect: rect, pageWidth: page.width, pageTop: page.height,
-                                         px: CGSize(width: Self.pixelWidth, height: Self.pixelWidth * page.height / page.width)) else { return nil }
-        lock.lock(); renderCount += 1; cache[key] = (version, img); lock.unlock()
+                                         px: CGSize(width: Self.pixelWidth, height: Self.pixelWidth * page.height / page.width), fast: true) else { return nil }
+        lock.lock(); renderCount += 1; if (cache[key]?.version ?? -1) <= version { cache[key] = (version, img) }; lock.unlock()
         return img
     }
     /// The part of the page a thumbnail shows: the ink with a margin, in the tile's shape (at least a third of
@@ -113,6 +135,8 @@ final class ThumbnailCache {
             DispatchQueue.main.async(execute: ready)
         }
     }
+    /// Tests: forget every thumbnail (the worst case: the overview opens with nothing rendered).
+    func dropAll() { lock.lock(); cache = [:]; lock.unlock() }
     /// Drop pages that no longer exist.
     func keep(_ docs: [Document]) { let ids = Set(docs.map(ObjectIdentifier.init)); lock.lock(); cache = cache.filter { ids.contains($0.key) }; lock.unlock() }
 }
@@ -125,7 +149,7 @@ final class GalleryView: NSView {
     private let hintLabel = NSTextField(labelWithString: "Arrows or the pointer choose  ·  Return, Space or G opens  ·  Esc goes back  ·  • = the page you came from")
     var onOpen: ((Int) -> Void)?
     var onNewPage: (() -> Void)?
-    let thumbnails = ThumbnailCache()
+    let thumbnails = ThumbnailCache.shared
     let titles = PageTitles()
     /// ⌘F: pages whose handwriting contains this; the others dim.
     let search = NSSearchField()
@@ -194,6 +218,7 @@ final class GalleryView: NSView {
         if moveSelection, !query.isEmpty, let first = matching.first { selected = first; grid.scrollToVisible(cellRectInGrid(first).insetBy(dx: 0, dy: -Self.gap)) }
         grid.needsDisplay = true
     }
+    func redrawGrid() { if !isHidden { grid.needsDisplay = true } }
     func focusSearch() { window?.makeFirstResponder(search) }
 
     override func layout() {

@@ -90,7 +90,7 @@ final class PageMapView: NSView {
         let strokes = doc.strokes, v = doc.version, page = c.camera.page
         let px = CGSize(width: Self.width * 2, height: Self.width * 2 * r.height / r.width)
         queue.async { [weak self] in
-            let img = PageImage.render(strokes, rect: r, pageWidth: page.width, pageTop: page.height, px: px)
+            let img = PageImage.render(strokes, rect: r, pageWidth: page.width, pageTop: page.height, px: px, fast: true)
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.image = img; self.region = r; self.renderedVersion = v; self.renderedPage = key

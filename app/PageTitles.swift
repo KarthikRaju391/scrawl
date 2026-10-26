@@ -9,7 +9,7 @@ final class PageTitles {
     private var cache: [ObjectIdentifier: Entry] = [:]
     private var pending = Set<ObjectIdentifier>()
     private let lock = NSLock()
-    private let queue = DispatchQueue(label: "scrawl.pagetitles", qos: .utility)
+    private let queue = DispatchQueue(label: "scrawl.pagetitles", qos: .background)   // after the thumbnails
     private(set) var reads = 0
 
     func entry(_ doc: Document) -> Entry? { lock.lock(); defer { lock.unlock() }; return cache[ObjectIdentifier(doc)] }
@@ -50,7 +50,7 @@ final class PageTitles {
         r = CGRect(x: max(r.minX, 0), y: r.minY, width: min(r.maxX, page.width) - max(r.minX, 0), height: min(r.maxY, page.height) - r.minY)   // on the page
         let w = min(1800.0, max(900.0, r.width * 1.2))
         guard r.width > 0, r.height > 0, let img = PageImage.render(strokes, rect: r, pageWidth: page.width, pageTop: page.height,
-                                         px: CGSize(width: w, height: w * r.height / r.width)) else { return ("", "") }
+                                         px: CGSize(width: w, height: w * r.height / r.width), fast: true) else { return ("", "") }
         let req = VNRecognizeTextRequest()
         req.recognitionLevel = .accurate
         req.recognitionLanguages = ["en-US"]

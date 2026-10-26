@@ -177,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onPage = { [weak self] d in self?.page(d) }
         tb.onGallery = { [weak self] in self?.toggleGallery() }
         cv.onStatus = { [weak self] in self?.updateBanner() }
-        cv.onDocChanged = { [weak self] in self?.updateUndoState(); self?.container.pageMap.refresh() }
+        cv.onDocChanged = { [weak self] in self?.updateUndoState(); self?.container.pageMap.refresh(); self?.warmThumbnailSoon() }
         cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source); self?.zoomChanged(source: source) }
         tb.onZoomMenu = { [weak self] view, r in self?.zoomMenu().popUp(positioning: nil, at: CGPoint(x: r.minX, y: r.maxY + 4), in: view) }
         cv.onTouching = { [weak self] down in if !down { self?.container.pageMap.refresh() } }
@@ -225,6 +225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.exitDrawMode("another window")
         }
         notebookStatus = canvas.loadNotebookFromDisk()
+        warmThumbnails()   // every page's thumbnail, in the background, so the overview opens complete
         updateBanner()
         startTestReplayIfAsked()
         let firstRun = !canvas.testMode && Self.shouldWelcome(.standard)
@@ -455,6 +456,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Pages deleted since the last ink change: ⌘Z puts them back, newest first.
     var deletedPages: [CanvasView.DeletedPage] = []
     var lastBadgeZoom = 1.0
+    var warmsThumbnails = !Launch.testing
+    var thumbWarm: DispatchWorkItem?
     /// Settings was opened from draw mode: closing it goes back to drawing.
     var settingsResumeDraw = false
     var badgeFade: DispatchWorkItem?
@@ -654,6 +657,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settingsWindow.refresh()
         if Launch.background { settingsWindow.window?.orderFront(nil) } else { settingsWindow.showWindow(nil); settingsWindow.window?.makeKeyAndOrderFront(nil) }
     }
+    // MARK: thumbnails ready before the overview opens
+
+    /// Render any page whose thumbnail is missing or out of date (background, parallel). Off in test modes that
+    /// count renders; the robot turns it on.
+    func warmThumbnails() {
+        guard warmsThumbnails else { return }
+        let page = canvas.camera.page
+        for d in canvas.pages { ThumbnailCache.shared.refresh(d, page: page) { [weak self] in self?.gallery?.redrawGrid() } }
+    }
+    /// After an edit: the edited page's thumbnail, a moment after the ink stops changing.
+    func warmThumbnailSoon() {
+        guard warmsThumbnails else { return }
+        thumbWarm?.cancel()
+        let w = DispatchWorkItem { [weak self] in self?.warmThumbnails() }
+        thumbWarm = w; DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: w)
+    }
+
     // MARK: zoom as a percentage
 
     /// The view moved: the toolbar and capsule follow the zoom; a zoom you changed by hand shows a badge

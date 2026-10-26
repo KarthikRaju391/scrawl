@@ -29,6 +29,7 @@ final class Robot {
     func start() {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         app.canvas.resumeOnDrawStart = true   // robot:needs var resumeOnDrawStart
+        app.warmsThumbnails = true; app.warmThumbnails()   // robot:needs func warmThumbnails
         let t = Timer(timeInterval: 0.004, repeats: true) { [weak self] _ in self?.poll() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
@@ -168,6 +169,9 @@ final class Robot {
         case "closeSettings":
             app.settingsWindow.window?.performClose(nil)   // robot:needs class SettingsWindow
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { done(["ok": true]) }
+        case "dropThumbnails":
+            ThumbnailCache.shared.dropAll()   // robot:needs func dropAll
+            done(["ok": true])
         case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
@@ -290,6 +294,10 @@ final class Robot {
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        if let g = app.gallery, app.galleryShown {   // robot:needs class GalleryView
+            s["thumbs"] = canvas.pages.map { d -> Int in let c = g.thumbnails.cached(d); return c.image == nil ? 0 : (c.fresh ? 2 : 1) }   // 0 blank, 1 old, 2 up to date
+        }
+        s["galleryOpenMs"] = ((app.lastTransition["stepsMs"] as? [String: Double]) ?? [:]).values.reduce(0, +)
         s["cursorLocked"] = CursorLock.locked
         s["mapRegion"] = { let r = app.container.pageMap.regionForTest; return [r.minX, r.minY, r.maxX, r.maxY] }()   // robot:needs var regionForTest
         s["inkBounds"] = { var u = CGRect.null; for st in canvas.doc.strokes { u = u.union(st.bounds) }; return u.isNull ? [] : [u.minX, u.minY, u.maxX, u.maxY] }()
