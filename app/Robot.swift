@@ -28,6 +28,9 @@ final class Robot {
 
     func start() {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        // A crash in a robot run fails the run (robot.py sees the exit); it must not put a "quit unexpectedly"
+        // dialog on Karthik's screen. ROBOT_CRASH_REPORTS=1 keeps the report, for a stack trace.
+        if ProcessInfo.processInfo.environment["ROBOT_CRASH_REPORTS"] != "1" { TestCrash.noReports() }   // robot:needs static func noReports
         app.canvas.resumeOnDrawStart = true   // robot:needs var resumeOnDrawStart
         app.warmsThumbnails = true; app.warmThumbnails()   // robot:needs func warmThumbnails
         let t = Timer(timeInterval: 0.004, repeats: true) { [weak self] _ in self?.poll() }
@@ -227,6 +230,9 @@ final class Robot {
             let w = c["w"] as? Double ?? 1000, h = c["h"] as? Double ?? 700
             app.window.setContentSize(NSSize(width: w, height: h))
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { done(["ok": true]) }
+        case "trap":   // an unexpected crash, as a bug in the app would cause (tests the crash handling)
+            let a: [Int] = []; _ = a[c.count]
+            done(["ok": true])
         case "quit":
             done(["ok": true])
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { NSApp.terminate(nil) }

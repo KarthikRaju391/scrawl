@@ -116,6 +116,18 @@ def double_tap(n_fingers, cx, cy, cid=700):
 
 # ---------------------------------------------------------------- the app
 
+def close_crash_dialogs():
+    """A crashed app's report dialog would sit on the screen of the person using the Mac: close it (the app
+    turns reports off in robot runs; this is the fallback). Returns the dialog pids closed."""
+    tool = os.path.join(ROOT, "build/crashdialogs")
+    if not os.path.exists(tool): return []
+    found, t0 = [], time.time()
+    while time.time() - t0 < 6:
+        found += subprocess.run([tool, "--close"], capture_output=True, text=True).stdout.split()
+        time.sleep(0.2)
+    return found
+
+
 class App:
     def __init__(self, binary, out, data, input_tool, label):
         self.binary, self.out, self.data, self.input_tool, self.label = binary, out, data, input_tool, label
@@ -146,7 +158,9 @@ class App:
         t0 = time.time()
         while not os.path.exists(r):
             if time.time() - t0 > timeout: raise RuntimeError(f"no answer to {c.get('cmd')}")
-            if self.proc.poll() is not None: raise RuntimeError(f"app exited during {c.get('cmd')}")
+            if self.proc.poll() is not None:
+                self.dialogs = close_crash_dialogs()
+                raise RuntimeError(f"app exited during {c.get('cmd')} (status {self.proc.poll()})")
             time.sleep(0.003)
         return json.load(open(r))
 
@@ -1402,6 +1416,27 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.3)
         app.cmd({"cmd": "settingsSwitch", "index": ai, "on": False}); app.cmd({"cmd": "closeSettings"})
         ensure(app, "draw", False, "d")
+
+    @scenario("crash-no-dialog", "An unexpected crash during a robot run (a bug in the app or the hook) is reported as a failure here and never puts a 'quit unexpectedly' dialog on the screen of the person using the Mac.")
+    def _():
+        reports = os.path.expanduser("~/Library/Logs/DiagnosticReports")
+        before, pid = set(glob.glob(reports + "/TrackpadDraw-*.ips")), app.pid
+        crashed = False
+        try: app.cmd({"cmd": "trap"}, timeout=10)
+        except RuntimeError as e: crashed = "exited" in str(e)
+        rep.check(crashed, "the robot sees the app crash", f"exit {app.proc.poll()}")
+        # macOS writes the report (and shows the dialog) up to ~30 s after the crash: watch 40 s, closing any dialog at once.
+        dialogs, ours, t0 = set(getattr(app, "dialogs", [])), [], time.time()
+        while time.time() - t0 < 40 and not ours:
+            dialogs |= set(close_crash_dialogs())
+            for f in set(glob.glob(reports + "/TrackpadDraw-*.ips")) - before:
+                try: body = json.loads(open(f).read().split("\n", 1)[1])
+                except Exception: continue
+                if body.get("pid") == pid: ours.append(f)
+        rep.check(not dialogs, "no crash dialog appeared", f"dialogs closed: {sorted(dialogs)}")
+        rep.check(not ours, "no crash report written", ", ".join(os.path.basename(f) for f in ours))
+        for f in ours: os.remove(f)   # ours, from this test
+        app.launch()
 
     @scenario("quit-relaunch", "Quit, start again: every page and stroke is back, on the same page.")
     def _():

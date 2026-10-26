@@ -137,10 +137,15 @@ enum TestPersist {
 /// A real crash for tests (an out-of-range index, SIGTRAP), without a "quit unexpectedly" dialog on
 /// the user's screen: the process leaves the Dock and drops its crash-report exception port first.
 enum TestCrash {
-    static func now() -> Never {
-        NSApp.setActivationPolicy(.prohibited)
+    /// No crash report and no "quit unexpectedly" dialog if this process crashes from now on (test runs only:
+    /// a dialog would land on the screen of the person using the Mac).
+    static func noReports() {
         // EXC_MASK_ALL incl. EXC_MASK_CORPSE_NOTIFY (the macros aren't imported into Swift)
         for mask in [0x3FFE, 0x1FFE] where task_set_exception_ports(mach_task_self_, exception_mask_t(mask), mach_port_t(MACH_PORT_NULL), EXCEPTION_DEFAULT, THREAD_STATE_NONE) == KERN_SUCCESS { break }
+    }
+    static func now() -> Never {
+        NSApp.setActivationPolicy(.prohibited)
+        noReports()
         let a: [Int] = []
         _ = a[Int(getpid()) > 0 ? 1 : 0]
         fatalError()

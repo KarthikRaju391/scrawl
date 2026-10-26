@@ -136,3 +136,7 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Shown in the capsule ("Click to arm" / "Armed", fading in the last second) and by the finger ring: the tool's colour when armed (fading), grey when not.
 - Two- and three-finger gestures keep their rules (a second finger cancels a starting stroke), so they never draw, armed or not. The eraser is armed the same way.
 - A click in draw mode is the trackpad's own click (the frozen pointer sits on the canvas); the canvas accepts the first click in draw mode so it arms even if the window wasn't key.
+
+## Rebuilds never break the app you have open
+- build.sh builds and signs in build/.staging-<config>/, then swaps the bundle in. Before, it deleted the bundle and compiled for 1-2 minutes, so opening build/release/Scrawl.app (Karthik's copy) while the checks rebuilt it found an empty app. checks/bundle-intact.sh polls the bundle during a rebuild.
+- Robot runs turn crash reports off (as the persist crash test already did): a crash fails the run, and never leaves a "quit unexpectedly" dialog on Karthik's screen. ROBOT_CRASH_REPORTS=1 keeps the report when a stack trace is needed. macOS writes the report up to ~30 s after a crash, so the robot scenario crash-no-dialog watches for 40 s.
