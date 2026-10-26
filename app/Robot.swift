@@ -156,6 +156,18 @@ final class Robot {
             var r: [String: Any] = ["error": "no zoom menu"]
             r = app.robotZoomMenu(pick: c["pick"] as? String, type: c["type"] as? String)   // robot:needs func robotZoomMenu
             done(r)
+        case "enterDrawLocked":   // draw mode as the user gets it: the pointer frozen (a dry-run lock in tests)
+            app.enterDrawMode(lock: true)
+            done(["ok": true])
+        case "settingsKey":   // a key pressed while the Settings window is in front (it goes to that window)
+            guard let w = app.settingsWindow.window, w.isVisible else { done(["error": "no settings window"]); return }   // robot:needs class SettingsWindow
+            let ch = c["chars"] as? String ?? "\u{1b}"
+            if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: w.windowNumber,
+                                        context: nil, characters: ch, charactersIgnoringModifiers: ch, isARepeat: false, keyCode: UInt16(c["code"] as? Int ?? 53)) { NSApp.sendEvent(e) }
+            done(["ok": true])
+        case "closeSettings":
+            app.settingsWindow.window?.performClose(nil)   // robot:needs class SettingsWindow
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { done(["ok": true]) }
         case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
@@ -278,6 +290,7 @@ final class Robot {
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        s["cursorLocked"] = CursorLock.locked
         s["mapRegion"] = { let r = app.container.pageMap.regionForTest; return [r.minX, r.minY, r.maxX, r.maxY] }()   // robot:needs var regionForTest
         s["inkBounds"] = { var u = CGRect.null; for st in canvas.doc.strokes { u = u.union(st.bounds) }; return u.isNull ? [] : [u.minX, u.minY, u.maxX, u.maxY] }()
         s["zoomBadge"] = app.container.zoomBadge.isHidden || app.container.zoomBadge.alphaValue < 0.05 ? "" : app.container.zoomBadge.stringValue   // robot:needs let zoomBadge

@@ -218,6 +218,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.exitDrawMode("displays changed")
         }
         buildMenu()
+        // Any other window of ours in front (Settings, Help, About, a save panel) can't be used with the pointer
+        // frozen: draw mode ends.
+        NotificationCenter.default.addObserver(forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak self] n in
+            guard let self, let w = n.object as? NSWindow, w !== self.window, self.canvas.drawMode else { return }
+            self.exitDrawMode("another window")
+        }
         notebookStatus = canvas.loadNotebookFromDisk()
         updateBanner()
         startTestReplayIfAsked()
@@ -379,6 +385,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Keys meant for a text field (a save panel's file name, the overview's search) are not shortcuts.
         // Esc in an empty search leaves the field, so the next Esc closes the overview.
         if galleryShown, e.keyCode == 53, let t = window.firstResponder as? NSText, t.string.isEmpty, let g = gallery { window.makeFirstResponder(g); return true }
+        // Esc always leaves draw mode, whichever of the app's windows is in front.
+        if e.keyCode == 53, canvas.drawMode, e.modifierFlags.intersection([.command, .control, .option]).isEmpty { exitDrawMode("Esc"); return true }
         if e.window !== window || window.firstResponder is NSText { return false }
         let arrow: (Int, Int)? = [123: (-1, 0), 124: (1, 0), 125: (0, 1), 126: (0, -1)][e.keyCode]
         let plainOrShift = e.modifierFlags.intersection([.command, .control, .option]).isEmpty
@@ -447,6 +455,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Pages deleted since the last ink change: ⌘Z puts them back, newest first.
     var deletedPages: [CanvasView.DeletedPage] = []
     var lastBadgeZoom = 1.0
+    /// Settings was opened from draw mode: closing it goes back to drawing.
+    var settingsResumeDraw = false
     var badgeFade: DispatchWorkItem?
     weak var zoomField: NSTextField?
     var robot: AnyObject?   // the robot user's hook (Robot.swift, dev builds only)
@@ -629,10 +639,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .init(title: "Share anonymous usage counts (never your ink or text)", key: "analyticsEnabledSwitch", get: { Analytics.shared.enabled }, set: { Analytics.shared.enabled = $0 }),
         ])
         w.onChange = { [weak self] in self?.container.needsLayout = true }
+        w.onClose = { [weak self] in
+            guard let self, self.settingsResumeDraw else { return }
+            self.settingsResumeDraw = false
+            if !self.canvas.drawMode { self.enterDrawMode(lock: !self.canvas.testMode) }
+        }
         w.onSwitch = { key in Analytics.shared.record("settings_changed", ["key": key]) }
         return w
     }()
     @objc func showSettings() {
+        // Draw mode freezes and hides the pointer: Settings couldn't be clicked. It steps aside while Settings is
+        // open and comes back when it closes.
+        if canvas.drawMode { settingsResumeDraw = true; exitDrawMode("settings") }
         settingsWindow.refresh()
         if Launch.background { settingsWindow.window?.orderFront(nil) } else { settingsWindow.showWindow(nil); settingsWindow.window?.makeKeyAndOrderFront(nil) }
     }

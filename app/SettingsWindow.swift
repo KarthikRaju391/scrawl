@@ -2,12 +2,13 @@
 // switches for scratch-out, the page map and tips. Each is saved at once (tests never save).
 import AppKit
 
-final class SettingsWindow: NSWindowController {
+final class SettingsWindow: NSWindowController, NSWindowDelegate {
     struct Switch { let title: String; let key: String; let get: () -> Bool; let set: (Bool) -> Void }
     private var switches: [Switch] = []
     private var boxes: [NSButton] = []
     var onChange: (() -> Void)?
     var onSwitch: ((String) -> Void)?
+    var onClose: (() -> Void)?
 
     init(switches: [Switch]) {
         let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 460, height: 360), styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -37,7 +38,9 @@ final class SettingsWindow: NSWindowController {
             y -= 24
         }
         w.center()
+        w.delegate = self
     }
+    func windowWillClose(_ n: Notification) { onClose?() }
     required init?(coder: NSCoder) { fatalError() }
 
     @objc private func toggled(_ b: NSButton) {

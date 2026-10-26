@@ -108,3 +108,6 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 
 ## Page map covers extended writing
 - The map shows the page's first screen ∪ all the ink (also past the page's sides) ∪ the view, with a 2% margin; past the page's edges it's the grey desk, as on the canvas.
+
+## Settings from draw mode
+- Opening Settings (any route) leaves draw mode, because the frozen pointer could not click it; closing Settings returns to draw mode. Esc leaves draw mode from any of the app's windows, and any other app window coming to the front (Help, About) ends draw mode.

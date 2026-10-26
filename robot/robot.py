@@ -758,6 +758,29 @@ def run_scenarios(app, rep, only, hand):
         rep.shot(app, "map with ink past the right edge and far down")
         ensure(app, "draw", False, "d")
 
+    @scenario("settings-in-draw-mode", "Opening Settings (Cmd-,) while drawing must never lock you in: draw mode steps aside (pointer back) so Settings can be used, Esc works from the Settings window, and closing Settings puts draw mode back.")
+    def _():
+        ensure(app, "draw", False, "d")
+        app.cmd({"cmd": "enterDrawLocked"}); time.sleep(0.3)
+        a = app.state()
+        rep.check(a["draw"] and a.get("cursorLocked"), "draw mode with the pointer frozen (the starting state)", f"draw {a['draw']}, pointer locked {a.get('cursorLocked')}")
+        app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.6)
+        b = app.state()
+        rep.check(b.get("settingsWindow", 0) != 0 and not b["draw"] and not b.get("cursorLocked"),
+                  "Cmd-, in draw mode: Settings opens and draw mode steps aside, so the pointer is free to use it",
+                  f"settings window {b.get('settingsWindow')}, draw {b['draw']}, pointer locked {b.get('cursorLocked')}")
+        app.cmd({"cmd": "closeSettings"}); time.sleep(0.4)
+        c = app.state()
+        rep.check(c["draw"] and c.get("settingsWindow", 0) == 0, "closing Settings puts draw mode back", f"draw {c['draw']}")
+        # Esc must always get you out, even with Settings in front.
+        app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.4)
+        app.cmd({"cmd": "enterDrawLocked"}); time.sleep(0.2)   # draw mode on again somehow (hotkey) while Settings is up
+        app.cmd({"cmd": "settingsKey", "code": 53}); time.sleep(0.3)
+        d = app.state()
+        rep.check(not d["draw"] and not d.get("cursorLocked"), "Esc pressed in the Settings window leaves draw mode", f"draw {d['draw']}, pointer locked {d.get('cursorLocked')}")
+        app.cmd({"cmd": "closeSettings"}); time.sleep(0.3)
+        ensure(app, "draw", False, "d")
+
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
