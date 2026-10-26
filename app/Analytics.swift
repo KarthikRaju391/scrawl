@@ -46,8 +46,8 @@ final class Analytics: @unchecked Sendable {
     private func get(_ k: String) -> Any? { store?.object(forKey: k) ?? memory[k] }
     private func set(_ k: String, _ v: Any) { if let store { store.set(v, forKey: k) } else { memory[k] = v } }
 
-    init(testing: Bool = Launch.testing, defaults: UserDefaults = .standard, appID: String? = Bundle.main.object(forInfoDictionaryKey: "TDTelemetryAppID") as? String,
-         flushInterval: Double = 30) {
+    init(testing: Bool = Launch.testing, defaults: UserDefaults = .standard, appID: String? = Bundle.main.object(forInfoDictionaryKey: "ScrawlPostHogToken") as? String,
+         host: String = Bundle.main.object(forInfoDictionaryKey: "ScrawlPostHogHost") as? String ?? "", flushInterval: Double = 30) {
         store = testing ? nil : defaults
         self.flushInterval = flushInterval
         let info = Bundle.main.infoDictionary ?? [:]
@@ -57,7 +57,7 @@ final class Analytics: @unchecked Sendable {
         if let id = get("analyticsInstallID") as? String { context.installID = id }
         else { let u = UUID().uuidString; set("analyticsInstallID", u); context.installID = u }
         sinks = [LocalLogSink(path: AppPaths.logsDir + "/events.jsonl")]
-        if !testing, let appID, !appID.isEmpty { sinks.append(TelemetryDeckSink(appID: appID)) }
+        if !testing, let appID, !appID.isEmpty { sinks.append(PostHogSink(token: appID, host: host)) }
     }
     private let flushInterval: Double
 
@@ -72,7 +72,7 @@ final class Analytics: @unchecked Sendable {
     }
     var noticeShown: Bool { get { get("analyticsNoticeShown") as? Bool ?? false } set { set("analyticsNoticeShown", newValue) } }
     static let noticeText = "Scrawl counts which features you use (like undo or writing mode) and how long you write, with a random ID that isn't tied to you. Never your ink, pages, text or file names. Turn it off any time in Settings."
-    var hasRemote: Bool { sinks.contains { $0 is TelemetryDeckSink } }
+    var hasRemote: Bool { sinks.contains { $0 is PostHogSink } }
 
     // MARK: recording (any thread, never blocks for more than an append)
 
@@ -179,27 +179,40 @@ final class LocalLogSink: AnalyticsSink {
     }
 }
 
-/// TelemetryDeck's ingest API, as their Swift SDK sends it (github.com/TelemetryDeck/SwiftSDK,
-/// Sources/TelemetryDeck/Signals/SignalManager.swift and Signal.swift, read 2026-10-26): POST a JSON array of
-/// signals to https://nom.telemetrydeck.com/v2/ with Content-Type application/json; each signal has appID,
-/// clientUser (hashed on the client; they salt and hash again), sessionID, type, payload ([String: String]),
-/// isTestMode ("true"/"false") and receivedAt (ISO 8601). Only created when release.conf sets an app ID.
-final class TelemetryDeckSink: AnalyticsSink {
-    let appID: String
-    static let endpoint = URL(string: "https://nom.telemetrydeck.com/v2/")!
-    init(appID: String) { self.appID = appID }
-    func send(_ batch: [AnalyticsEvent], context: Analytics.Context) -> Bool {
+/// PostHog's capture API, as their iOS/macOS SDK sends it (github.com/PostHog/posthog-ios: PostHog/PostHogApi.swift
+/// `batch(events:)` and PostHog/Models/PostHogEvent.swift `toJSON()`, read 2026-10-26): POST {host}/batch/ with
+/// {"api_key": <project token>, "batch": [{event, distinct_id, properties, timestamp, uuid}], "sent_at"}.
+/// Anonymous only: `$process_person_profile: false` (no person profiles) and `$geoip_disable: true` (no location
+/// from the IP), as the SDK sets them; distinct_id is the SHA-256 of the random install ID. Only created when
+/// release.conf sets a project token.
+final class PostHogSink: AnalyticsSink {
+    let token: String, host: URL
+    init(token: String, host: String) {
+        self.token = token
+        self.host = URL(string: host.isEmpty ? "https://us.i.posthog.com" : host) ?? URL(string: "https://us.i.posthog.com")!
+    }
+    var endpoint: URL { host.appendingPathComponent("batch").appendingPathComponent("") }
+
+    /// The request body (tests check its shape without a network).
+    static func body(_ batch: [AnalyticsEvent], context: Analytics.Context, token: String, now: Date = Date()) -> [String: Any] {
         let user = SHA256.hash(data: Data(context.installID.utf8)).map { String(format: "%02x", $0) }.joined()
-        let f = ISO8601DateFormatter()
-        let body: [[String: Any]] = batch.map { e in
-            var payload = e.props
-            payload["appVersion"] = context.appVersion; payload["build"] = context.build; payload["macOS"] = context.macOS
-            return ["appID": appID, "clientUser": user, "sessionID": context.sessionID, "type": "Scrawl.\(e.name)",
-                    "payload": payload, "isTestMode": "false", "receivedAt": f.string(from: e.time)]
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let events: [[String: Any]] = batch.map { e in
+            var props: [String: Any] = e.props
+            props["$process_person_profile"] = false
+            props["$geoip_disable"] = true
+            props["$session_id"] = context.sessionID
+            props["$lib"] = "scrawl"; props["$lib_version"] = context.appVersion
+            props["build"] = context.build; props["macOS"] = context.macOS
+            return ["event": e.name, "distinct_id": user, "properties": props, "timestamp": f.string(from: e.time), "uuid": UUID().uuidString.lowercased()]
         }
-        guard let data = try? JSONSerialization.data(withJSONObject: body) else { return true }
-        var req = URLRequest(url: Self.endpoint, timeoutInterval: 15)
-        req.httpMethod = "POST"; req.setValue("application/json", forHTTPHeaderField: "Content-Type"); req.httpBody = data
+        return ["api_key": token, "batch": events, "sent_at": f.string(from: now)]
+    }
+
+    func send(_ batch: [AnalyticsEvent], context: Analytics.Context) -> Bool {
+        guard let data = try? JSONSerialization.data(withJSONObject: Self.body(batch, context: context, token: token)) else { return true }
+        var req = URLRequest(url: endpoint, timeoutInterval: 15)
+        req.httpMethod = "POST"; req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type"); req.httpBody = data
         // Synchronous on the analytics queue (never the main thread), bounded by the timeout.
         let done = DispatchSemaphore(value: 0)
         var ok = false

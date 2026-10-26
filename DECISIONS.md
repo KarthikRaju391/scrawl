@@ -69,7 +69,7 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Not cut: OCR search shipped, it's cheap here because it runs only on overview pages.
 
 ## Usage counts (analytics)
-- Provider: TelemetryDeck (privacy-first, EU-hosted, hashes user IDs, no IPs stored), spoken to directly over their v2 ingest API as their Swift SDK does it, so there's no dependency. Off until release.conf has TELEMETRY_APP_ID; it's empty, so this release sends nothing.
+- Provider (first pick, replaced): TelemetryDeck (privacy-first, EU-hosted, hashes user IDs, no IPs stored), spoken to directly over their v2 ingest API as their Swift SDK does it, so there's no dependency. Off until release.conf has TELEMETRY_APP_ID; it's empty, so this release sends nothing.
 - record() is an append under an unfair lock (p99 0.67 µs on the main thread); a full queue (2,000) drops; batches go every 30 s on a utility queue; the local log is always written while it's on.
 - At quit the last batch gets at most 0.5 s (quitting, never drawing); a slow network just loses it.
 - Failed sends retry at 30 s, then 2, 4, 8, 16 min (capped at an hour), and are dropped after 6 tries; at most 5 batches wait.
@@ -79,3 +79,10 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 
 ## Release
 - Still 0.1.0 (never published), build 2: everything here ships as the first public version; Karthik has build 1 installed, so the build number moves.
+
+## Usage counts: PostHog (Karthik's pick, 2026-10-26)
+- PostHog replaces TelemetryDeck as the remote sink. Same API in the app; only the sink and two release.conf keys changed (POSTHOG_PROJECT_TOKEN, POSTHOG_HOST).
+- Spoken to directly over /batch/ the way posthog-ios sends it, so there's no SDK (and no autocapture, session replay or surveys).
+- Anonymous events only: `$process_person_profile: false`, `$geoip_disable: true`, distinct_id = SHA-256 of the random install ID.
+- EU Cloud by default (GDPR); "Discard client IP data" must be turned on in the project (a PostHog setting, not something the app can do).
+- Checked against a local fixture server (checks/posthog.sh); real PostHog ingestion is unverified until a token exists.

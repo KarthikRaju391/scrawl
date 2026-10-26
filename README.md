@@ -107,8 +107,8 @@ second of ink is lost.
 - Your ink and pages are never uploaded. Scrawl keeps **anonymous usage counts**: which features you use
   (draw mode, undo, scratch-out, the overview…) and how long, with a random ID that isn't tied to you,
   never ink, page images, handwriting, search text or file names. They're written to
-  `~/Library/Logs/Scrawl/events.jsonl`, and a release built with a TelemetryDeck app ID also sends them
-  there in the background every 30 s. The first launch says so; **Settings › Share anonymous usage
+  `~/Library/Logs/Scrawl/events.jsonl`, and a release built with a PostHog project token also sends them
+  there in the background every 30 s (anonymously: no person profiles, no location). The first launch says so; **Settings › Share anonymous usage
   counts** turns it all off. [docs/analytics.md](docs/analytics.md) lists every event.
 - The only other network request is **Check for Updates**, which runs only when you choose it. It asks
   GitHub for the latest release and opens the release page if there's a newer one. Nothing connects at

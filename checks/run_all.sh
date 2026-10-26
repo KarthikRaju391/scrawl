@@ -16,6 +16,7 @@ suites=(
   "modes-matrix|checks/modes.sh"
   "tool-enters-draw|checks/tooldraw.sh"
   "tap-gestures|checks/taps.sh"
+  "posthog-sink|checks/posthog.sh"
   "arrow-keys|checks/arrowkeys.sh"
   "overview-highlight|checks/gallerykeys.sh"
   "pill-labels|checks/toast.sh"

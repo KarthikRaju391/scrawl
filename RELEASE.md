@@ -21,7 +21,7 @@ This isn't a trademark search. Worth a look before publishing. Still open: `data
 | Recorded handwriting in `data/` | 59 MB of your strokes and sessions are in the repo; the replay tests need them | Before making the repo public: keep them, or have them removed from the history first (removing them later doesn't erase them from a public history). |
 | Publish | The repo is **private**, and the release is a **draft** | GitHub: make the repo public, then publish the draft. Check for Updates only works once both are public: until then it says "No published release found." |
 | Developer ID + notarization (later) | Not done: needs the Apple Developer Program ($99/year) | Then run `SIGN_ID=… NOTARY_PROFILE=… scripts/release.sh`. The Gatekeeper prompt goes away. |
-| Usage counts sent remotely | **Off**: `TELEMETRY_APP_ID` in `release.conf` is empty, so counts stay in the local log | Create a TelemetryDeck account and an app "Scrawl", put its app ID in `release.conf`, rebuild. Nothing else (see `docs/analytics.md`). |
+| Usage counts sent remotely | **Off**: `POSTHOG_PROJECT_TOKEN` in `release.conf` is empty, so counts stay in the local log | Create a free PostHog project (EU Cloud), turn on "Discard client IP data", put its `phc_` token in `release.conf`, rebuild. Nothing else (see `docs/analytics.md`). |
 | Update host | GitHub releases API (`release.conf` `UPDATE_URL`) | Change it if releases move elsewhere. Only the Check for Updates menu uses it. |
 
 ## Done and tested

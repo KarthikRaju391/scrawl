@@ -12,14 +12,14 @@ where they give up. It never records ink, page images, handwriting text or file 
   - recording takes 1.4 ms per 10,000 events, even while the sink is stalled.
 - A background queue writes the batch every 30 s, and at quit, to:
   - **the local log**, `~/Library/Logs/Scrawl/events.jsonl`. It rotates at 1 MB and keeps two files.
-  - **TelemetryDeck**, only when `TELEMETRY_APP_ID` in `release.conf` is set. It's empty now, so nothing is
+  - **PostHog**, only when `POSTHOG_PROJECT_TOKEN` in `release.conf` is set. It's empty now, so nothing is
     sent anywhere.
 - A failed send is tried again 30 s later, then after 2, 4, 8 and 16 minutes (an hour at most), and
   dropped after 6 tries: nothing ever retries in a loop.
 - Props are filtered to an allow-list of keys. Values can only be numbers, true/false, or words of 32
   characters or fewer. Anything else is dropped before it's queued.
 - Every event carries:
-  - an anonymous install ID (a random UUID; TelemetryDeck receives its SHA-256 hash);
+  - an anonymous install ID (a random UUID; PostHog receives only its SHA-256 hash);
   - a session ID (new each launch);
   - the app version and build, and the macOS major version;
   - the time, to the second.
@@ -66,14 +66,17 @@ Activation: `first_stroke` within the first session, then `practice` finished or
 ## Never recorded
 
 Stroke points, page images, OCR text, search queries, page titles, file names or paths, export
-destinations, window titles, settings values, IP-derived location (TelemetryDeck doesn't store IPs),
+destinations, window titles, settings values, IP-derived location (every event sets `$geoip_disable`; no person profiles: `$process_person_profile` is false),
 anything typed.
 
 ## To turn on remote counts (Karthik)
 
-1. Create a TelemetryDeck account at telemetrydeck.com and a new app called "Scrawl" (no SDK needed: Scrawl
-   speaks their ingest API directly).
-2. Put the app ID in `release.conf`: `TELEMETRY_APP_ID=<the app's ID>`.
-3. Run `scripts/release.sh`. Builds without an ID send nothing.
+1. Create a free PostHog account at posthog.com. Pick **EU Cloud** (`release.conf` assumes it; for US Cloud
+   set `POSTHOG_HOST=https://us.i.posthog.com`) and a project called "Scrawl". No SDK is needed: Scrawl
+   speaks PostHog's batch API directly, as their iOS/macOS SDK does.
+2. In the project's settings, turn on **Discard client IP data**, so PostHog doesn't keep IP addresses.
+3. Copy the project token (it starts with `phc_`) into `release.conf`: `POSTHOG_PROJECT_TOKEN=phc_...`. It's
+   meant to be public (write-only), so it's fine in the repo and the app.
+4. Run `scripts/release.sh`. Builds without a token send nothing.
 
-Nothing else is needed: no keys, no other accounts.
+The free tier allows far more events than Scrawl will send at launch (a session sends roughly 30–50).

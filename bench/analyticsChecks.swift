@@ -73,3 +73,22 @@ func analyticsChecks(_ check: (Bool, String) -> Void) {
     check(early == 1 && bad.calls == Analytics.maxAttempts && e.pendingRetries == 0,
           "analytics: a failing sink is tried once, then backs off and gives up after \(Analytics.maxAttempts) tries (\(early) call in 200 immediate drains, \(bad.calls) in total)")
 }
+
+/// The PostHog body, as their SDK builds it: anonymous (no person profiles, no GeoIP), hashed ID, only the
+/// filtered props. With POSTHOG_FIXTURE_URL set (checks/posthog.sh), also a real POST to a local server.
+func postHogChecks(_ check: (Bool, String) -> Void) {
+    let ctx = Analytics.Context(installID: "11111111-2222-3333-4444-555555555555", sessionID: "S1", appVersion: "0.1.0", build: "2", macOS: "26")
+    let ev = [AnalyticsEvent(name: "undo", props: ["source": "gesture"], time: Date(timeIntervalSince1970: 1_800_000_000))]
+    let b = PostHogSink.body(ev, context: ctx, token: "phc_test")
+    let e = (b["batch"] as? [[String: Any]])?.first ?? [:]
+    let p = e["properties"] as? [String: Any] ?? [:]
+    let raw = String(data: (try? JSONSerialization.data(withJSONObject: b)) ?? Data(), encoding: .utf8) ?? ""
+    check(b["api_key"] as? String == "phc_test" && e["event"] as? String == "undo" && (e["distinct_id"] as? String)?.count == 64
+          && p["$process_person_profile"] as? Bool == false && p["$geoip_disable"] as? Bool == true && p["source"] as? String == "gesture"
+          && e["timestamp"] is String && e["uuid"] is String && !raw.contains(ctx.installID),
+          "PostHog: batch body as their SDK sends it; anonymous (no person profile, no GeoIP), hashed ID (raw install ID never sent)")
+    if let url = ProcessInfo.processInfo.environment["POSTHOG_FIXTURE_URL"] {
+        let ok = PostHogSink(token: "phc_test", host: url).send(ev, context: ctx)
+        check(ok, "PostHog: a real POST to the local fixture server (\(url)) succeeds")
+    }
+}

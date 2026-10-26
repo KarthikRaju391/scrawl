@@ -62,7 +62,7 @@ enum HelpText {
     static var privacy: String {
         let logs = AppPaths.logsDir.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         let counts = Analytics.shared.hasRemote
-            ? "Anonymous usage counts (which features you use and for how long; never your ink, pages or text) are kept in \(logs)/events.jsonl and sent to TelemetryDeck with a random ID. Settings › Share anonymous usage counts turns that off. "
+            ? "Anonymous usage counts (which features you use and for how long; never your ink, pages or text) are kept in \(logs)/events.jsonl and sent to PostHog anonymously (a random ID, no location). Settings › Share anonymous usage counts turns that off. "
             : "Anonymous usage counts (which features you use; never your ink, pages or text) stay in \(logs)/events.jsonl on this Mac. "
         return """
         Your pages are saved automatically on this Mac, in \(AppPaths.dataDir.replacingOccurrences(of: NSHomeDirectory(), with: "~")), and never uploaded. \
