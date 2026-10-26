@@ -205,6 +205,9 @@ final class GalleryView: NSView {
         thumbnails.keep(pages)
         needsLayout = true; layoutSubtreeIfNeeded()
         grid.needsDisplay = true
+        // Every page's thumbnail, not only the tiles on screen (they're quick, and in parallel), so scrolling
+        // never finds a blank one.
+        for d in pages { thumbnails.refresh(d, page: pageSize) { [weak self] in self?.grid.needsDisplay = true } }
         titles.refresh(pages, page: pageSize) { [weak self] in self?.grid.needsDisplay = true; self?.applyQuery(moveSelection: false) }
     }
 
