@@ -178,6 +178,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onGallery = { [weak self] in self?.toggleGallery() }
         cv.onStatus = { [weak self] in self?.updateBanner() }
         cv.onDocChanged = { [weak self] in self?.updateUndoState(); self?.container.pageMap.refresh(); self?.warmThumbnailSoon() }
+        cv.onArmChange = { [weak self] in
+            guard let self, var i = self.container.capsule.info else { return }
+            i.arm = self.canvas.armIndicatorAlpha == nil ? "" : (self.canvas.armed ? "Armed" : "Click to arm"); i.armAlpha = self.canvas.armIndicatorAlpha ?? 1
+            if i != self.container.capsule.info { self.container.capsule.info = i; self.container.needsLayout = true }
+        }
         cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source); self?.zoomChanged(source: source) }
         tb.onZoomMenu = { [weak self] view, r in self?.zoomMenu().popUp(positioning: nil, at: CGPoint(x: r.minX, y: r.maxY + 4), in: view) }
         cv.onTouching = { [weak self] down in if !down { self?.container.pageMap.refresh() } }
@@ -376,7 +381,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let t = canvas.tools
         container.capsule.info = StatusCapsule.Info(tool: t.tool, color: t.tool == .eraser ? .gray : ToolState.colors[t.colorIndex[t.tool] ?? 0],
                                                     writing: canvas.writingMode, locked: t.zoomLocked, page: canvas.pageIndex + 1, pages: canvas.pages.count,
-                                                    zoom: CanvasView.zoomText(canvas.camera.zoom))
+                                                    zoom: CanvasView.zoomText(canvas.camera.zoom),
+                                                    arm: canvas.armIndicatorAlpha == nil ? "" : (canvas.armed ? "Armed" : "Click to arm"),
+                                                    armAlpha: canvas.armIndicatorAlpha ?? 1)
         container.toolbar.zoomText = CanvasView.zoomText(canvas.camera.zoom)
         container.needsLayout = true
     }
@@ -639,6 +646,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .init(title: "Scratch out: a quick zig-zag over a word erases it", key: "scratchOut", get: { ScratchOut.enabled }, set: { ScratchOut.enabled = $0 }),
             .init(title: "Page map when zoomed in", key: "pageMap", get: { PageMapView.enabled }, set: { PageMapView.enabled = $0 }),
             .init(title: "Tips (each shows at most twice)", key: "tipsEnabled", get: { Tips.enabled }, set: { Tips.enabled = $0 }),
+            .init(title: "Arm on click: a click arms the pen or eraser; it disarms after a few seconds without writing", key: "armOnClick",
+                  get: { CanvasView.armOnClick }, set: { CanvasView.armOnClick = $0 }),
             .init(title: "Share anonymous usage counts (never your ink or text)", key: "analyticsEnabledSwitch", get: { Analytics.shared.enabled }, set: { Analytics.shared.enabled = $0 }),
         ])
         w.onChange = { [weak self] in self?.container.needsLayout = true }
@@ -647,7 +656,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self.settingsResumeDraw = false
             if !self.canvas.drawMode { self.enterDrawMode(lock: !self.canvas.testMode) }
         }
-        w.onSwitch = { key in Analytics.shared.record("settings_changed", ["key": key]) }
+        w.onSwitch = { [weak self] key in Analytics.shared.record("settings_changed", ["key": key]); self?.updateBanner() }
+        w.onArmTimeout = { [weak self] v in self?.setArmTimeout(v) }
         return w
     }()
     @objc func showSettings() {
@@ -672,6 +682,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         thumbWarm?.cancel()
         let w = DispatchWorkItem { [weak self] in self?.warmThumbnails() }
         thumbWarm = w; DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: w)
+    }
+
+    // MARK: arm on click
+
+    func setArmTimeout(_ seconds: Double) {
+        CanvasView.armTimeout = min(max(seconds.rounded(), 2), 5)
+        if !Launch.testing { UserDefaults.standard.set(CanvasView.armTimeout, forKey: "armTimeout") }
+    }
+    /// Test hook: a click on the trackpad in draw mode (the frozen pointer sits on the canvas).
+    func robotCanvasClick() {
+        let p = canvas.convert(CGPoint(x: canvas.bounds.midX, y: canvas.bounds.midY), to: nil)
+        for t in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            if let e = NSEvent.mouseEvent(with: t, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                          context: nil, eventNumber: 0, clickCount: 1, pressure: 1) { window.sendEvent(e) }
+        }
     }
 
     // MARK: zoom as a percentage

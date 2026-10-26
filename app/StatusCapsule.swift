@@ -4,7 +4,7 @@
 import AppKit
 
 final class StatusCapsule: NSView {
-    struct Info: Equatable { var tool: ToolKind; var color: NSColor; var writing: Bool; var locked: Bool; var page: Int; var pages: Int; var zoom = "" }
+    struct Info: Equatable { var tool: ToolKind; var color: NSColor; var writing: Bool; var locked: Bool; var page: Int; var pages: Int; var zoom = ""; var arm = ""; var armAlpha = 1.0 }
     var info: Info? { didSet { if info != oldValue { invalidateIntrinsicContentSize(); needsDisplay = true } } }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }   // shows state only; clicks go through
 
@@ -13,6 +13,7 @@ final class StatusCapsule: NSView {
         var p: [(NSImage?, String)] = [(nil, i.tool.title)]
         if i.writing { p.append((NSImage(systemSymbolName: "character.cursor.ibeam", accessibilityDescription: "Writing"), "Writing")) }
         if i.locked { p.append((NSImage(systemSymbolName: "lock.fill", accessibilityDescription: "Zoom locked"), "")) }
+        if !i.arm.isEmpty { p.append((nil, i.arm)) }
         if !i.zoom.isEmpty { p.append((nil, i.zoom)) }
         p.append((nil, "\(i.page)/\(i.pages)"))
         return p
@@ -43,8 +44,11 @@ final class StatusCapsule: NSView {
                 if let m = img.withSymbolConfiguration(cfg) { m.draw(in: CGRect(x: x, y: bounds.midY - m.size.height / 2, width: m.size.width, height: m.size.height)); x += m.size.width + 3 }
             }
             if !text.isEmpty {
-                let sz = (text as NSString).size(withAttributes: attrs)
-                (text as NSString).draw(at: CGPoint(x: x, y: bounds.midY - sz.height / 2), withAttributes: attrs)
+                var a = attrs
+                if text == "Armed" { a[.foregroundColor] = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: CGFloat(0.25 + 0.75 * i.armAlpha)); a[.font] = NSFont.systemFont(ofSize: 12, weight: .bold) }
+                if text == "Click to arm" { a[.foregroundColor] = NSColor(white: 0.5, alpha: 1) }
+                let sz = (text as NSString).size(withAttributes: a)
+                (text as NSString).draw(at: CGPoint(x: x, y: bounds.midY - sz.height / 2), withAttributes: a)
                 x += sz.width
             }
             x += 9

@@ -128,3 +128,11 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - A word that starts before the limit is finished on its line, even past the limit; the break after it waits a longer pause (650 ms), so a pause inside it doesn't split it.
 - A last word much shorter than this line's typical word (under 60%) looks unfinished: the break waits 800 ms (1.5 s if it's also past the limit). Real word gaps are mostly longer; pauses inside words mostly shorter.
 - The limit is ½ / ¾ of the page width from the page's left edge (or after a start moved by a deliberate hand pan, which now also counts when no line is open yet).
+
+## Arm on click
+- Off by default (a Settings switch); the timeout is a Settings slider, 2-5 s, default 3 s, counted from the last lift (or the click); pans and taps don't count as writing.
+- The arming click doesn't draw: the finger that clicks is ignored until it lifts, and the next touch-down draws. Aiming, clicking and lifting can't leave a dot or a stray line.
+- Armed still needs the normal firm-touch pressure to ink, so a light slide to reposition doesn't draw.
+- Shown in the capsule ("Click to arm" / "Armed", fading in the last second) and by the finger ring: the tool's colour when armed (fading), grey when not.
+- Two- and three-finger gestures keep their rules (a second finger cancels a starting stroke), so they never draw, armed or not. The eraser is armed the same way.
+- A click in draw mode is the trackpad's own click (the frozen pointer sits on the canvas); the canvas accepts the first click in draw mode so it arms even if the window wasn't key.

@@ -9,9 +9,12 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
     var onChange: (() -> Void)?
     var onSwitch: ((String) -> Void)?
     var onClose: (() -> Void)?
+    var onArmTimeout: ((Double) -> Void)?
+    private let armSlider = NSSlider(value: CanvasView.armTimeout, minValue: 2, maxValue: 5, target: nil, action: nil)
+    private let armLabel = NSTextField(labelWithString: "")
 
     init(switches: [Switch]) {
-        let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 460, height: 360), styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 460, height: 420), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = "\(AppInfo.name) Settings"
         w.isReleasedWhenClosed = false
         w.appearance = NSAppearance(named: .aqua)   // light, like the page and the panels
@@ -22,13 +25,13 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         w.contentView = content
         let feel = NSTextField(labelWithString: "How the ink feels")
         feel.font = .systemFont(ofSize: 13, weight: .semibold)
-        feel.frame = CGRect(x: 20, y: 322, width: 300, height: 18)
+        feel.frame = CGRect(x: 20, y: 382, width: 300, height: 18)
         content.addSubview(feel)
         let panel = PanelView()
         panel.mode = .settings
-        panel.frame = CGRect(x: 20, y: 120, width: 420, height: 196)
+        panel.frame = CGRect(x: 20, y: 180, width: 420, height: 196)
         content.addSubview(panel)
-        var y: CGFloat = 92
+        var y: CGFloat = 152
         for (i, sw) in switches.enumerated() {
             let b = NSButton(checkboxWithTitle: sw.title, target: self, action: #selector(toggled(_:)))
             b.tag = i
@@ -37,10 +40,19 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
             content.addSubview(b); boxes.append(b)
             y -= 24
         }
+        // Arm on click: how long it stays armed without writing.
+        armLabel.font = .systemFont(ofSize: 12); armLabel.frame = CGRect(x: 40, y: y - 2, width: 220, height: 18)
+        armSlider.frame = CGRect(x: 260, y: y - 4, width: 180, height: 22)
+        armSlider.numberOfTickMarks = 4; armSlider.allowsTickMarkValuesOnly = true
+        armSlider.target = self; armSlider.action = #selector(armChanged)
+        content.addSubview(armLabel); content.addSubview(armSlider)
+        updateArmLabel()
         w.center()
         w.delegate = self
     }
     func windowWillClose(_ n: Notification) { onClose?() }
+    @objc private func armChanged() { onArmTimeout?(armSlider.doubleValue); updateArmLabel() }
+    private func updateArmLabel() { armLabel.stringValue = String(format: "Stays armed for %.0f s without writing", armSlider.doubleValue) }
     required init?(coder: NSCoder) { fatalError() }
 
     @objc private func toggled(_ b: NSButton) {

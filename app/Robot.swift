@@ -73,6 +73,7 @@ final class Robot {
         case "touch":
             // Contacts are [id, x, y, pressure, size, major] in pad mm, or 0...1 with "norm" (recorded sessions).
             let k = (c["norm"] as? Bool ?? false) ? Multitouch.padMM : CGSize(width: 1, height: 1)
+            let clickAt = Set((c["frames"] as? [[Any]] ?? []).enumerated().compactMap { ($0.element.count > 2 && ($0.element[2] as? String) == "click") ? $0.offset : nil })
             let frames = (c["frames"] as? [[Any]] ?? []).map { f -> (Double, [Contact]) in
                 let cs = (f[1] as? [[Double]] ?? []).map { v in
                     let mm = CGPoint(x: v[1] * k.width, y: v[2] * k.height)
@@ -103,6 +104,7 @@ final class Robot {
                         DispatchQueue.main.sync { downs.items.append(["id": Int(c.id), "view": Self.view(canvas)]) }
                     }
                     Multitouch.onFrame?(cs, CACurrentMediaTime(), sensorT)
+                    if clickAt.contains(k - 1) { DispatchQueue.main.sync { self.app.robotCanvasClick() } }   // robot:needs func robotCanvasClick
                 }
                 Thread.sleep(forTimeInterval: c["settle"] as? Double ?? 0.6)
                 DispatchQueue.main.async { canvas.flushInputForTest(); done(["frames": frames.count, "downs": downs.items, "strokeTrace": downs.trace, "mapSeen": downs.mapSeen]) }
@@ -178,6 +180,12 @@ final class Robot {
             var n = CGPoint(x: q[0] / Multitouch.padMM.width, y: q[1] / Multitouch.padMM.height)
             n = Camera.active(n)
             done(["point": [v.minX + n.x * v.width, v.minY + n.y * v.height]])
+        case "canvasClick":   // a trackpad click in draw mode: the frozen pointer sits on the canvas, so it lands there
+            app.robotCanvasClick()   // robot:needs func robotCanvasClick
+            done(["ok": true])
+        case "armTimeout":
+            app.setArmTimeout(c["seconds"] as? Double ?? 3)   // robot:needs func setArmTimeout
+            done(["ok": true])
         case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
@@ -201,14 +209,14 @@ final class Robot {
             done(["pages": canvas.pages.count])
         case "toPage":   // pad mm -> the page point under it now
             let v = canvas.camera.visible
-            let pts = (c["points"] as? [[Double]] ?? []).map { q -> [Double] in
+            let pts = (c["points"] as? [[Double]] ?? []).filter { $0.count >= 2 }.map { q -> [Double] in
                 var n = CGPoint(x: q[0] / Multitouch.padMM.width, y: q[1] / Multitouch.padMM.height)
                 n = Camera.active(n)   // robot:needs static func active(
                 return [v.minX + n.x * v.width, v.minY + n.y * v.height]
             }
             done(["points": pts])
         case "toPad":   // page points -> where they are on the pad now (mm), as a user sees them on screen
-            let pts = (c["points"] as? [[Double]] ?? []).map { Self.padMM(canvas, CGPoint(x: $0[0], y: $0[1])) }
+            let pts = (c["points"] as? [[Double]] ?? []).filter { $0.count >= 2 }.map { Self.padMM(canvas, CGPoint(x: $0[0], y: $0[1])) }   // (a bad point is skipped, never a crash)
             done(["points": pts])
         case "exportPNG":   // the page as stored ink (the OCR reference for the screenshot)
             let path = c["path"] as? String ?? dir + "/page.png"
@@ -296,11 +304,13 @@ final class Robot {
         let b = app.container.banner
         var chrome: [String: Any] = ["banner": (!b.isHidden && b.alphaValue > 0.01) ? b.stringValue : "", "bannerArea": (!b.isHidden && b.alphaValue > 0.01) ? b.frame.width * b.frame.height : 0,
                                      "toolbarArea": tb.isHidden ? 0 : 15 * 44 * 44.0]
-        chrome["capsule"] = app.container.capsule.isHidden ? "" : "\(app.container.capsule.info.map { "\($0.tool.title)\($0.writing ? " writing" : "")\($0.locked ? " locked" : "") \($0.zoom) \($0.page)/\($0.pages)" } ?? "")"   // robot:needs class StatusCapsule
+        chrome["capsule"] = app.container.capsule.isHidden ? "" : "\(app.container.capsule.info.map { "\($0.tool.title)\($0.writing ? " writing" : "")\($0.locked ? " locked" : "")\($0.arm.isEmpty ? "" : " " + $0.arm) \($0.zoom) \($0.page)/\($0.pages)" } ?? "")"   // robot:needs class StatusCapsule
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
         s["newLines"] = canvas.newLineCount
+        s["armed"] = canvas.armed   // robot:needs var armed
+        s["armAlpha"] = canvas.armIndicatorAlpha   // robot:needs var armIndicatorAlpha
         s["pageBounds"] = canvas.doc.strokes.map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] }
         s["nextLine"] = canvas.nextLineAt.map { [$0.x, $0.y] } ?? []   // robot:needs var nextLineAt
         if let g = app.gallery, app.galleryShown {   // robot:needs class GalleryView
