@@ -639,7 +639,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .init(title: "Scratch out: a quick zig-zag over a word erases it", key: "scratchOut", get: { ScratchOut.enabled }, set: { ScratchOut.enabled = $0 }),
             .init(title: "Page map when zoomed in", key: "pageMap", get: { PageMapView.enabled }, set: { PageMapView.enabled = $0 }),
             .init(title: "Tips (each shows at most twice)", key: "tipsEnabled", get: { Tips.enabled }, set: { Tips.enabled = $0 }),
-            .init(title: "Click to draw: a touch only aims; press to start a stroke, then draw on until you lift", key: "clickToDraw",
+            .init(title: "Click to draw: a touch only aims until you click; then draw on, no more clicks, until you stop", key: "clickToDraw",
                   get: { CanvasView.clickToDraw }, set: { CanvasView.clickToDraw = $0 }),
             .init(title: "Share anonymous usage counts (never your ink or text)", key: "analyticsEnabledSwitch", get: { Analytics.shared.enabled }, set: { Analytics.shared.enabled = $0 }),
         ])
@@ -650,6 +650,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if !self.canvas.drawMode { self.enterDrawMode(lock: !self.canvas.testMode) }
         }
         w.onSwitch = { key in Analytics.shared.record("settings_changed", ["key": key]) }
+        w.onClickDrawTimeout = { [weak self] v in self?.setClickDrawTimeout(v) }
         return w
     }()
     @objc func showSettings() {
@@ -678,6 +679,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // MARK: click to draw
 
+    func setClickDrawTimeout(_ seconds: Double) {
+        CanvasView.clickDrawTimeout = min(max(seconds.rounded(), 2), 5)
+        if !Launch.testing { UserDefaults.standard.set(CanvasView.clickDrawTimeout, forKey: "clickToDrawTimeout") }
+    }
     /// Test hook: a click on the trackpad in draw mode (the frozen pointer sits on the canvas).
     func robotCanvasClick() {
         let p = canvas.convert(CGPoint(x: canvas.bounds.midX, y: canvas.bounds.midY), to: nil)

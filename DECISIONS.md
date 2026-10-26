@@ -129,11 +129,12 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - A last word much shorter than this line's typical word (under 60%) looks unfinished: the break waits 800 ms (1.5 s if it's also past the limit). Real word gaps are mostly longer; pauses inside words mostly shorter.
 - The limit is ½ / ¾ of the page width from the page's left edge (or after a start moved by a deliberate hand pan, which now also counts when no line is open yet).
 
-## Click to draw (replaced arm on click, 261315d)
-- Karthik: "the user should start drawing with the click and then can let go as they continue to draw". The click is pen-down: the stroke starts where the aiming finger is at the click, goes on with the click released, and ends when the finger lifts. There's no armed state, so no "Armed" capsule, ring colours or timeout: nothing outlasts a stroke, so there's nothing to time out. The aim mark is the blue ring from before 261315d.
-- Off by default (Settings switch); with it off a touch draws as it always did.
-- The click lands on the canvas (the frozen pointer sits over it in draw mode). If the finger's first frame comes just after the click, a touch within 0.15 s still starts the stroke.
-- Two- and three-finger gestures keep their rules: a click during a pan or pinch draws nothing. The eraser erases only between a click and the lift.
+## Click to draw (replaced arm on click, 261315d; reworked after d0f5b2a)
+- Karthik: one click turns drawing on, and the click itself starts the stroke; then let go of the click and keep drawing, lift and touch again for more strokes, no more clicks. It turns off after more than 3 s without drawing (Settings, 2-5 s), timed from the last lift; never while writing. Then a touch only moves the blue aim mark until the next click.
+- d0f5b2a needed a click per stroke, and on the real trackpad strokes also ended without a lift. Karthik's hand test (data/session-20261026-232153.jsonl, 13 clicks): releasing the click and the pressure dropping (to 1-10) never ended a stroke; the sensor did. With a very light finger it reports the touch as lifting (state 5, then 6) and in 5 of 13 strokes the same contact came back touching 38-149 ms later. The app took that as a lift. Now, while click to draw is on, a 5/6 report lasting under 0.15 s doesn't end the stroke; a real lift goes on to 7 or disappears within ~20 ms and ends it.
+- No armed label or ring colour: the blue aim mark is the one from before 261315d. The ink appearing is the sign it's on.
+- Off by default; with it off a touch draws as it always did. Two- and three-finger gestures keep their rules (a click during a pan or pinch draws nothing). The eraser is turned on by a click the same way.
+- If the finger's first frame comes just after the click, a touch within 0.15 s still starts the stroke.
 
 ## Rebuilds never break the app you have open
 - build.sh builds and signs in build/.staging-<config>/, then swaps the bundle in. Before, it deleted the bundle and compiled for 1-2 minutes, so opening build/release/Scrawl.app (Karthik's copy) while the checks rebuilt it found an empty app. checks/bundle-intact.sh polls the bundle during a rebuild.

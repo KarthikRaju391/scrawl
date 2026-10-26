@@ -1341,7 +1341,7 @@ def run_scenarios(app, rep, only, hand):
         rep.check(ok, "after editing a page its thumbnail is up to date when the overview opens", f"{round((time.time() - t1) * 1000)} ms")
         app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
 
-    @scenario("click-to-draw", "Click to draw (Settings): a touch only aims (the blue aim mark); a click is pen-down: the stroke starts where the finger is, goes on with the click released, and ends when the finger lifts. Two- and three-finger gestures never draw. The eraser works the same way. No arm state, no timeout.")
+    @scenario("click-to-draw", "Click to draw (Settings): a touch only aims (the blue aim mark). A click turns drawing on and starts the stroke where the finger is; let go of the click and keep drawing; lift and touch again to draw more strokes, no more clicks. 3 s (2-5 s in Settings) after the last lift with no writing it turns off and a touch only aims again; while writing it never does. A light finger the sensor briefly reports as lifting doesn't break the stroke. Two- and three-finger gestures never draw; the eraser works the same way.")
     def _():
         ensure(app, "draw", False, "d")
         if app.state()["gallery"] >= 0: app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
@@ -1357,44 +1357,61 @@ def run_scenarios(app, rep, only, hand):
         st = app.state(); pad_w, pad_h = st["padMM"]; n0 = st["strokes"]
         rep.check(st["draw"], "in draw mode", "")
         cid = 16000
-        def word(w, x, y):
+        def line(y, click_at=None, n=60, x0=0.25, flicker_at=None, dt=0.008):
+            """One finger sliding right; a trackpad click (down and straight up) at frame `click_at`; with
+            `flicker_at`, the sensor reports the light finger as lifting (5, then 6 for 40 ms) and touching
+            again (3, 4), as Karthik's trackpad did. Returns the pad points."""
             nonlocal cid
-            fr, cid = hand.frames(hand.word(w, pad_w * x, pad_h * y, hand.roman), cid); app.touch(fr, settle=0.1)
-        def line(y, click_at=None, n=60, x0=0.25, fid=None):
-            """One finger sliding right; a trackpad click (down and straight up) at frame `click_at`. Returns pad points."""
-            nonlocal cid
-            cid += 1; f = fid or cid
+            cid += 1
             pts = [(pad_w * x0 + i * 0.35, pad_h * y) for i in range(n)]
-            fr = [[0.008, [[f, x, yy, 40, 0.5, 7.5]]] for x, yy in pts]
+            fr = [[dt, [[cid, x, yy, 40, 0.5, 7.5, 4]]] for x, yy in pts]
+            if flicker_at is not None:
+                for k, s_ in zip(range(flicker_at, flicker_at + 7), [5, 6, 6, 6, 6, 3, 4]):
+                    fr[k][1][0][6] = s_; fr[k][1][0][3] = 3
             if click_at is not None: fr[click_at] = fr[click_at] + ["click"]
-            app.touch(fr + [[0.008, []], [0.2, []]], settle=0.1)
+            app.touch(fr + [[0.008, [[cid, *pts[-1], 0, 0.5, 7.5, 5]]], [0.008, [[cid, *pts[-1], 0, 0.5, 7.5, 7]]], [0.008, []], [0.1, []]], settle=0.1)
             return pts
-        word("aim", 0.2, 0.7)
+        line(0.7)
         a = app.state(); cap = (a.get("chrome") or {}).get("capsule", "")
-        rep.check(a["strokes"] == n0, "a touch only aims: nothing is drawn", f"{a['strokes'] - n0} strokes")
-        rep.check("arm" not in cap.lower(), "no arm state in the capsule", cap)
+        rep.check(a["strokes"] == n0 and not a.get("clickDrawOn"), "before a click a touch only aims: nothing is drawn", f"{a['strokes'] - n0} strokes")
+        rep.check("arm" not in cap.lower(), "no extra label in the capsule", cap)
         rep.check(a.get("aimRing") == [0.10, 0.45, 0.91, 0.8], "the aim mark is the blue one from before", str(a.get("aimRing")))
-        # Click, release the click, keep moving, lift.
+        # (a) Click, release the click, keep moving, lift: one stroke from the click point to the lift.
         pts = line(0.6, click_at=12)
         b = app.state()
         rep.check(b["strokes"] == n0 + 1, "the click starts one stroke", f"{b['strokes'] - n0} strokes")
         ends = b.get("lastStrokeEnds") or []
         exp = app.cmd({"cmd": "toPage", "points": [list(pts[12]), list(pts[-1])]})["points"]
         if len(ends) == 2:
-            d0 = math.dist(ends[0], exp[0]); d1 = math.dist(ends[1], exp[1]); span = math.dist(exp[0], exp[1])
-            rep.check(d0 < span * 0.08, "the stroke starts where the finger was at the click (nothing from the aiming before it)", f"{d0:.1f} from the click point, stroke span {span:.0f}")
-            rep.check(d1 < span * 0.08, "with the click released, the stroke keeps following the finger to where it lifts", f"{d1:.1f} from the lift point")
+            span = math.dist(exp[0], exp[1])
+            rep.check(math.dist(ends[0], exp[0]) < span * 0.08, "the stroke starts where the finger was at the click", f"{math.dist(ends[0], exp[0]):.1f} from the click point, span {span:.0f}")
+            rep.check(math.dist(ends[1], exp[1]) < span * 0.08, "with the click released, the stroke follows the finger to where it lifts", f"{math.dist(ends[1], exp[1]):.1f} from the lift point")
         else: rep.check(False, "the stroke follows the finger from the click to the lift", str(ends))
-        rep.shot(app, "click to draw: a line started by a click, drawn on with the click released")
-        line(0.5)
+        rep.check(b.get("clickDrawOn"), "drawing stays on after the lift", str(b.get("clickDrawOn")))
+        # Touch again within 3 s: a second stroke, no click.
+        time.sleep(1.0); line(0.5)
         c = app.state()
-        rep.check(c["strokes"] == b["strokes"], "after the lift the stroke has ended: the next touch only aims", f"{c['strokes'] - b['strokes']} strokes")
-        line(0.45, click_at=0, n=20); line(0.45, click_at=0, n=20, x0=0.4)
-        rep.check(app.state()["strokes"] == c["strokes"] + 2, "each click starts a new stroke", "")
-        time.sleep(3.5); line(0.4, click_at=5, n=30)
+        rep.check(c["strokes"] == b["strokes"] + 1, "(a) lift and touch again within 3 s: a second stroke with no click", f"{c['strokes'] - b['strokes']} strokes")
+        rep.shot(app, "click to draw: the first line started by a click, the second with no click")
+        # (c) Writing on for more than 3 s, pauses under 3 s, never turns it off; nor does one long stroke.
+        t0 = time.time()
+        for k in range(4): time.sleep(0.9); line(0.45 - 0.03 * k, n=25)
+        line(0.3, n=500)   # a 4 s stroke
         d = app.state()
-        rep.check(d["strokes"] == c["strokes"] + 3, "no timeout: a click after a long pause still draws", "")
+        rep.check(d["strokes"] == c["strokes"] + 5 and d.get("clickDrawOn"), "(c) writing on for more than 3 s never turns it off (pauses under 3 s, and a 4 s stroke)", f"{d['strokes'] - c['strokes']} of 5 strokes in {time.time() - t0:.1f} s, on {d.get('clickDrawOn')}")
+        # The sensor's brief 'lifting' report for a light finger doesn't break the stroke.
+        line(0.25, flicker_at=25)
+        e = app.state()
+        rep.check(e["strokes"] == d["strokes"] + 1, "a light finger reported as lifting for 40 ms stays one stroke", f"{e['strokes'] - d['strokes']} strokes")
+        # (b) More than 3 s without writing: off; a touch only aims.
+        time.sleep(3.4)
+        f = app.state()
+        rep.check(not f.get("clickDrawOn"), "(b) 3 s after the last lift it turns off", str(f.get("clickDrawOn")))
+        line(0.2)
+        g = app.state()
+        rep.check(g["strokes"] == e["strokes"], "(b) then a touch draws nothing until the next click", f"{g['strokes'] - e['strokes']} strokes")
         # Gestures never draw: a two-finger double tap undoes, a pan (even with a click) draws nothing, three fingers redo.
+        line(0.15, click_at=0, n=10)
         g0 = app.state()
         app.touch(double_tap(2, pad_w / 2, pad_h * 0.3)); g1 = app.state()
         pan = two_finger(pad_w / 2, pad_h * 0.4, 25, 25, shift=(-10, 0), dur=0.4); pan[5] = pan[5] + ["click"]
@@ -1402,20 +1419,28 @@ def run_scenarios(app, rep, only, hand):
         rep.check(g1["strokes"] == g0["strokes"] - 1 and g2["strokes"] == g1["strokes"], "a two-finger double tap undoes; a pan draws nothing, even with a click", f"{g0['strokes']} -> {g1['strokes']} -> {g2['strokes']}")
         app.touch(double_tap(3, pad_w / 2, pad_h * 0.3)); g3 = app.state()
         rep.check(g3["strokes"] == g0["strokes"], "a three-finger double tap redoes, no ink", f"{g2['strokes']} -> {g3['strokes']}")
-        # The eraser: rubbing without a click erases nothing; with a click it erases.
-        app.press("e", until=lambda s: s["tool"] == "eraser")
-        ink = app.state()["lastStrokeMid"]; (ex, ey), = app.cmd({"cmd": "toPad", "points": [ink]})["points"]
+        # The eraser: off, rubbing erases nothing; a click and rub erases, and so does the next rub with no click.
+        app.press("e", until=lambda s: s["tool"] == "eraser"); time.sleep(3.4)
         def rub(click):
             nonlocal cid
+            ink = app.state()["lastStrokeMid"]; (ex, ey), = app.cmd({"cmd": "toPad", "points": [ink]})["points"]
             cid += 1
             fr = [[0.008, [[cid, ex - 6 + 12 * (k % 2) * (j / 4), ey - 2 + k * 0.5, 40, 0.5, 7.5]]] for k in range(9) for j in range(4)]
             if click: fr[0] = fr[0] + ["click"]
             app.touch(fr + [[0.008, []], [0.2, []]])
         e0 = app.state(); rub(False); e1 = app.state()
-        rep.check(e1["strokes"] == e0["strokes"], "eraser: rubbing without a click erases nothing", f"{e0['strokes']} -> {e1['strokes']}")
+        rep.check(e1["strokes"] == e0["strokes"], "eraser, off: rubbing erases nothing", f"{e0['strokes']} -> {e1['strokes']}")
         rub(True); e2 = app.state()
         rep.check(e2["strokes"] < e1["strokes"], "eraser: a click and rub erases", f"{e1['strokes']} -> {e2['strokes']}")
+        rub(False); e3 = app.state()
+        rep.check(e3["strokes"] < e2["strokes"], "eraser: the next rub within 3 s erases with no click", f"{e2['strokes']} -> {e3['strokes']}")
         app.press("p", until=lambda s: s["tool"] == "pen")
+        # The time is a setting (2-5 s): at 2 s it turns off after 2 s.
+        app.cmd({"cmd": "clickDrawTimeout", "seconds": 2})
+        line(0.1, click_at=0, n=10); time.sleep(1.5)
+        on15 = app.state().get("clickDrawOn"); time.sleep(0.8)
+        rep.check(on15 and not app.state().get("clickDrawOn"), "with the setting at 2 s it turns off 2 s after the lift", f"on at 1.5 s {on15}")
+        app.cmd({"cmd": "clickDrawTimeout", "seconds": 3})
         # Off again: a touch draws as usual.
         app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.3)
         app.cmd({"cmd": "settingsSwitch", "index": ci, "on": False}); app.cmd({"cmd": "closeSettings"})

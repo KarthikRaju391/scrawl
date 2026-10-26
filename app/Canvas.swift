@@ -284,8 +284,14 @@ final class GestureEngine {
         mode = .idle; palm.removeAll(); edgeIgnored.removeAll(); navPrev = nil; drewIds.removeAll(); seen.removeAll()
     }
 
-    /// Click to draw: false unless a click just happened, so a finger only aims (hovers) and never inks by touch.
+    /// Click to draw: false while it's off, so a finger only aims (hovers) and never inks by touch.
     var canInk: () -> Bool = { true }
+    /// Click to draw: a light finger the sensor reports as lifting (5 breaking, 6 lingering) for a moment and then
+    /// touching again (seen on Karthik's trackpad after releasing the click: back within 38-149 ms) stays the same
+    /// stroke. A real lift goes on to 7 or disappears, and ends it.
+    var bridgesLift: () -> Bool = { false }
+    static let liftBridge = 0.15
+    private var liftSince: Double?
     private var aiming: Contact?, lastT = 0.0
     /// Click to draw: the click is pen-down for the finger that's aiming. The stroke starts where it is now and
     /// goes on (the click released or not) until it lifts. False if no single finger is aiming.
@@ -300,6 +306,10 @@ final class GestureEngine {
     func ignoreUntilLifted(_ ids: Set<Int32>) { guard palmRejection else { return }; palm.formUnion(ids); seen.formUnion(ids) }
 
     func frame(_ contacts: [Contact], t: Double) {
+        if case let .drawing(id, _) = mode, bridgesLift(), contacts.contains(where: { $0.id == id && ($0.state == 5 || $0.state == 6) }) {
+            if t - (liftSince ?? t) < Self.liftBridge { liftSince = liftSince ?? t; return }
+        }
+        liftSince = nil
         let down = contacts.filter(\.isDown)
         let ids = Set(down.map(\.id))
         for id in seen.subtracting(ids) { onContactEnd?(id, palm.contains(id), drewIds.contains(id)) }
@@ -473,16 +483,39 @@ final class CanvasView: MTKView {
     private var needsRender = true
     private var link: CADisplayLink?
     private(set) var settings = Settings()
-    // MARK: click to draw (Settings): a touch only aims; a click is pen-down. The stroke starts where the finger
-    // is, goes on with the click released, and ends when the finger lifts. Nothing stays armed, so no timeout.
+    // MARK: click to draw (Settings): a touch only aims until a click. The click turns drawing on and starts the
+    // stroke where the finger is; release the click and draw on; lift and touch again for more strokes, no more
+    // clicks. `clickDrawTimeout` seconds after the last lift with no writing it turns off; never while writing.
 
     nonisolated(unsafe) static var clickToDraw = Launch.testing ? false : UserDefaults.standard.bool(forKey: "clickToDraw")
+    nonisolated(unsafe) static var clickDrawTimeout: Double = {
+        let v = UserDefaults.standard.object(forKey: "clickToDrawTimeout") as? Double ?? 3
+        return Launch.testing ? 3 : min(max(v, 2), 5)
+    }()
+    private(set) var clickDrawOn = false
+    private var clickDrawLastLift = 0.0
+    private var clickDrawTimer: Timer?
     /// When the last click came; the finger's first frame may arrive just after it.
     private var clickAt = -1.0
     func clickDown() {
-        guard drawMode, Self.clickToDraw, builder == nil else { return }
+        guard drawMode, Self.clickToDraw else { return }
         act("click")
-        if !gestures.beginNow() { clickAt = CACurrentMediaTime() }
+        let now = CACurrentMediaTime()
+        clickDrawOn = true; clickDrawLastLift = now
+        if clickDrawTimer == nil {
+            let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in self?.clickDrawTick() }
+            RunLoop.main.add(t, forMode: .common); clickDrawTimer = t
+        }
+        if builder == nil && !gestures.beginNow() { clickAt = now }
+    }
+    private func clickDrawTick() {
+        guard clickDrawOn else { return clickDrawOff() }
+        if builder == nil && CACurrentMediaTime() - clickDrawLastLift > Self.clickDrawTimeout { clickDrawOff() }
+    }
+    private func clickDrawOff() {
+        clickDrawTimer?.invalidate(); clickDrawTimer = nil
+        guard clickDrawOn else { return }
+        clickDrawOn = false; act("clickDrawOff")
     }
     /// The aim mark: a blue ring around the finger.
     static let aimRingColor = SIMD4<Float>(0.10, 0.45, 0.91, 0.8)
@@ -490,6 +523,7 @@ final class CanvasView: MTKView {
     var drawMode = false {
         didSet {
             if drawMode != oldValue { act("drawMode", ["on": drawMode]) }
+            if !drawMode { clickDrawOff() }
             gestures.reset(); contacts = []; needsRender = true
             if drawMode { gestures.ignoreUntilLifted(downIds) }
             // No App Nap / timer coalescing while drawing: input and frames must not be throttled.
@@ -1033,7 +1067,8 @@ final class CanvasView: MTKView {
         }
         gestures.strokeLengthMM = { [weak self] in self?.builder?.lengthMM ?? 0 }
         gestures.onBegin = { [weak self] c, t in self?.beginStroke(c, t) }
-        gestures.canInk = { [weak self] in guard let self else { return true }; return !Self.clickToDraw || CACurrentMediaTime() - self.clickAt < 0.15 }
+        gestures.canInk = { [weak self] in guard let self else { return true }; return !Self.clickToDraw || self.clickDrawOn || CACurrentMediaTime() - self.clickAt < 0.15 }
+        gestures.bridgesLift = { [weak self] in Self.clickToDraw && self?.clickDrawOn == true }
         gestures.onMove = { [weak self] c, t in self?.moveStroke(c, t) }
         gestures.onEnd = { [weak self] commit in self?.endStroke(commit) }
         gestures.onNavigate = { [weak self] prev, now, ratio in
@@ -1120,7 +1155,7 @@ final class CanvasView: MTKView {
     }
 
     private func endStroke(_ commit: Bool) {
-        defer { builder = nil; needsRender = true }
+        defer { builder = nil; needsRender = true; clickDrawLastLift = CACurrentMediaTime() }
         guard var b = builder else { return }
         b.finish()
         logger.end(committed: commit)

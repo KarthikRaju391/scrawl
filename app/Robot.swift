@@ -74,13 +74,14 @@ final class Robot {
             gapsMark = canvas.perf.gaps.count; stepStart = CACurrentMediaTime(); tickGaps = []
             done(["ok": true])
         case "touch":
-            // Contacts are [id, x, y, pressure, size, major] in pad mm, or 0...1 with "norm" (recorded sessions).
+            // Contacts are [id, x, y, pressure, size, major, state] in pad mm, or 0...1 with "norm" (recorded sessions).
+            // state is the sensor's (4 touching, 5 breaking, 6 lingering, 3 making); 4 if left out.
             let k = (c["norm"] as? Bool ?? false) ? Multitouch.padMM : CGSize(width: 1, height: 1)
             let clickAt = Set((c["frames"] as? [[Any]] ?? []).enumerated().compactMap { ($0.element.count > 2 && ($0.element[2] as? String) == "click") ? $0.offset : nil })
             let frames = (c["frames"] as? [[Any]] ?? []).map { f -> (Double, [Contact]) in
                 let cs = (f[1] as? [[Double]] ?? []).map { v in
                     let mm = CGPoint(x: v[1] * k.width, y: v[2] * k.height)
-                    return Contact(id: Int32(v[0]), state: 4, norm: CGPoint(x: mm.x / Multitouch.padMM.width, y: mm.y / Multitouch.padMM.height),
+                    return Contact(id: Int32(v[0]), state: v.count > 6 ? Int32(v[6]) : 4, norm: CGPoint(x: mm.x / Multitouch.padMM.width, y: mm.y / Multitouch.padMM.height),
                                    mm: mm, pressure: v[3], size: v.count > 4 ? v[4] : 0.5, major: v.count > 5 ? v[5] : 7.5)
                 }
                 return (f[0] as? Double ?? 0.008, cs)
@@ -183,6 +184,9 @@ final class Robot {
             var n = CGPoint(x: q[0] / Multitouch.padMM.width, y: q[1] / Multitouch.padMM.height)
             n = Camera.active(n)
             done(["point": [v.minX + n.x * v.width, v.minY + n.y * v.height]])
+        case "clickDrawTimeout":
+            app.setClickDrawTimeout(c["seconds"] as? Double ?? 3)   // robot:needs func setClickDrawTimeout
+            done(["ok": true])
         case "canvasClick":   // a trackpad click in draw mode: the frozen pointer sits on the canvas, so it lands there
             app.robotCanvasClick()   // robot:needs func robotCanvasClick
             done(["ok": true])
@@ -313,6 +317,7 @@ final class Robot {
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
         s["newLines"] = canvas.newLineCount
+        s["clickDrawOn"] = canvas.clickDrawOn   // robot:needs var clickDrawOn
         s["aimRing"] = [CanvasView.aimRingColor.x, CanvasView.aimRingColor.y, CanvasView.aimRingColor.z, CanvasView.aimRingColor.w].map { (Double($0) * 100).rounded() / 100 }   // robot:needs aimRingColor
         s["pageBounds"] = canvas.doc.strokes.map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] }
         s["nextLine"] = canvas.nextLineAt.map { [$0.x, $0.y] } ?? []   // robot:needs var nextLineAt
