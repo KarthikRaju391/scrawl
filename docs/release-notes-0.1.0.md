@@ -35,6 +35,9 @@ New in this build:
 - **Help when you need it:** short tips (each at most twice) and a 30-second practice page.
 - **Feedback:** a haptic tick when an undo lands or a line ends, a hint while the page is about to move,
   and undone strokes fade out.
+- **Fixes:** opening Settings (⌘,) while drawing no longer locks you in (draw mode steps aside and comes back
+  when Settings closes; Esc always leaves draw mode); ½- and ¾-page lines end where they should, also when you
+  nudge or pinch while writing.
 - **Delete pages** from the overview (Delete, or right-click) or Edit › Delete Page (⌥⌘⌫), with ⌘Z to undo.
 - **Zoom you can see and reuse:** the zoom in the toolbar and in draw mode, presets and a typed zoom; pinches
   land on clean values like 300%.
@@ -66,8 +69,8 @@ Full list: [CHANGELOG.md](https://github.com/KarthikRaju391/trackpad-draw/blob/m
 ## Checksums (SHA-256)
 
 ```
-1acfea1f0ca00d919296a1e5b8a632c5eeb3e6a1b5ea91aeefcb450238498349  Scrawl-0.1.0.dmg
-ffcc8085f1fca635bf8040bfa070ef1a089759dcfda5427cde4a316407e2c5cd  Scrawl-0.1.0.zip
+f83f1d8db9fb1b8b0cff05962fd79fd87f3f15e711fcfd500bf44876076ef14a  Scrawl-0.1.0.dmg
+966847b04ea95b1d1741963fe48d103d5248fe7ec99fe1435f51c7b3dc91196c  Scrawl-0.1.0.zip
 ```
 
 ## Tested
