@@ -139,9 +139,11 @@ enum TestPersist {
 enum TestCrash {
     /// No crash report and no "quit unexpectedly" dialog if this process crashes from now on (test runs only:
     /// a dialog would land on the screen of the person using the Mac).
-    static func noReports() {
-        // EXC_MASK_ALL incl. EXC_MASK_CORPSE_NOTIFY (the macros aren't imported into Swift)
-        for mask in [0x3FFE, 0x1FFE] where task_set_exception_ports(mach_task_self_, exception_mask_t(mask), mach_port_t(MACH_PORT_NULL), EXCEPTION_DEFAULT, THREAD_STATE_NONE) == KERN_SUCCESS { break }
+    /// `crashOnly` leaves the other exception ports alone: clearing them all (fine for a process about to crash)
+    /// stopped key events reaching a robot run's app.
+    static func noReports(crashOnly: Bool = false) {
+        // EXC_MASK_ALL incl. EXC_MASK_CORPSE_NOTIFY, or just EXC_MASK_CRASH | EXC_MASK_CORPSE_NOTIFY (the macros aren't imported into Swift)
+        for mask in (crashOnly ? [0x2400, 0x400] : [0x3FFE, 0x1FFE]) where task_set_exception_ports(mach_task_self_, exception_mask_t(mask), mach_port_t(MACH_PORT_NULL), EXCEPTION_DEFAULT, THREAD_STATE_NONE) == KERN_SUCCESS { break }
     }
     static func now() -> Never {
         NSApp.setActivationPolicy(.prohibited)

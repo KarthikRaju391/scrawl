@@ -30,7 +30,7 @@ final class Robot {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         // A crash in a robot run fails the run (robot.py sees the exit); it must not put a "quit unexpectedly"
         // dialog on Karthik's screen. ROBOT_CRASH_REPORTS=1 keeps the report, for a stack trace.
-        if ProcessInfo.processInfo.environment["ROBOT_CRASH_REPORTS"] != "1" { TestCrash.noReports() }   // robot:needs static func noReports
+        if ProcessInfo.processInfo.environment["ROBOT_CRASH_REPORTS"] != "1" { TestCrash.noReports(crashOnly: true) }   // robot:needs static func noReports
         app.canvas.resumeOnDrawStart = true   // robot:needs var resumeOnDrawStart
         app.warmsThumbnails = true; app.warmThumbnails()   // robot:needs func warmThumbnails
         let t = Timer(timeInterval: 0.004, repeats: true) { [weak self] _ in self?.poll() }
