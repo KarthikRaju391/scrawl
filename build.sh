@@ -9,10 +9,14 @@ cd "$(dirname "$0")"
 . ./release.conf
 CONFIG=${CONFIG:-dev}
 BUILD=${BUILD_NUMBER:-1}
-if [ "$CONFIG" = release ]; then APP="build/release/$APP_NAME.app"; else APP="build/$APP_NAME.app"; fi
+if [ "$CONFIG" = release ]; then FINAL="build/release/$APP_NAME.app"; else FINAL="build/$APP_NAME.app"; fi
 FRAMEWORKS="-framework AppKit -framework Metal -framework MetalKit -framework QuartzCore -framework Carbon"
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+# Build and sign in a staging folder, then swap it in: the app at $FINAL may be open (Karthik runs it while the
+# checks rebuild it), so it is never empty or half-built (checks/bundle-intact.sh).
+STAGE="build/.staging-$CONFIG"
+APP="$STAGE/$APP_NAME.app"
+rm -rf "$STAGE"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$(dirname "$FINAL")"
 # The binary is always TrackpadDraw; the bundle name follows release.conf.
 if [ "$CONFIG" = release ]; then
     ID=$BUNDLE_ID
@@ -55,6 +59,11 @@ if [ "$CONFIG" = release ]; then
 else
     codesign --force -s - "$APP" 2>/dev/null || true
 fi
+OLD="$FINAL.old-$$"
+[ -e "$FINAL" ] && mv "$FINAL" "$OLD"
+mv "$APP" "$FINAL"
+rm -rf "$OLD" "$STAGE"
+APP=$FINAL
 echo "built: $APP ($CONFIG, $VERSION build $BUILD)"
 [ "$CONFIG" = release ] && exit 0
 swiftc -O -swift-version 5 -o build/bench $(ls app/*.swift | grep -v -e main.swift -e TestZoomLock.swift -e TestPersist.swift -e TestInput.swift -e TestAbout.swift -e TestMapping.swift -e TestEdge.swift -e TestKeys.swift -e TestNewLine.swift -e TestPage.swift -e TestGallery.swift -e TestArrows.swift -e TestMeta.swift -e TestGallerySpeed.swift -e TestToolDraw.swift -e TestTaps.swift -e TestArrowKeys.swift -e TestToast.swift -e TestJitter.swift -e TestGalleryKeys.swift -e TestModes.swift -e Robot.swift -e TestPan.swift -e UsageEvents.swift -e AppMenu.swift -e AppGallery.swift) bench/*.swift \
