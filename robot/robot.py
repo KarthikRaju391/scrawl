@@ -917,9 +917,61 @@ def run_scenarios(app, rep, only, hand):
         s = app.state()
         ink = s["inkBounds"]
         rep.step("ink", maxX=round(ink[2] / W, 4), newLines=s["newLines"], strokesWritten=written, strokesOnPage=s["strokes"] - n0)
-        rep.check(ink[2] <= frac * W + 1e-6, f"{name} lines: no ink past {frac:.0%} of the page width", f"ink reaches {ink[2] / W:.1%} of the page")
-        rep.check(s["strokes"] - n0 == written, "no stroke lost when a word is moved to the next line", f"{written} written, {s['strokes'] - n0} on the page")
+        rep.check(ink[2] <= (frac + 0.06) * W, f"{name} lines end at about {frac:.0%} of the page (a word may run slightly past it)", f"ink reaches {ink[2] / W:.1%} of the page")
+        rep.check(s["strokes"] - n0 == written, "every stroke stays where it was written", f"{written} written, {s['strokes'] - n0} on the page")
         rep.shot(app, f"{name} lines at 100%")
+        ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
+
+    @scenario("edge-word-stays", "Karthik's repro (19:33): a fast writer reaches the ½-page mark and starts 'the' right after 'dog', pausing 0.7 s inside the word. The word finishes on its line, nothing already written ever moves, and the line breaks only after the word; the next words keep to the ½-page mark.")
+    def _():
+        ensure(app, "draw", False, "d"); app.press("n")
+        ensure(app, "writing", True, "w")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        ensure(app, "draw", True, "d")
+        st = app.state(); W = st["pageW"]; pad_w, pad_h = st["padMM"]
+        old_h = hand.h; hand.h = 4.5
+        p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
+        upm = (p1[0] - p0[0]) / 10
+        y = pad_h * 0.8
+        (x,) = [app.cmd({"cmd": "toPad", "points": [[W * 0.035, 0]]})["points"][0][0]]
+        cid = 15000
+        lines0 = st["newLines"]
+        # Fast writing: words 0.2 s apart (no 400 ms pause, so the app makes no decision) up to ~42% of the page.
+        fr = []
+        for w in ["over", "the", "lazy", "dog"]:
+            strokes = hand.word(w, x, y)
+            f, cid = hand.frames(strokes, cid); fr += f + [[0.008, []]] * 25
+            x += hand.width(w) + hand.h * 0.9
+            if (app.cmd({"cmd": "toPagePt", "point": [x, y]})["point"][0]) > W * 0.42: break
+        app.touch(fr, settle=0.05)
+        before = app.state()["pageBounds"]
+        # 'th', a 0.7 s pause inside the word, then 'e'; then the word gap.
+        th = hand.word("th", x, y); e_x = x + hand.width("th")
+        f1, cid = hand.frames(th, cid)
+        f2, cid = hand.frames(hand.word("e", e_x, y), cid)
+        r = app.touch(f1 + [[0.008, []]] * int(0.7 / 0.008) + f2, settle=0.05)
+        mid = app.state()
+        word_bounds = mid["pageBounds"][len(before):]
+        rep.check(mid["newLines"] == lines0, "no line break inside the word (not at the 0.7 s pause between 'th' and 'e')", f"new lines during the word: {mid['newLines'] - lines0}")
+        app.touch([[0.008, []]] * int(1.4 / 0.008), settle=0.3); settle(app)
+        after = app.state()
+        moved = [i for i, (a, b) in enumerate(zip(before + word_bounds, after["pageBounds"])) if any(abs(u - v) > 1e-6 for u, v in zip(a, b))]
+        rep.check(not moved and len(after["pageBounds"]) == len(before) + len(word_bounds), "nothing already written moves (the started word and everything before it)", f"moved strokes: {moved}")
+        ys = [(b[1] + b[3]) / 2 for b in word_bounds]; line_y = [(b[1] + b[3]) / 2 for b in before]
+        same_line = word_bounds and max(abs(v - (sum(line_y) / len(line_y))) for v in ys) < hand.h * 1.2 * upm
+        rep.check(same_line, "'the' is finished on the line it started on (no break inside the word)", f"word ends at {max(b[2] for b in word_bounds) / W:.0%} of the page")
+        rep.check(after["newLines"] > lines0, "after the word, the line breaks", f"new lines {after['newLines'] - lines0}")
+        rep.shot(app, "'the' finished on its line past the mark; the next line comes after it")
+        # The next words follow the app's breaks and keep to the ½-page mark (each starts before it).
+        n0 = len(after["pageBounds"])
+        cid, written = write_rows(cid, "quick brown fox jumps over the lazy dog again and again".split(), [after["nextLine"][0], after["nextLine"][1] - hand.h * 0.35 * upm])
+        fin = app.state()
+        rest = fin["pageBounds"][n0:]
+        starts_ok = all(b[0] <= W * 0.5 for b in rest)
+        over = max(b[2] for b in rest) / W
+        rep.check(starts_ok and over <= 0.56, "the next words start before the ½-page mark; a word may only run slightly past it", f"ink to {over:.1%} of the page")
+        hand.h = old_h
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
     @scenario("half-line-hard-limit", "½-page lines at zoom 100% (Karthik's screenshot): ink never goes past 50% of the page; the word that would cross the mark goes to the next line.")

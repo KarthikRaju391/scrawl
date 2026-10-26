@@ -26,13 +26,19 @@ struct WritingLayout {
     var legacyStrokeEdge = false   // replays of old sessions: the edge check used only the last stroke
 
     enum Move: Equatable {
-        case none, pan(CGPoint), newLine(CGPoint), wrapWord(CGPoint, wordStart: Double)
-        var kind: String { switch self { case .none: return "none"; case .pan: return "autoPan"; case .newLine, .wrapWord: return "newLine" } }
+        case none, pan(CGPoint), newLine(CGPoint)
+        var kind: String { switch self { case .none: return "none"; case .pan: return "autoPan"; case .newLine: return "newLine" } }
     }
 
     /// Where this line started, if a deliberate hand pan moved it (Canvas decides that): the line then ends ½ or
     /// ¾ of the page after this point instead of after the left margin. Auto-pans never move it.
     var segmentStart: Double?
+    /// A typical word's width from earlier lines (when this line has only one word so far).
+    var wordHint: Double?
+    /// The limit for this line (page units).
+    func lineEnd(lineLeft: Double, pageWidth: Double) -> Double {
+        min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageWidth * (1 - margin))
+    }
     /// A hand pan counts as deliberate when the view moved sideways by at least this much of its width.
     static let deliberatePan = 0.10
     /// A pan moves the view at most this much (fraction of its width), so you can follow it.
@@ -58,10 +64,20 @@ struct WritingLayout {
         let words = Self.words(lineStrokes, gap: gap)
         if legacyStrokeEdge {
             if right >= lineEnd { return .newLine(next) }
-        } else if right > lineEnd {
-            // The word just written crosses the limit: it goes to the next line (unless it's the line's only word).
-            if words.count >= 2, let last = words.last { return .wrapWord(next, wordStart: last.start) }
+        } else if right >= lineEnd {
+            // A word that started before the limit ran past it: it stays on its line (written ink never moves);
+            // the line breaks after it (the app waits a longer pause for this one, so a pause inside the word
+            // doesn't split it).
             return .newLine(next)
+        } else if let w = words.last {
+            // Decide before the next word starts: if this line's typical word (after a word space) wouldn't fit
+            // before the limit, go to the next line now. 80% of a word may hang over: a slight extension is fine.
+            let widths = words.map { $0.end - $0.start }.sorted()
+            let typical = words.count >= 2 ? widths[widths.count / 2] : max(wordHint ?? 0, w.end - w.start)
+            let gaps = zip(words, words.dropFirst()).map { $1.start - $0.end }.sorted()
+            let space = gaps.isEmpty ? line.height * 0.6 : gaps[gaps.count / 2]
+            // (If the last word still looks unfinished, the app waits a longer pause before acting on this.)
+            if right + space + typical * 0.8 > lineEnd { return .newLine(next) }
         }
         guard atEdge, autoPan != .off else { return .none }
         // Keep the last words on screen: the last three if they fit in 60% of the view, else two, else one.
@@ -86,6 +102,16 @@ struct WritingLayout {
     /// line start 5% in from the left.
     static func newLineCenter(lineLeft: Double, lineMidY: Double, pitch: Double, visible v: CGRect) -> CGPoint {
         CGPoint(x: max(lineLeft - v.width * 0.05, 0) + v.width / 2, y: lineMidY - pitch + (lineFromTop - 0.5) * v.height)
+    }
+
+    /// Whether the line's last word looks unfinished: much shorter (< 60%) than this line's typical word, so a
+    /// pause now is probably inside it. (A line's first word never counts as unfinished.)
+    static func lastWordUnfinished(_ lineStrokes: [CGRect], line: CGRect, visible v: CGRect, hint: Double?) -> Bool {
+        let words = Self.words(lineStrokes, gap: max(line.height * 0.45, v.width * 0.01))
+        guard words.count >= 2, let w = words.last else { return false }
+        let widths = words.dropLast().map { $0.end - $0.start }.sorted()
+        let typical = widths[widths.count / 2]
+        return (w.end - w.start) < typical * 0.6
     }
 
     /// The line's words as x ranges, left to right (strokes grouped by x; a gap > `gap` splits words).

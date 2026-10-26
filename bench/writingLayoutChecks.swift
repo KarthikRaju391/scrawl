@@ -32,19 +32,30 @@ func writingLayoutChecks(_ check: (Bool, String) -> Void) {
               String(format: "left: the last three words start at %.2f of the view (left edge), %d words in view", wx, wordsInView(m.visible)))
     } else { check(false, "left: expected a pan") }
     check(after(layout(.off)) == .none, "no pan: nothing moves at the right edge")
-    // The line width is a hard limit from the page's left edge: a word that crosses it goes to the next line
-    // (the view goes to the next line's start), in every mode.
+    // Line breaks are decided before a word starts, and written ink never moves (Move has no case that moves ink).
+    // The words here are 3 letters of 20 with 4 between, 36 apart: a typical word is 68 wide, a word space 36.
     for a in [AutoPan.off, .centre, .left] {
         var l = layout(a, width: 0.5)
-        l.lineWidth = (last.maxX - 1) / pageW   // the last word crosses the limit by 1 unit
-        if case .wrapWord(let c, let ws) = after(l) {
+        // A word that started before the limit and ran past it: the line breaks after it (a new line, nothing moved).
+        l.lineWidth = (last.maxX - 1) / pageW
+        if case .newLine(let c) = after(l) {
             var m = cam; m.center = c; m.clamp()
-            check(abs(m.visible.minX - (50 - v.width * 0.05)) < 1e-6 && c.y < line.minY && abs(ws - lastWord) < 1e-9,
-                  "\(a): a word crossing the line width moves to the next line's start (the view follows)")
-        } else { check(false, "\(a): expected the crossing word to move to the next line") }
-        // Just short of the limit: nothing moves (the line can take another short word).
-        l.lineWidth = (last.maxX + 20) / pageW
-        if case .newLine = after(l) { check(false, "\(a): short of the limit nothing should move") } else { check(true, "\(a): just short of the limit, the line stays") }
+            check(abs(m.visible.minX - (50 - v.width * 0.05)) < 1e-6 && c.y < line.minY, "\(a): a word that ran past the limit stays; the line breaks after it")
+        } else { check(false, "\(a): expected a new line after the word that ran past the limit") }
+        // Room left for less than 80% of a typical word after a space: break now, before the next word starts.
+        l.lineWidth = (last.maxX + 36 + 68 * 0.8 - 5) / pageW
+        if case .newLine = after(l) { check(true, "\(a): the next word wouldn't fit: the line breaks before it starts") }
+        else { check(false, "\(a): expected a new line before a word that wouldn't fit") }
+        // A pause inside a word near the limit (the last 'word' is only a letter so far): no break yet.
+        var partial = strokes.dropLast(2).map { $0 }
+        let lp = partial.last!, lineP = partial.reduce(CGRect.null) { $0.union($1) }
+        check(WritingLayout.lastWordUnfinished(partial, line: lineP, visible: v, hint: nil) && !WritingLayout.lastWordUnfinished(strokes, line: line, visible: v, hint: nil),
+              "\(a): a word cut short by a pause looks unfinished (the break waits for a longer pause); a whole word doesn't")
+        _ = lp
+        partial = []
+        // Room for it: no break (auto-pan may still move along).
+        l.lineWidth = (last.maxX + 36 + 68 * 0.8 + 5) / pageW
+        if case .newLine = after(l) { check(false, "\(a): the next word fits: no new line yet") } else { check(true, "\(a): the next word fits: no new line yet") }
     }
     // Full width at the page's right end: no new line until the line reaches the page margin (it came early,
     // at 70% of the view, once the view reached the page's end: the parked pan bug).
@@ -63,7 +74,7 @@ func writingLayoutChecks(_ check: (Bool, String) -> Void) {
     let within = CGRect(x: pageW * 0.75, y: 800, width: 20, height: 30), beyond = CGRect(x: pageW * 0.79, y: 800, width: 20, height: 30)
     let noWrap: Bool = { if case .newLine = moved.after(stroke: within, line: within, lineStrokes: [within], lineLeft: 50, visible: ev, pageWidth: pageW) { return false }; return true }()
     let wraps: Bool = { if case .newLine = moved.after(stroke: beyond, line: beyond, lineStrokes: [beyond], lineLeft: 50, visible: ev, pageWidth: pageW) { return true }; return false }()
-    let crossing: Bool = { if case .newLine = moved.after(stroke: beyond, line: beyond, lineStrokes: [beyond], lineLeft: 50, visible: ev, pageWidth: pageW) { return true }; if case .wrapWord = moved.after(stroke: beyond, line: beyond, lineStrokes: [beyond], lineLeft: 50, visible: ev, pageWidth: pageW) { return true }; return false }()
+    let crossing: Bool = { if case .newLine = moved.after(stroke: beyond, line: beyond, lineStrokes: [beyond], lineLeft: 50, visible: ev, pageWidth: pageW) { return true }; return false }()
     check(noWrap && wraps && crossing, "a line moved to 30% of the page by a hand pan ends at 80% (½ page later): no new line at 77%, a new line at 81%")
     // A new line sits 57.5% down the view, so the lines above stay in sight.
     let nc = WritingLayout.newLineCenter(lineLeft: 50, lineMidY: 800, pitch: 40, visible: v)

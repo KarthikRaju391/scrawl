@@ -89,13 +89,6 @@ final class Stroke {
         bounds = CGRect(x: xs.min()! - maxR, y: ys.min()! - maxR, width: xs.max()! - xs.min()! + 2 * maxR, height: ys.max()! - ys.min()! + 2 * maxR)
     }
 
-    /// The same stroke moved by `d` (a word carried down to the next line).
-    init(moving s: Stroke, by d: CGPoint) {
-        tool = s.tool; color = s.color; size = s.size; radii = s.radii
-        points = s.points.map { StrokePoint(p: CGPoint(x: $0.p.x + d.x, y: $0.p.y + d.y), pressure: $0.pressure) }
-        bounds = s.bounds.offsetBy(dx: d.x, dy: d.y)
-    }
-
     /// Does a circle at `p` with radius `r` touch this stroke?
     func hit(_ p: CGPoint, r: Double) -> Bool {
         guard bounds.insetBy(dx: -r, dy: -r).contains(p) else { return false }
@@ -148,11 +141,6 @@ final class Document {
         return strokes.count != n
     }
     func clear() { guard !strokes.isEmpty else { return }; snapshot(); strokes.removeAll() }
-    /// Writing mode: swap strokes for moved copies (a word carried to the next line), one undo step.
-    func replace(_ old: [Stroke], with new: [Stroke]) {
-        snapshot()
-        for (o, n) in zip(old, new) { if let i = strokes.firstIndex(where: { $0 === o }) { strokes[i] = n } }
-    }
     /// Scratch-out: the strokes under a scratch go in one undo step (the scratch itself is never added).
     func scratchOut(erasing gone: [Stroke]) { snapshot(); strokes.removeAll { s in gone.contains { $0 === s } } }
     /// Swap the last stroke (no new undo step: it's a correction of the stroke just added).
@@ -517,8 +505,6 @@ final class CanvasView: MTKView {
     var writingMode = false { didSet { if writingMode != oldValue { act("writingMode", ["on": writingMode]) }; endWritingLine(); needsRender = true } }
     private var lineInk: CGRect?
     private var lineStrokes: [CGRect] = []
-    /// The strokes behind lineStrokes (a word that crosses the line's end is moved down whole).
-    private var lineStrokeRefs: [Stroke] = []
 
     private var camAnim: (from: Camera, to: Camera, start: Double, src: String, duration: Double)?
     private(set) var panCount = 0
@@ -631,7 +617,7 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineStrokes = []; lineStrokeRefs = []; pendingMove = nil; legacyLineLeft = nil; segmentStart = nil; handPanX = 0 }
+    private func endWritingLine() { lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil; segmentStart = nil; handPanX = 0 }
     /// Where the line started after a deliberate hand pan (WritingLayout.segmentStart).
     private var segmentStart: Double?
     /// How far the view's centre moved sideways by hand since the last stroke (page units). Pinches zoom about
@@ -1150,16 +1136,22 @@ final class CanvasView: MTKView {
             let vh = camera.visible.height
             // A stroke well above or below the current line (you moved there yourself): new line here.
             if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
-                lineInk = nil; lineStrokes = []; lineStrokeRefs = []; legacyLineLeft = s.bounds.minX; segmentStart = nil
+                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; segmentStart = nil
             }
             // A deliberate hand pan (10% of the view or more) and then writing somewhere new on the line (not right
             // after its last word): the line starts here now, and ends ½ / ¾ of the page later. Carrying on where the
             // line ended (as with No pan) keeps its start.
             let vw = camera.visible.width
-            if handPanX >= vw * WritingLayout.deliberatePan, let line = lineInk {
-                let gap = max(line.height * 1.5, vw * 0.08)
-                if s.bounds.minX > line.maxX + gap || s.bounds.maxX < line.minX - gap {
-                    segmentStart = s.bounds.minX; lineInk = nil; lineStrokes = []; lineStrokeRefs = []
+            if handPanX >= vw * WritingLayout.deliberatePan {
+                if let line = lineInk {
+                    let gap = max(line.height * 1.5, vw * 0.08)
+                    if s.bounds.minX > line.maxX + gap || s.bounds.maxX < line.minX - gap {
+                        segmentStart = s.bounds.minX; lineInk = nil; lineStrokes = []
+                        act("lineMoved", ["x": s.bounds.minX])
+                    }
+                } else {
+                    // No line open (a new line just came, or nothing written yet): the line starts where you moved to.
+                    segmentStart = s.bounds.minX
                     act("lineMoved", ["x": s.bounds.minX])
                 }
             }
@@ -1167,26 +1159,41 @@ final class CanvasView: MTKView {
             if legacyLineLeft == nil { legacyLineLeft = s.bounds.minX }
             let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
             lineInk = line
-            lineStrokes.append(s.bounds); lineStrokeRefs.append(s)
+            lineStrokes.append(s.bounds)
             var layout = WritingLayout()
             layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
             layout.autoPan = tools.autoPan
             layout.edge = settings.panEdge
             layout.legacyStrokeEdge = legacyWriting
             layout.segmentStart = segmentStart
+            layout.wordHint = typicalWordWidth
             let start = legacyWriting ? legacyLineLeft! : layout.lineStart(pageWidth: camera.page.width)
             let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: start,
                                     visible: camera.visible, pageWidth: camera.page.width)
             if move == .none { pendingMove = nil }
             else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
-            else { pendingMove = (move, now()); act("movePending", ["kind": move.kind]) }
+            else {
+                // A line break waits for a word gap, not a pause inside a word: longer when the last word still looks
+                // unfinished (much shorter than this line's typical word: 800 ms) or ran past the limit (650 ms;
+                // both: 1.5 s). Written ink never moves, so a break inside a word would split it.
+                var wait = settings.pauseBeforeMoveMs
+                if case .newLine = move {
+                    let over = line.maxX >= layout.lineEnd(lineLeft: start, pageWidth: camera.page.width)
+                    let unfinished = WritingLayout.lastWordUnfinished(lineStrokes, line: line, visible: camera.visible, hint: typicalWordWidth)
+                    wait = over && unfinished ? 1500 : unfinished ? max(wait, 800) : over ? max(wait, 650) : wait
+                }
+                pendingMove = (move, now(), wait)
+                act("movePending", ["kind": move.kind])
+            }
         }
     }
 
     // MARK: page moves wait for a pause
 
     /// The writing-mode move waiting for the finger to stay up `pauseBeforeMoveMs`.
-    private var pendingMove: (move: WritingLayout.Move, liftAt: Double)?
+    private var pendingMove: (move: WritingLayout.Move, liftAt: Double, waitMs: Double)?
+    /// A typical word's width on the lines written so far (for a line that has one word yet).
+    private var typicalWordWidth: Double?
     /// The clock for that wait (replaced by a virtual clock when replaying recorded sessions).
     var now: () -> Double = { CACurrentMediaTime() }
     private(set) var movesCancelled = 0
@@ -1199,7 +1206,7 @@ final class CanvasView: MTKView {
 
     /// Called every display tick (and by the replay driver): run the pending move once the pause is up.
     func advanceClock() {
-        guard let p = pendingMove, countedContacts == 0, now() - p.liftAt >= settings.pauseBeforeMoveMs / 1000 else { return }
+        guard let p = pendingMove, countedContacts == 0, now() - p.liftAt >= p.waitMs / 1000 else { return }
         pendingMove = nil
         applyMove(p.move)
     }
@@ -1213,26 +1220,12 @@ final class CanvasView: MTKView {
             if let line = lineInk { lastPanWordStart = WritingLayout.wordStarts(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01)).last ?? 0 }
             slideCamera(to: c)
         case .newLine(let c):
+            if let line = lineInk {
+                let ws = WritingLayout.words(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01)).map { $0.end - $0.start }.sorted()
+                if ws.count >= 2 { typicalWordWidth = ws[ws.count / 2] }
+            }
             if let line = lineInk { nextLineAt = CGPoint(x: WritingLayout().lineStart(pageWidth: camera.page.width), y: line.midY - max(line.height * 1.35, camera.visible.height * 0.12)) }
-            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; lineStrokeRefs = []; segmentStart = nil; handPanX = 0
-            slideCamera(to: c, src: "newLine")
-        case .wrapWord(let c, let wordStart):
-            // The word that crossed the line's end goes to the start of the next line (one undo step), and the
-            // line carries on after it.
-            guard let line = lineInk else { break }
-            let start = WritingLayout().lineStart(pageWidth: camera.page.width)
-            let pitch = max(line.height * 1.35, camera.visible.height * 0.12)
-            let word = lineStrokeRefs.filter { r in r.bounds.minX >= wordStart - 1e-6 && doc.strokes.contains(where: { $0 === r }) }
-            let d = CGPoint(x: start - wordStart, y: -pitch)
-            let moved = word.map { Stroke(moving: $0, by: d) }
-            for (o, n) in zip(word, moved) { n.id = o.id }
-            doc.replace(word, with: moved)
-            markDirty()
-            act("wordWrapped", ["strokes": moved.count])
-            nextLineAt = CGPoint(x: start, y: line.midY - pitch)
-            act("newLine", ["toX": c.x, "toY": c.y, "kind": "wrapWord"]); newLineCount += 1; segmentStart = nil; handPanX = 0
-            lineStrokes = moved.map(\.bounds); lineStrokeRefs = moved
-            lineInk = moved.reduce(CGRect.null) { $0.union($1.bounds) }
+            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; segmentStart = nil; handPanX = 0
             slideCamera(to: c, src: "newLine")
         }
         needsRender = true

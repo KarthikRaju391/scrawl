@@ -11,9 +11,9 @@ def chk(ok, msg):
     global bad; bad += 0 if ok else 1; print("PASS" if ok else "FAIL", msg)
 r = json.load(open(sys.argv[1]))
 for z in r["zoom3Full"]:
-    chk(z["newLines"] == 1 and z["pansBeforeNewLine"] >= 2 and z["inkRightAtNewLine"] >= z["limit"] - 3 * z["visibleWidth"] * 0.035,
+    chk(z["newLines"] == 1 and z["pansBeforeNewLine"] >= 2 and z["inkRightAtNewLine"] >= z["limit"] - 6.5 * z["visibleWidth"] * 0.035,   # within a word + a space (4.75 + 1.75 letters): the break comes before a word that won't fit
         f"zoom 3, Full width, auto-pan {z['mode']}: crossing the visible edge pans and stays on the line ({z['pansBeforeNewLine']} pans); "
-        f"the new line comes at the page-width limit (ink reached x {z['inkRightAtNewLine']:.0f}, limit {z['limit']:.0f}; visible width {z['visibleWidth']:.0f})")
+        f"the new line comes at the page-width limit, or before a word that wouldn't fit (ink reached x {z['inkRightAtNewLine']:.0f}, limit {z['limit']:.0f}; visible width {z['visibleWidth']:.0f})")
 for c in r["cases"]:
     tag = f"{c['shape']}, zoom lock {'on' if c['locked'] else 'off'}"
     s = c["scroll"]; t = c["twoFinger"]; w = c["writeAfterPanRight"]; a = c["autoPan"]

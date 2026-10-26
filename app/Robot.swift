@@ -301,6 +301,7 @@ final class Robot {
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
         s["newLines"] = canvas.newLineCount
+        s["pageBounds"] = canvas.doc.strokes.map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] }
         s["nextLine"] = canvas.nextLineAt.map { [$0.x, $0.y] } ?? []   // robot:needs var nextLineAt
         if let g = app.gallery, app.galleryShown {   // robot:needs class GalleryView
             s["thumbs"] = canvas.pages.map { d -> Int in let c = g.thumbnails.cached(d); return c.image == nil ? 0 : (c.fresh ? 2 : 1) }   // 0 blank, 1 old, 2 up to date
