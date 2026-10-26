@@ -62,6 +62,7 @@ final class ContainerView: NSView {
         // hides in draw mode (keys work there; the pointer is frozen so it couldn't be clicked anyway).
         canvas.frame = bounds
         pageMap.isHidden = !pageMap.wanted
+        if !pageMap.isHidden && pageMap.alphaValue < 0.05 { pageMap.alphaValue = 1 }
         if !pageMap.isHidden {
             let h = pageMap.preferredHeight
             pageMap.frame = CGRect(x: bounds.width - PageMapView.width - 12, y: bounds.height - h - 12, width: PageMapView.width, height: h)
@@ -171,17 +172,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tb.onGallery = { [weak self] in self?.toggleGallery() }
         cv.onStatus = { [weak self] in self?.updateBanner() }
         cv.onDocChanged = { [weak self] in self?.updateUndoState(); self?.container.pageMap.refresh() }
-        cv.onViewChange = { [weak self] in
-            guard let self else { return }
-            let m = self.container.pageMap
-            if m.isHidden == m.wanted { self.container.needsLayout = true }
-            if !m.isHidden { m.needsDisplay = true }
-        }
-        cv.onTouching = { [weak self] down in
-            guard let m = self?.container.pageMap, !m.isHidden else { return }
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.15; m.animator().alphaValue = down ? 0.35 : 1 }
-            if !down { m.refresh() }
-        }
+        cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source) }
+        cv.onTouching = { [weak self] down in if !down { self?.container.pageMap.refresh() } }
         cv.onTapCommand = { [weak self] text in self?.updateUndoState(); self?.showToast(text) }
         tips.show = { [weak self] text in self?.showToast(text, seconds: 4) }
         tips.onShown = { t in Analytics.shared.record("tip_shown", ["tip": t.rawValue]) }

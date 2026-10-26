@@ -1,8 +1,10 @@
 // The page map: a small picture of the page in the top-right corner, with the part you're looking at
-// outlined. It shows when you're zoomed in past 1.5x (in and out of draw mode). Click or drag it to move the
-// view (outside draw mode, where there's a pointer). The ink picture renders on a background queue, at most
-// every 0.4 s and only after a stroke ends, so it never touches the writing path; the outline is redrawn
-// live. It fades while a finger is on the page. View › Page Map turns it off.
+// outlined. It appears only while you move the page yourself (two-finger pan, pinch, arrow keys, scrolling)
+// when zoomed in past 1.5x, and fades out 1.2 s after the last move: writing, auto-pans and new lines never
+// show it. While the pointer is on it, it stays, so you can click or drag it to move the view (outside draw
+// mode, where there's a pointer). The ink picture renders on a background queue, at most every 0.4 s and only
+// after a stroke ends, so it never touches the writing path; the outline is redrawn live. View › Page Map
+// turns it off.
 import AppKit
 
 final class PageMapView: NSView {
@@ -20,11 +22,45 @@ final class PageMapView: NSView {
     private let queue = DispatchQueue(label: "scrawl.pagemap", qos: .utility)
     private(set) var renders = 0
 
+    /// The view moves that show it: the ones you make by hand.
+    static let revealSources: Set<String> = ["pinch", "scroll", "magnify", "arrow", "pageMap"]
+    static let holdSeconds = 1.2
+    private var shownUntil = 0.0
+    private var hovering = false
+    private var fade: DispatchWorkItem?
+
     /// Whether it should be on screen now.
     var wanted: Bool {
-        guard Self.enabled, let c = canvas else { return false }
-        return c.camera.zoom > Self.minZoom
+        guard Self.enabled, let c = canvas, c.camera.zoom > Self.minZoom else { return false }
+        return hovering || CACurrentMediaTime() < shownUntil
     }
+    /// The view changed; show the map if you moved it yourself.
+    func viewChanged(source: String) {
+        if Self.revealSources.contains(source) { reveal() } else if !isHidden { needsDisplay = true }
+    }
+    private func reveal() {
+        guard Self.enabled, let c = canvas, c.camera.zoom > Self.minZoom else { return }
+        shownUntil = CACurrentMediaTime() + Self.holdSeconds
+        fade?.cancel()
+        if isHidden || alphaValue < 1 { alphaValue = 1; superview?.needsLayout = true }
+        needsDisplay = true
+        scheduleFade()
+    }
+    private func scheduleFade() {
+        let w = DispatchWorkItem { [weak self] in
+            guard let self, !self.hovering else { return }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.3; self.animator().alphaValue = 0 }, completionHandler: { [weak self] in self?.superview?.needsLayout = true })
+        }
+        fade = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.holdSeconds, execute: w)
+    }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+    override func mouseEntered(with e: NSEvent) { hovering = true; fade?.cancel(); alphaValue = 1 }
+    override func mouseExited(with e: NSEvent) { hovering = false; shownUntil = CACurrentMediaTime() + Self.holdSeconds; scheduleFade() }
 
     /// The page area the map shows: the page's width, from its top down to below the lowest ink or the view.
     private func wantedRegion(_ c: CanvasView) -> CGRect {

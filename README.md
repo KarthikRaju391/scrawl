@@ -69,8 +69,10 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   three words on screen and moves at most half the view; a new line sits a little below the middle, so
   the lines you just wrote stay in sight. If you pan right by hand to write further along, the page
   stays where you put it. Choose the line width (½, ¾, full) and how it pans in the panel.
-- **Page map:** zoomed in past 1.5×, a small map of the page in the top-right corner shows where you
-  are. Click or drag it to move there (outside draw mode). View › Page Map hides it.
+- **Page map:** zoomed in past 1.5×, a small map of the page appears in the top-right corner while you
+  move the page yourself (two fingers, pinch, arrow keys, scrolling) and fades out a second after you stop;
+  writing never shows it. Point at it to keep it, then click or drag to move there (outside draw mode).
+  View › Page Map turns it off.
 - **Zoom lock (L)** keeps the zoom fixed while two fingers still pan.
 - **Arrow keys** pan the page by a tenth of the view, and Shift+arrows by a whole screen. They stop at the
   page's sides and top; at zoom 1, where the page already fills the width, ← → do nothing and ↑ ↓ scroll.

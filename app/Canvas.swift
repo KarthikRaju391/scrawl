@@ -418,7 +418,7 @@ final class CanvasView: MTKView {
                 markDirty()   // the view of each page is saved too
                 let v = camera.visible
                 recorder.record(["k": "view", "x": v.minX, "y": v.minY, "w": v.width, "h": v.height, "z": camera.zoom, "src": source], sensorT: frameSensorT)
-                onViewChange?()
+                onViewChange?(source)
             }
             // One line per gesture (same cause within 0.5 s is coalesced); always when locked.
             if abs(camera.zoom - oldValue.zoom) > 1e-9 {
@@ -434,8 +434,8 @@ final class CanvasView: MTKView {
     /// What is changing the camera/tools right now (for the event log).
     var source = "unknown"
     func changing(_ src: String, _ body: () -> Void) { let old = source; source = src; body(); source = old }
-    /// The visible part of the page changed (the page map follows it).
-    var onViewChange: (() -> Void)?
+    /// The visible part of the page changed, and why ("pinch", "arrow", "autopan"...): the page map follows it.
+    var onViewChange: ((String) -> Void)?
     /// A finger went down on / came off the page (draw mode): the page map fades while you draw.
     var onTouching: ((Bool) -> Void)?
     /// Centre the view on a page point, keeping the zoom (the page map).

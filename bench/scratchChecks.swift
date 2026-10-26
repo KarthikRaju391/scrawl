@@ -121,3 +121,22 @@ func scratchChecks(_ check: (Bool, String) -> Void) {
     doc.redo()
     check(doc.strokes.count == neighbour.count, "scratch-out: redo scratches it out again")
 }
+
+/// The page map shows only for moves made by hand: replay every view change in Karthik's recorded sessions
+/// through its rule. Auto-pans and new lines (writing) must show it 0 times; his pinches and pans do.
+func pageMapRevealChecks(_ check: (Bool, String) -> Void) {
+    let files = ((try? FileManager.default.contentsOfDirectory(atPath: "data")) ?? []).filter { $0.hasPrefix("session-2026") && $0.hasSuffix(".jsonl") }
+    var bySource: [String: Int] = [:]
+    for f in files {
+        guard let text = try? String(contentsOfFile: "data/" + f, encoding: .utf8) else { continue }
+        for line in text.split(separator: "\n") where line.contains("\"view\"") {
+            guard let d = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any], let src = d["src"] as? String else { continue }
+            bySource[src, default: 0] += 1
+        }
+    }
+    let writing = ["autopan", "newLine", "resume"].reduce(0) { $0 + (bySource[$1] ?? 0) }
+    let writingShown = ["autopan", "newLine", "resume"].filter { PageMapView.revealSources.contains($0) }.reduce(0) { $0 + (bySource[$1] ?? 0) }
+    let handShown = bySource.filter { PageMapView.revealSources.contains($0.key) }.values.reduce(0, +)
+    check(writing > 100 && writingShown == 0 && handShown > 100,
+          "page map: replaying the recorded sessions, \(writing) writing moves (auto-pans, new lines) show it 0 times; \(handShown) hand moves (pinch, scroll) show it")
+}

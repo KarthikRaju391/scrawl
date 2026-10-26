@@ -196,6 +196,7 @@ tapReplayChecks(check)
 scratchChecks(check)
 analyticsChecks(check)
 postHogChecks(check)
+pageMapRevealChecks(check)
 
 // Prediction must point ahead along the motion: sine path like the UI test, at several phases.
 do {

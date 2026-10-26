@@ -93,3 +93,9 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Keys: Delete (or ⌦) on the overview's highlighted tile; Control-click / right-click a tile: Open, Delete Page; Edit › Delete Page is **⌥⌘⌫** (⌘⌫ was already Clear Page). It acts on the overview's selection, or the open page.
 - Deleting the open page opens the next one (the previous one at the end); deleting the only page leaves one blank page.
 - Deletes aren't kept across a relaunch for undo (the autosave writes the notebook without the page).
+
+## Page map only when navigating
+- Shown by view moves made by hand: two-finger pan and pinch, scrolling, magnify, arrow keys, and the map itself; never by auto-pans, new lines, resume, page switches or a tap's view reset.
+- Fades (0.3 s) 1.2 s after the last hand move. It stays while the pointer is over it, so it can still be clicked outside draw mode.
+- The old "fade to 35% while a finger is down" is gone: the map is now only up while you navigate, which is when you want to see it.
+- Replay of the recorded sessions: 4,430 writing moves show it 0 times.

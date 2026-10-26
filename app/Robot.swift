@@ -92,7 +92,10 @@ final class Robot {
                     preciseWait(until: deadline)
                     k += 1
                     if k % 3 == 0 {   // the page as the user sees it while touching (e.g. the undo scrub's live preview)
-                        DispatchQueue.main.sync { let n = canvas.doc.strokes.count; if downs.trace.last != n { downs.trace.append(n) } }
+                        DispatchQueue.main.sync {
+                            let n = canvas.doc.strokes.count; if downs.trace.last != n { downs.trace.append(n) }
+                            if !self.app.container.pageMap.isHidden && self.app.container.pageMap.alphaValue > 0.05 { downs.mapSeen += 1 }   // robot:needs class PageMapView
+                        }
                     }
                     for c in cs where !seen.contains(c.id) {
                         seen.insert(c.id)
@@ -101,7 +104,7 @@ final class Robot {
                     Multitouch.onFrame?(cs, CACurrentMediaTime(), sensorT)
                 }
                 Thread.sleep(forTimeInterval: c["settle"] as? Double ?? 0.6)
-                DispatchQueue.main.async { canvas.flushInputForTest(); done(["frames": frames.count, "downs": downs.items, "strokeTrace": downs.trace]) }
+                DispatchQueue.main.async { canvas.flushInputForTest(); done(["frames": frames.count, "downs": downs.items, "strokeTrace": downs.trace, "mapSeen": downs.mapSeen]) }
             }
             t.qualityOfService = .userInteractive
             t.start()
@@ -211,7 +214,7 @@ final class Robot {
         return true   // robot:needs class PageMapView
     }   // robot:needs class PageMapView
 
-    final class Downs: @unchecked Sendable { var items: [[String: Any]] = []; var trace: [Int] = [] }
+    final class Downs: @unchecked Sendable { var items: [[String: Any]] = []; var trace: [Int] = []; var mapSeen = 0 }
 
     static func view(_ canvas: CanvasView) -> [String: Double] {
         let v = canvas.camera.visible
@@ -291,7 +294,7 @@ final class Robot {
         s["settingsSwitches"] = app.settingsWindow.switchesForTest.map { [$0.0, $0.1] as [Any] }   // robot:needs class SettingsWindow
         s["gallery"] = app.galleryShown ? (app.gallery?.selected ?? -1) : -2   // robot:needs var galleryShown
         s["canUndo"] = canvas.doc.canUndo   // robot:needs var canUndo
-        s["pageMap"] = app.container.pageMap.isHidden ? [:] : ["w": app.container.pageMap.frame.width, "h": app.container.pageMap.frame.height, "alpha": app.container.pageMap.alphaValue]   // robot:needs class PageMapView
+        s["pageMap"] = (app.container.pageMap.isHidden || app.container.pageMap.alphaValue < 0.05) ? [:] : ["w": app.container.pageMap.frame.width, "h": app.container.pageMap.frame.height, "alpha": app.container.pageMap.alphaValue]   // robot:needs class PageMapView
         return s
     }
 }

@@ -288,6 +288,7 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None):
     pad_w, pad_h = app.state()["padMM"]
     line = None   # this line in page units: left x, baseline y, ink height
     recs = []
+    last_hand = 0.0   # when the robot last moved the page by hand (that's meant to show the page map)
     for w in words:
         settle(app)
         st = app.state()
@@ -300,6 +301,7 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None):
             x += hand.h * 0.9
             if x + width > pad_w * 0.95:
                 app.touch(two_finger(pad_w / 2, pad_h / 2, 25, 25, shift=(-(pad_w * 0.45), 0), dur=0.5))
+                last_hand = time.time()
                 settle(app)
                 (x, y), = app.cmd({"cmd": "toPad", "points": [[last[2], line["y"]]]})["points"]
                 x += hand.h * 0.9
@@ -307,8 +309,11 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None):
         fr, cid = hand.frames(strokes, cid)
         fr += [[0.008, []]] * int(0.55 / 0.008)   # the pause after the word (> 400 ms: the page may move now)
         before = app.state()["view"]
+        hand_moved = time.time() - last_hand < 2.0
         r = app.touch(fr, settle=0.05)
+        map_seen = r.get("mapSeen", 0)
         after_view = settle(app)
+        map_seen += 1 if app.state().get("pageMap") else 0
         after = app.state()
         views = [d["view"] for d in r["downs"]]
         moved = any(any(abs(v[k] - views[0][k]) > 1e-6 for k in ("x", "y", "zoom")) for v in views)
@@ -320,7 +325,7 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None):
                     "h": max(b[3] for b in new) - min(b[1] for b in new)}
         new_line = after["view"]["y"] < before["y"] - (line["h"] * 0.5 if line else 1)
         wb = [min(b[0] for b in new), min(b[1] for b in new), max(b[2] for b in new), max(b[3] for b in new)] if new else None
-        recs.append({"word": w, "midWordMove": moved, "newLine": new_line, "view": after["view"], "before": before, "bounds": wb})
+        recs.append({"word": w, "midWordMove": moved, "newLine": new_line, "view": after["view"], "before": before, "bounds": wb, "mapSeen": map_seen, "handMoved": hand_moved})
         if new_line and line:
             # The next word starts the new line: below this line's first word.
             nl = {"x": line["x"], "y": line["y"] - max(line["h"] * 1.6, after["view"]["h"] * 0.12), "h": line["h"]}
@@ -343,8 +348,10 @@ def scenario_writing(app, rep, hand, zoom, width_index, pan, words):
     s, ms = app.press("d", until=lambda s: s["draw"])
     if not s["draw"]: app.click("draw"); s = app.state()   # builds from before D entered draw mode
     rep.step("D enters draw mode", ms=round(ms or -1))
+    app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)   # from the whole page (draw mode resumes at the last zoom)
     if zoom > 1:
         app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 15 * zoom, dur=0.6))
+        time.sleep(1.6)   # the page map shown by the pinch fades before writing starts
     st = app.state()
     rep.step("view", zoom=round(st["view"]["zoom"], 2), lineWidth=st["lineWidth"], autoPan=st["autoPan"])
     app.cmd({"cmd": "mark"})
@@ -461,12 +468,22 @@ def run_scenarios(app, rep, only, hand):
         st = app.state(); pad_w, pad_h = st["padMM"]
         fr, cid = hand.frames(hand.word("map", pad_w * 0.3, pad_h * 0.7, hand.roman), 9800)
         app.touch(fr)
-        app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 45, dur=0.6))   # zoom 3
-        settle(app); time.sleep(0.6)
+        r = app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 45, dur=0.6), settle=0.1)   # pinch to zoom 3
         s1 = app.state()
-        rep.check(bool(s1.get("pageMap")) and s1["view"]["zoom"] > 1.5, "zoomed in: the page map shows", f"zoom {s1['view']['zoom']:.1f}, map {s1.get('pageMap')}")
+        rep.check(bool(s1.get("pageMap")) and s1["view"]["zoom"] > 1.5, "pinching in: the page map shows", f"zoom {s1['view']['zoom']:.1f}, map {s1.get('pageMap')}")
+        time.sleep(1.9); s1b = app.state()
+        rep.check(not s1b.get("pageMap"), "and fades about 1.5 s after the fingers stop", f"{s1b.get('pageMap')}")
+        r = app.touch(two_finger(pad_w / 2, pad_h * 0.5, 25, 25, shift=(-15, 0), dur=0.4), settle=0.1)
+        rep.check(bool(app.state().get("pageMap")), "a two-finger pan shows it again", "")
+        time.sleep(1.9)
+        fr, cid = hand.frames(hand.word("ink", pad_w * 0.4, pad_h * 0.4, hand.roman), cid)
+        r = app.touch(fr)
+        rep.check(r.get("mapSeen", 0) == 0 and not app.state().get("pageMap"), "writing doesn't show it", f"seen in {r.get('mapSeen', 0)} samples")
+        app.press("right"); s1 = app.state()
+        rep.check(bool(s1.get("pageMap")), "an arrow key pan shows it", "")
         rep.shot(app, "page map at zoom 3 (top right)")
         app.press("d", until=lambda s: not s["draw"])
+        app.press("left")   # outside draw mode too: arrow pans show the map (and it stays while the pointer is on it)
         v0 = app.state()["view"]
         app.cmd({"cmd": "clickMap", "x": 0.85, "y": 0.5}); time.sleep(0.2)
         v1 = app.state()["view"]
@@ -476,8 +493,10 @@ def run_scenarios(app, rep, only, hand):
         rep.check(v2["x"] < v1["x"] - v1["w"] * 0.3, "dragging on the map moves the view along", f"view x {v1['x']:.0f} -> {v2['x']:.0f}")
         rep.shot(app, "after dragging on the map")
         app.cmd({"cmd": "menu", "action": "togglePageMapAction"}); time.sleep(0.3)
-        rep.check(not app.state().get("pageMap"), "View › Page Map turns it off")
+        app.press("right")
+        rep.check(not app.state().get("pageMap"), "View › Page Map off: panning doesn't show it")
         app.cmd({"cmd": "menu", "action": "togglePageMapAction"}); time.sleep(0.3)
+        app.press("left")
         rep.check(bool(app.state().get("pageMap")), "and on again")
 
     @scenario("resume", "Write at zoom 3, leave draw mode and zoom out to the whole page, press D: you're back at the end of your last word, at zoom 3, in a quarter second. If you zoomed in somewhere else yourself, D leaves you there.")
@@ -1014,6 +1033,9 @@ def flow_metrics(recs):
 def judge_writing(app, rep, recs, st, text, ocr_check=True):
     mid = [r["word"] for r in recs if r["midWordMove"]]
     rep.check(not mid, "the page never moved inside a word", f"moved inside: {mid}" if mid else f"{len(recs)} words")
+    seen = [r["word"] for r in recs if r.get("mapSeen") and not r.get("handMoved")]
+    if any(r["newLine"] or r["view"] != r["before"] for r in recs):
+        rep.check(not seen, "the page map stays hidden while writing (auto-pans and new lines don't show it)", f"shown while writing: {seen}" if seen else f"{len(recs)} words")
     pans, lines = flow_metrics(recs)
     rep.step("page moves", pans=[(p["wordsVisible"], round(p["jump"], 2)) for p in pans], newLines=len(lines))
     if pans:
