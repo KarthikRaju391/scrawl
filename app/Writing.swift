@@ -30,10 +30,11 @@ struct WritingLayout {
         var kind: String { switch self { case .none: return "none"; case .pan: return "autoPan"; case .newLine: return "newLine" } }
     }
 
-    /// After you pan right by hand (with auto-pan on), the line isn't held to the line width any more: it
-    /// runs to the page's margin. (Writing where you moved yourself must not jump back to the left margin:
-    /// Karthik's case.) With No pan, panning by hand is how you move along, and the width still applies.
-    var lineFree = false
+    /// Where this line started, if a deliberate hand pan moved it (Canvas decides that): the line then ends ½ or
+    /// ¾ of the page after this point instead of after the left margin. Auto-pans never move it.
+    var segmentStart: Double?
+    /// A hand pan counts as deliberate when the view moved sideways by at least this much of its width.
+    static let deliberatePan = 0.10
     /// A pan moves the view at most this much (fraction of its width), so you can follow it.
     var maxJump = 0.5
     /// Where the line sits in the view after a new line, from the top: below the middle, so the lines
@@ -44,7 +45,7 @@ struct WritingLayout {
     /// `lineLeft` = where lines start (the app passes `lineStart`).
     func after(stroke s: CGRect, line: CGRect, lineStrokes: [CGRect], lineLeft: Double, visible v: CGRect, pageWidth: Double) -> Move {
         let pageEnd = pageWidth * (1 - margin)
-        let lineEnd = lineFree ? pageEnd : min(lineLeft + lineWidth * pageWidth, pageEnd)
+        let lineEnd = min((segmentStart ?? lineLeft) + lineWidth * pageWidth, pageEnd)
         // The line's rightmost ink, not just this stroke: an i-dot or t-cross placed back inside the
         // word must not cancel a move that the word's end already called for.
         let right = legacyStrokeEdge ? s.maxX : max(s.maxX, line.maxX)

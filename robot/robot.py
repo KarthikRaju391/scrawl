@@ -280,7 +280,7 @@ def settle(app, quiet=0.12, limit=1.5):
     return last
 
 
-def write_words(app, hand, words, line_y, x0, cid, rep, font=None):
+def write_words(app, hand, words, line_y, x0, cid, rep, font=None, nudge_every=0, nudge_frac=0.0, pinch_at=None, jump_after=None, jump_pad_x=None, stop_on_new_line=False, jump_shift=0.22):
     """Write `words` like a person in writing mode. Each word goes just after the last word, where that is
     on the screen now (the page may have moved); when the page has gone to a new line, the next word starts
     that line, below the line's first word. With no room left on the pad and no page move (No pan), the
@@ -289,12 +289,24 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None):
     line = None   # this line in page units: left x, baseline y, ink height
     recs = []
     last_hand = 0.0   # when the robot last moved the page by hand (that's meant to show the page map)
-    for w in words:
+    for wi, w in enumerate(words):
         settle(app)
+        if nudge_every and wi > 0 and wi % nudge_every == 0:   # a small hand nudge right, as a writer does
+            app.touch(two_finger(pad_w * 0.6, pad_h * 0.3, 25, 25, shift=(-pad_w * 0.9 * nudge_frac, 0), dur=0.3)); last_hand = time.time(); settle(app)
+        if pinch_at is not None and wi == pinch_at:              # and a small pinch
+            app.touch(two_finger(pad_w * 0.6, pad_h * 0.3, 25, 26.5, dur=0.3)); last_hand = time.time(); settle(app)
+        jumped = False
+        if jump_after is not None and wi == jump_after + 1 and line is not None:   # a deliberate pan right, then write somewhere new
+            app.touch(two_finger(pad_w * 0.6, pad_h * 0.3, 25, 25, shift=(-pad_w * jump_shift, 0), dur=0.5)); last_hand = time.time(); settle(app)
+            jumped = True
         st = app.state()
         width = hand.width(w, font)
         if line is None:
             x, y = x0, line_y
+        elif jumped:
+            last = st["lastStrokes"][-1]
+            (lx, y), = app.cmd({"cmd": "toPad", "points": [[last[2], line["y"]]]})["points"]
+            x = jump_pad_x if jump_pad_x is not None else lx + pad_w * 0.18   # a gap: well past the next word's place
         else:
             last = st["lastStrokes"][-1]
             (x, y), = app.cmd({"cmd": "toPad", "points": [[last[2], line["y"]]]})["points"]
@@ -325,12 +337,13 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None):
                     "h": max(b[3] for b in new) - min(b[1] for b in new)}
         new_line = after["view"]["y"] < before["y"] - (line["h"] * 0.5 if line else 1)
         wb = [min(b[0] for b in new), min(b[1] for b in new), max(b[2] for b in new), max(b[3] for b in new)] if new else None
-        recs.append({"word": w, "midWordMove": moved, "newLine": new_line, "view": after["view"], "before": before, "bounds": wb, "mapSeen": map_seen, "handMoved": hand_moved})
+        recs.append({"jumped": jumped, "word": w, "midWordMove": moved, "newLine": new_line, "view": after["view"], "before": before, "bounds": wb, "mapSeen": map_seen, "handMoved": hand_moved})
         if new_line and line:
             # The next word starts the new line: below this line's first word.
             nl = {"x": line["x"], "y": line["y"] - max(line["h"] * 1.6, after["view"]["h"] * 0.12), "h": line["h"]}
             (x0, line_y), = app.cmd({"cmd": "toPad", "points": [[nl["x"], nl["y"]]]})["points"]
             line = None
+            if stop_on_new_line: break
     return recs, cid
 
 
@@ -780,6 +793,83 @@ def run_scenarios(app, rep, only, hand):
         rep.check(not d["draw"] and not d.get("cursorLocked"), "Esc pressed in the Settings window leaves draw mode", f"draw {d['draw']}, pointer locked {d.get('cursorLocked')}")
         app.cmd({"cmd": "closeSettings"}); time.sleep(0.3)
         ensure(app, "draw", False, "d")
+
+    def line_widths(recs):
+        """Each written line: where it starts (its first word, or the first word after a deliberate jump) and ends."""
+        out, cur = [], None
+        for r in recs:
+            b = r["bounds"]
+            if not b: continue
+            if cur is None or r.get("jumped"): cur = {"start": b[0], "end": b[2], "last": b[2] - b[0]}; out.append(cur)
+            else: cur["end"] = max(cur["end"], b[2]); cur["last"] = b[2] - b[0]
+            if r["newLine"]: cur = None
+        return out
+
+    def half_setup():
+        ensure(app, "draw", False, "d"); app.press("n")
+        ensure(app, "writing", True, "w")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        ensure(app, "draw", True, "d")
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 45, dur=0.6))
+        for _ in range(12): app.press("left")   # to the page's left side, where lines start
+        time.sleep(1.6)
+        return app.state()
+
+    @scenario("half-line-nudges", "½-page lines with small hand nudges (under 10% of the view) and a small pinch between words: each line still ends about half a page after it starts (plus the word that crossed the limit), never running 70-80% wide.")
+    def _():
+        st = half_setup(); pad_w, pad_h = st["padMM"]; W = st["pageW"]
+        recs, _ = write_words(app, hand, (SENTENCE + " " + SENTENCE).split(), pad_h * 0.55, pad_w * 0.1, 12500, rep, nudge_every=3, nudge_frac=0.06, pinch_at=4)
+        lines = line_widths(recs)
+        full = [l for l in lines[:-1]]   # finished lines (the last may be partial)
+        # Lines start at the page's left margin (3%) and may end one word past margin + ½ page.
+        over = [(l["end"] / W) - (0.03 + 0.5 + l["last"] / W + 0.02) for l in full]
+        rep.step("lines", ends=[round(l["end"] / W, 2) for l in lines], widths=[round((l["end"] - l["start"]) / W, 2) for l in lines])
+        rep.check(len(full) >= 1 and max(over) <= 0, "every finished ½-page line ends at margin + half a page (plus the word that crossed it)",
+                  f"line ends at {[round(l['end'] / W, 2) for l in full]} of the page; worst overshoot {max(over):+.0%}")
+        rep.shot(app, "½-page lines with nudges")
+        ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
+
+    @scenario("half-line-autopan", "½-page lines written with auto-pan only (no hand moves): the line wraps at margin + half a page; auto-pans never free it.")
+    def _():
+        st = half_setup(); pad_w, pad_h = st["padMM"]; W = st["pageW"]
+        recs, _ = write_words(app, hand, (SENTENCE + " " + SENTENCE).split(), pad_h * 0.55, pad_w * 0.1, 13100, rep)
+        full = line_widths(recs)[:-1]
+        over = [(l["end"] / W) - (0.03 + 0.5 + l["last"] / W + 0.02) for l in full]
+        pans = sum(1 for r in recs if r["view"]["x"] > r["before"]["x"] + 1e-6 and not r["newLine"])
+        rep.check(len(full) >= 1 and pans >= 1 and max(over) <= 0, "with auto-pans only, ½-page lines wrap at margin + half a page",
+                  f"{pans} auto-pans; line ends {[round(l['end'] / W, 2) for l in full]}")
+        ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
+
+    @scenario("half-line-small-nudge-gap", "A small nudge (6% of the view, under the 10% bar), then a word written with a gap: that's still the same line, so it wraps at margin + half a page.")
+    def _():
+        st = half_setup(); pad_w, pad_h = st["padMM"]; W = st["pageW"]
+        words = "a small nudge then a gap and this line keeps its start at the margin as before ok".split()
+        recs, _ = write_words(app, hand, words, pad_h * 0.55, pad_w * 0.1, 13400, rep, jump_after=1, jump_shift=0.06, jump_pad_x=None, stop_on_new_line=True)
+        b = [r["bounds"] for r in recs if r["bounds"]]
+        end = max(x[2] for x in b) / W; last = (b[-1][2] - b[-1][0]) / W
+        wrapped = any(r["newLine"] for r in recs)
+        rep.check(wrapped and end <= 0.03 + 0.5 + last + 0.02, "after a small nudge, writing with a gap doesn't move the line's start",
+                  f"line ends at {end:.0%} of the page (margin + ½ + last word = {0.53 + last:.0%}), new line: {wrapped}")
+        ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
+
+    @scenario("half-line-moved-start", "A deliberate pan right (well over 10% of the view), then writing at a new spot: the line now starts there and wraps half a page later, not at the page's edge.")
+    def _():
+        st = half_setup(); pad_w, pad_h = st["padMM"]; W = st["pageW"]
+        words = "start here then keep writing along this line until it wraps over to the next one please".split()
+        recs, _ = write_words(app, hand, words, pad_h * 0.55, pad_w * 0.1, 12800, rep, jump_after=1, jump_pad_x=pad_w * 0.62, stop_on_new_line=True)
+        lines = line_widths(recs)
+        moved = next((l for l in lines if any(r.get("jumped") for r in recs)), None)
+        seg = lines[1] if len(lines) > 1 else None
+        wrapped = any(r["newLine"] for r in recs)
+        w = (seg["end"] - seg["start"]) / W if seg else 0
+        rep.step("segment", lines=[(round(l["start"]), round(l["end"])) for l in lines], wrapped=wrapped)
+        rep.check(seg is not None and wrapped and 0.4 <= w <= 0.5 + seg["last"] / W + 0.02,
+                  "after the deliberate pan the line starts at the new spot and wraps about half a page later",
+                  f"segment {w:.0%} of the page wide, new line: {wrapped}")
+        rep.shot(app, "line moved by a deliberate pan")
+        ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():

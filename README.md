@@ -67,8 +67,8 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   when the line is full, back at the left margin (Return does it by hand). The page waits until your
   finger has been up for 0.4 s, so it never moves in the middle of a word. A pan keeps your last two or
   three words on screen and moves at most half the view; a new line sits a little below the middle, so
-  the lines you just wrote stay in sight. If you pan right by hand to write further along, the page
-  stays where you put it. Choose the line width (½, ¾, full) and how it pans in the panel.
+  the lines you just wrote stay in sight. If you pan by hand (a real move, not a nudge) and write somewhere
+  new, the line starts there and still ends ½ or ¾ of a page later; small nudges and pinches don't change it. Choose the line width (½, ¾, full) and how it pans in the panel.
 - **Page map:** zoomed in past 1.5×, a small map of the page appears in the top-right corner while you
   move the page yourself (two fingers, pinch, arrow keys, scrolling) and fades out a second after you stop;
   writing never shows it. Point at it to keep it, then click or drag to move there (outside draw mode).

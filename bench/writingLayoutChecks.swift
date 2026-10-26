@@ -52,12 +52,13 @@ func writingLayoutChecks(_ check: (Bool, String) -> Void) {
     if case .newLine = layout(.centre).after(stroke: s2, line: s2, lineStrokes: [s2], lineLeft: 50, visible: ev, pageWidth: pageW) {
         check(true, "full width at the page's end: reaching the page margin starts the next line")
     } else { check(false, "full width at the page's end: expected a new line at the margin") }
-    // Panned right by hand (lineFree): past the line width, no new line until the page margin.
-    var free = layout(.centre, width: 0.5); free.lineFree = true
-    let past = CGRect(x: pageW * 0.6, y: 800, width: 60, height: 30)
-    if case .newLine = free.after(stroke: past, line: past, lineStrokes: [past], lineLeft: 50, visible: ev, pageWidth: pageW) {
-        check(false, "after a hand pan right, writing past the ½-page line doesn't jump to a new line")
-    } else { check(true, "after a hand pan right, writing past the ½-page line doesn't jump to a new line") }
+    // A deliberate hand pan moved the line's start: the line ends half a page after it, not at the page's edge
+    // and not half a page after the left margin.
+    var moved = layout(.centre, width: 0.5); moved.segmentStart = pageW * 0.3
+    let within = CGRect(x: pageW * 0.75, y: 800, width: 20, height: 30), beyond = CGRect(x: pageW * 0.79, y: 800, width: 20, height: 30)
+    let noWrap: Bool = { if case .newLine = moved.after(stroke: within, line: within, lineStrokes: [within], lineLeft: 50, visible: ev, pageWidth: pageW) { return false }; return true }()
+    let wraps: Bool = { if case .newLine = moved.after(stroke: beyond, line: beyond, lineStrokes: [beyond], lineLeft: 50, visible: ev, pageWidth: pageW) { return true }; return false }()
+    check(noWrap && wraps, "a line moved to 30% of the page by a hand pan ends at 80% (½ page later): no new line at 77%, a new line at 81%")
     // A new line sits 57.5% down the view, so the lines above stay in sight.
     let nc = WritingLayout.newLineCenter(lineLeft: 50, lineMidY: 800, pitch: 40, visible: v)
     var nm = cam; nm.center = nc

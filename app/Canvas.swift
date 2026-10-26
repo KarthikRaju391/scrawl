@@ -615,9 +615,12 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil; lineFree = false }
-    /// The current line was moved right by hand: it isn't held to the line width (WritingLayout.lineFree).
-    private var lineFree = false
+    private func endWritingLine() { lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil; segmentStart = nil; handPanX = 0 }
+    /// Where the line started after a deliberate hand pan (WritingLayout.segmentStart).
+    private var segmentStart: Double?
+    /// How far the view's centre moved sideways by hand since the last stroke (page units). Pinches zoom about
+    /// the fingers and barely move it; nudges stay under 10% of the view.
+    private var handPanX = 0.0
 
     /// Return in writing mode: next line now (one line down, back to the line start).
     func newLineByHand() {
@@ -792,7 +795,7 @@ final class CanvasView: MTKView {
         cancelPendingMove(); finishSlide()
         let v = camera.visible, f = screen ? 1.0 : 0.1
         changing("arrow") { camera.center.x += Double(dx) * f * v.width; camera.center.y -= Double(dy) * f * v.height; camera.clamp() }
-        if dx > 0 && writingMode && tools.autoPan != .off && lineInk != nil && camera.visible.minX > v.minX { lineFree = true }   // moved right by hand
+        if writingMode { handPanX += abs(camera.center.x - (v.midX)) }   // moved by hand
         needsRender = true
     }
     /// While the pages overview covers the canvas (and during its transitions): no frames. Each frame waits
@@ -1004,13 +1007,12 @@ final class CanvasView: MTKView {
         gestures.onEnd = { [weak self] commit in self?.endStroke(commit) }
         gestures.onNavigate = { [weak self] prev, now, ratio in
             guard let self else { return }
-            let x0 = self.camera.visible.minX
+            let cx0 = self.camera.center.x
             let z0 = self.camera.zoom
             self.changing("pinch") { self.camera.navigate(from: prev, to: now, ratio: ratio, zoomLocked: self.tools.zoomLocked) }  // moved by hand: the next stroke starts a new line where it lands
             if abs(self.camera.zoom - z0) > 1e-6 && !self.pinchedThisTouch { self.pinchedThisTouch = true; self.act("pinchZoom") }
-            // With auto-pan on, panning right by hand is a choice of where to write; with No pan it's how you
-            // move along the line, which still ends at the line width.
-            if self.writingMode && self.tools.autoPan != .off && self.lineInk != nil && self.camera.visible.minX > x0 + 1e-6 { self.lineFree = true }
+            // Sideways pans by hand only (a pinch's zoom moves the view around the fingers; that isn't a pan).
+            if self.writingMode && abs(self.camera.zoom - z0) < 1e-9 { self.handPanX += abs(self.camera.center.x - cx0) }
         }
     }
 
@@ -1132,8 +1134,20 @@ final class CanvasView: MTKView {
             let vh = camera.visible.height
             // A stroke well above or below the current line (you moved there yourself): new line here.
             if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
-                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; lineFree = false
+                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; segmentStart = nil
             }
+            // A deliberate hand pan (10% of the view or more) and then writing somewhere new on the line (not right
+            // after its last word): the line starts here now, and ends ½ / ¾ of the page later. Carrying on where the
+            // line ended (as with No pan) keeps its start.
+            let vw = camera.visible.width
+            if handPanX >= vw * WritingLayout.deliberatePan, let line = lineInk {
+                let gap = max(line.height * 1.5, vw * 0.08)
+                if s.bounds.minX > line.maxX + gap || s.bounds.maxX < line.minX - gap {
+                    segmentStart = s.bounds.minX; lineInk = nil; lineStrokes = []
+                    act("lineMoved", ["x": s.bounds.minX])
+                }
+            }
+            handPanX = 0
             if legacyLineLeft == nil { legacyLineLeft = s.bounds.minX }
             let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
             lineInk = line
@@ -1143,7 +1157,7 @@ final class CanvasView: MTKView {
             layout.autoPan = tools.autoPan
             layout.edge = settings.panEdge
             layout.legacyStrokeEdge = legacyWriting
-            layout.lineFree = lineFree
+            layout.segmentStart = segmentStart
             let start = legacyWriting ? legacyLineLeft! : layout.lineStart(pageWidth: camera.page.width)
             let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: start,
                                     visible: camera.visible, pageWidth: camera.page.width)
@@ -1183,7 +1197,7 @@ final class CanvasView: MTKView {
             if let line = lineInk { lastPanWordStart = WritingLayout.wordStarts(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01)).last ?? 0 }
             slideCamera(to: c)
         case .newLine(let c):
-            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; lineFree = false
+            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; segmentStart = nil; handPanX = 0
             slideCamera(to: c, src: "newLine")
         }
         needsRender = true

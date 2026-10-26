@@ -111,3 +111,9 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 
 ## Settings from draw mode
 - Opening Settings (any route) leaves draw mode, because the frozen pointer could not click it; closing Settings returns to draw mode. Esc leaves draw mode from any of the app's windows, and any other app window coming to the front (Help, About) ends draw mode.
+
+## Line width follows deliberate pans (½-page overrun fix)
+- Replaces "a hand pan right frees the line to the page edge": that fired on any nudge and on pinches (zooming in moves the view's left edge right), so ½-page lines ran 70-99% wide.
+- A hand pan counts when the view's centre moved sideways by ≥ 10% of the view since the last stroke (pinch frames don't count: their zoom moves the view around the fingers). Arrow keys count too.
+- After such a pan, the next stroke moves the line's start only if it lands away from where the line ended (more than a word gap): writing somewhere new. Carrying on after the last word keeps the start, so No-pan writing still wraps at the width.
+- The line then ends ½ or ¾ of the page after that start (clamped to the page margin). Auto-pans never move it. New lines start at the left margin as before.
