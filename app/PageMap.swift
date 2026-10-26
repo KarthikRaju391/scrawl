@@ -63,19 +63,25 @@ final class PageMapView: NSView {
     override func mouseExited(with e: NSEvent) { hovering = false; shownUntil = CACurrentMediaTime() + Self.holdSeconds; scheduleFade() }
 
     /// The page area the map shows: the page's width, from its top down to below the lowest ink or the view.
+    /// Test hook: the page area the map covers now.
+    var regionForTest: CGRect { canvas.map(wantedRegion) ?? .zero }
+
+    /// The area the map shows: the page's first screen, all the ink (also past the page's sides, where you
+    /// kept writing) and the view, with a small margin.
     private func wantedRegion(_ c: CanvasView) -> CGRect {
-        let page = c.camera.page, v = c.camera.visible
-        let inkBottom = c.doc.strokes.reduce(page.height) { min($0, $1.bounds.minY) }
-        let bottom = min(inkBottom, v.minY) - page.height * 0.1
-        let h = max(page.height - bottom, page.height)
-        return CGRect(x: 0, y: page.height - h, width: page.width, height: h)
+        let page = c.camera.page
+        var r = CGRect(x: 0, y: 0, width: page.width, height: page.height).union(c.camera.visible)
+        for s in c.doc.strokes { r = r.union(s.bounds) }
+        let m = page.width * 0.02
+        r = r.insetBy(dx: -m, dy: -m)
+        return CGRect(x: r.minX, y: r.minY, width: r.width, height: min(r.maxY, page.height + m) - r.minY)
     }
 
     /// Re-render the ink picture if the page changed (throttled, off the main thread).
     func refresh() {
         guard let c = canvas, wanted else { return }
         let doc = c.doc, key = ObjectIdentifier(doc), r = wantedRegion(c)
-        let stale = doc.version != renderedVersion || key != renderedPage || abs(r.height - region.height) > 1
+        let stale = doc.version != renderedVersion || key != renderedPage || abs(r.height - region.height) > 1 || abs(r.width - region.width) > 1 || abs(r.minX - region.minX) > 1
         guard stale, !rendering, CACurrentMediaTime() - lastRender > 0.4 else {
             if stale && !rendering { DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in self?.refresh() } }
             return

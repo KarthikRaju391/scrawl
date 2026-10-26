@@ -278,6 +278,8 @@ final class Robot {
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        s["mapRegion"] = { let r = app.container.pageMap.regionForTest; return [r.minX, r.minY, r.maxX, r.maxY] }()   // robot:needs var regionForTest
+        s["inkBounds"] = { var u = CGRect.null; for st in canvas.doc.strokes { u = u.union(st.bounds) }; return u.isNull ? [] : [u.minX, u.minY, u.maxX, u.maxY] }()
         s["zoomBadge"] = app.container.zoomBadge.isHidden || app.container.zoomBadge.alphaValue < 0.05 ? "" : app.container.zoomBadge.stringValue   // robot:needs let zoomBadge
         s["toolbarZoom"] = tb.zoomText   // robot:needs var zoomText
         s["pageArrows"] = [tb.canGoBack, tb.canGoForward]

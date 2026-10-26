@@ -732,6 +732,32 @@ def run_scenarios(app, rep, only, hand):
         s5 = app.state()
         rep.check(s5["page"] == page and abs(s5["view"]["zoom"] - 1.5) < 1e-6 and s5.get("toolbarZoom") == "150%", "after a relaunch the page is at the same zoom, and says so", f"zoom {s5['view']['zoom']}, toolbar {s5.get('toolbarZoom')}")
 
+    @scenario("page-map-extended", "Writing past the page's right edge and far below the first screen: the page map covers the page, all the ink and the view, not just the original page.")
+    def _():
+        ensure(app, "draw", False, "d")
+        app.press("n"); app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        ensure(app, "draw", True, "d")
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 45, dur=0.6)); time.sleep(1.6)
+        for _ in range(12): app.press("right")
+        settle(app)
+        cid = 12000
+        # A stroke from inside the pad running off its right edge (ink past the page's right side).
+        line = [[(pad_w * 0.55 + k * pad_w * 0.045, pad_h * 0.55) for k in range(11)]]
+        fr, cid = hand.frames(line, cid, speed=60); app.touch(fr)
+        for _ in range(14): app.press("down")
+        settle(app)
+        fr, cid = hand.frames(hand.word("below", pad_w * 0.3, pad_h * 0.4, hand.roman), cid); app.touch(fr)
+        app.press("left")   # a hand move: the map shows
+        s = app.state(); m, ink, v, pw = s["mapRegion"], s["inkBounds"], s["view"], s["pageW"]
+        rep.step("geometry", inkMaxX=round(ink[2]), pageW=round(pw), map=[round(x) for x in m], inkMinY=round(ink[1]))
+        rep.check(ink and ink[2] > pw, "the ink runs past the page's right edge (the case to test)", f"ink to x {ink[2]:.0f}, page width {pw:.0f}")
+        covers = m[0] <= ink[0] + 1e-6 and m[1] <= ink[1] + 1e-6 and m[2] >= ink[2] - 1e-6 and m[3] >= ink[3] - 1e-6
+        view_in = m[0] <= v["x"] + 1e-6 and m[1] <= v["y"] + 1e-6 and m[2] >= v["x"] + v["w"] - 1e-6 and m[3] >= v["y"] + v["h"] - 1e-6
+        rep.check(covers and view_in and m[0] <= 1e-6 and m[2] >= pw - 1e-6, "the map covers the page, all the ink and the view", f"map x {m[0]:.0f}..{m[2]:.0f}, y {m[1]:.0f}..{m[3]:.0f}")
+        rep.shot(app, "map with ink past the right edge and far down")
+        ensure(app, "draw", False, "d")
+
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])

@@ -105,3 +105,6 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Persistent spot: the toolbar (a zoom button between the zoom lock and undo, which brings the toolbar to 15 buttons) and the draw-mode capsule. While pinching: a badge under the page map, fading with it.
 - Snap: a pinch (or trackpad magnify outside draw mode) that ends within 4% of a preset (100, 150, 200, 250, 300, 400, 500, 600, 800%) lands on it, so the same zoom is easy to hit again. Not while the zoom is locked.
 - Bonus done: clicking the toolbar's zoom opens the presets, Whole Page, and a field to type any zoom (e.g. 175). Each page already saves its zoom, so a relaunch comes back at the same zoom.
+
+## Page map covers extended writing
+- The map shows the page's first screen ∪ all the ink (also past the page's sides) ∪ the view, with a 2% margin; past the page's edges it's the grey desk, as on the canvas.
