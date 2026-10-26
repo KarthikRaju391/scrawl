@@ -26,8 +26,8 @@ struct WritingLayout {
     var legacyStrokeEdge = false   // replays of old sessions: the edge check used only the last stroke
 
     enum Move: Equatable {
-        case none, pan(CGPoint), newLine(CGPoint)
-        var kind: String { switch self { case .none: return "none"; case .pan: return "autoPan"; case .newLine: return "newLine" } }
+        case none, pan(CGPoint), newLine(CGPoint), wrapWord(CGPoint, wordStart: Double)
+        var kind: String { switch self { case .none: return "none"; case .pan: return "autoPan"; case .newLine, .wrapWord: return "newLine" } }
     }
 
     /// Where this line started, if a deliberate hand pan moved it (Canvas decides that): the line then ends ½ or
@@ -45,14 +45,23 @@ struct WritingLayout {
     /// `lineLeft` = where lines start (the app passes `lineStart`).
     func after(stroke s: CGRect, line: CGRect, lineStrokes: [CGRect], lineLeft: Double, visible v: CGRect, pageWidth: Double) -> Move {
         let pageEnd = pageWidth * (1 - margin)
-        let lineEnd = min((segmentStart ?? lineLeft) + lineWidth * pageWidth, pageEnd)
+        // A hard limit: ½ / ¾ of the page width from its left edge (lines start at the margin), or ½ / ¾ of the
+        // page after a start a deliberate hand pan moved.
+        let lineEnd = min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageEnd)
         // The line's rightmost ink, not just this stroke: an i-dot or t-cross placed back inside the
         // word must not cancel a move that the word's end already called for.
         let right = legacyStrokeEdge ? s.maxX : max(s.maxX, line.maxX)
         let atEdge = right > v.minX + v.width * edge
-        if right >= lineEnd {
-            let pitch = max(line.height * 1.35, v.height * 0.12)
-            return .newLine(Self.newLineCenter(lineLeft: lineLeft, lineMidY: line.midY, pitch: pitch, visible: v))
+        let pitch = max(line.height * 1.35, v.height * 0.12)
+        let next = Self.newLineCenter(lineLeft: lineLeft, lineMidY: line.midY, pitch: pitch, visible: v)
+        let gap = max(line.height * 0.45, v.width * 0.01)
+        let words = Self.words(lineStrokes, gap: gap)
+        if legacyStrokeEdge {
+            if right >= lineEnd { return .newLine(next) }
+        } else if right > lineEnd {
+            // The word just written crosses the limit: it goes to the next line (unless it's the line's only word).
+            if words.count >= 2, let last = words.last { return .wrapWord(next, wordStart: last.start) }
+            return .newLine(next)
         }
         guard atEdge, autoPan != .off else { return .none }
         // Keep the last words on screen: the last three if they fit in 60% of the view, else two, else one.
@@ -77,6 +86,15 @@ struct WritingLayout {
     /// line start 5% in from the left.
     static func newLineCenter(lineLeft: Double, lineMidY: Double, pitch: Double, visible v: CGRect) -> CGPoint {
         CGPoint(x: max(lineLeft - v.width * 0.05, 0) + v.width / 2, y: lineMidY - pitch + (lineFromTop - 0.5) * v.height)
+    }
+
+    /// The line's words as x ranges, left to right (strokes grouped by x; a gap > `gap` splits words).
+    static func words(_ strokes: [CGRect], gap: Double) -> [(start: Double, end: Double)] {
+        var out: [(start: Double, end: Double)] = []
+        for r in strokes.sorted(by: { $0.minX < $1.minX }) {
+            if let l = out.last, r.minX - l.end <= gap { out[out.count - 1].end = max(l.end, r.maxX) } else { out.append((r.minX, r.maxX)) }
+        }
+        return out
     }
 
     /// Left edges of the line's words, left to right: strokes grouped by x, a gap > `gap` splits words.

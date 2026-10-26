@@ -68,7 +68,8 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   finger has been up for 0.4 s, so it never moves in the middle of a word. A pan keeps your last two or
   three words on screen and moves at most half the view; a new line sits a little below the middle, so
   the lines you just wrote stay in sight. If you pan by hand (a real move, not a nudge) and write somewhere
-  new, the line starts there and still ends ½ or ¾ of a page later; small nudges and pinches don't change it. Choose the line width (½, ¾, full) and how it pans in the panel.
+  new, the line starts there and still ends ½ or ¾ of a page later; small nudges and pinches don't change it. Choose the line width (½, ¾, full) and how it pans in the panel. The width is a hard edge: a ½ line
+  never goes past the middle of the page; a word that would cross it moves to the start of the next line.
 - **Page map:** zoomed in past 1.5×, a small map of the page appears in the top-right corner while you
   move the page yourself (two fingers, pinch, arrow keys, scrolling) and fades out a second after you stop;
   writing never shows it. Point at it to keep it, then click or drag to move there (outside draw mode).

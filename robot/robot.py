@@ -871,6 +871,65 @@ def run_scenarios(app, rep, only, hand):
         rep.shot(app, "line moved by a deliberate pan")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
+    def write_rows(cid, words, start_page, font=None):
+        """Write `words` the way a person does in writing mode at zoom 100%: each word right after the last one;
+        when the app starts a new line, carry on there (after the word it moved down, if it moved one). All
+        positions are kept in page units and turned into pad positions just before writing."""
+        st = app.state(); pad_w, pad_h = st["padMM"]
+        p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
+        upm = (p1[0] - p0[0]) / 10   # page units per pad mm
+        base = list(start_page); lines0 = st["newLines"]; written = 0
+        for w in words:
+            (px, py), = app.cmd({"cmd": "toPad", "points": [base]})["points"]
+            strokes = hand.word(w, px, py, font)
+            fr, cid = hand.frames(strokes, cid)
+            app.touch(fr, settle=0.05)
+            written += len(strokes)
+            mine = app.state()["lastStrokes"][-len(strokes):]
+            app.touch([[0.008, []]] * int(0.6 / 0.008), settle=0.3); settle(app)
+            s2 = app.state(); now = s2["lastStrokes"][-len(strokes):]
+            gap = hand.h * 0.9 * upm
+            if s2["newLines"] > lines0:
+                lines0 = s2["newLines"]
+                dx, dy = now[0][0] - mine[0][0], now[0][1] - mine[0][1]
+                if abs(dx) > 1 or abs(dy) > 1:   # the app moved this word down to the next line
+                    base = [max(b[2] for b in now) + gap, base[1] + dy]
+                else:
+                    nl = s2["nextLine"]
+                    base = [nl[0], nl[1] - hand.h * 0.35 * upm]
+            else:
+                base = [max(b[2] for b in now) + gap, base[1]]
+        return cid, written
+
+    def hard_limit(frac, idx, name):
+        ensure(app, "draw", False, "d"); app.press("n")
+        ensure(app, "writing", True, "w")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": idx}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)   # zoom 100%, as in Karthik's screenshot
+        ensure(app, "draw", True, "d")
+        st = app.state(); W = st["pageW"]
+        n0 = st["strokes"]
+        words = (SENTENCE + " " + SENTENCE + " " + SENTENCE).split()
+        old_h = hand.h; hand.h = 4.5   # handwriting size at 100%
+        top = app.cmd({"cmd": "toPagePt", "point": [0, st["padMM"][1] * 0.85]})["point"][1]
+        cid, written = write_rows(14000 + idx * 500, words, [W * 0.035, top])
+        hand.h = old_h
+        s = app.state()
+        ink = s["inkBounds"]
+        rep.step("ink", maxX=round(ink[2] / W, 4), newLines=s["newLines"], strokesWritten=written, strokesOnPage=s["strokes"] - n0)
+        rep.check(ink[2] <= frac * W + 1e-6, f"{name} lines: no ink past {frac:.0%} of the page width", f"ink reaches {ink[2] / W:.1%} of the page")
+        rep.check(s["strokes"] - n0 == written, "no stroke lost when a word is moved to the next line", f"{written} written, {s['strokes'] - n0} on the page")
+        rep.shot(app, f"{name} lines at 100%")
+        ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
+
+    @scenario("half-line-hard-limit", "½-page lines at zoom 100% (Karthik's screenshot): ink never goes past 50% of the page; the word that would cross the mark goes to the next line.")
+    def _():
+        hard_limit(0.5, 0, "½-page")
+
+    @scenario("three-quarter-line-hard-limit", "¾-page lines at zoom 100%: ink never goes past 75% of the page.")
+    def _():
+        hard_limit(0.75, 1, "¾-page")
+
     @scenario("undo-redo-taps", "Two-finger double tap undoes, three-finger double tap redoes; the view stays put and no ink is drawn.")
     def _():
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])

@@ -172,6 +172,12 @@ final class Robot {
         case "dropThumbnails":
             ThumbnailCache.shared.dropAll()   // robot:needs func dropAll
             done(["ok": true])
+        case "toPagePt":   // pad mm -> page (same as toPage, for one point)
+            let v = canvas.camera.visible
+            let q = c["point"] as? [Double] ?? [0, 0]
+            var n = CGPoint(x: q[0] / Multitouch.padMM.width, y: q[1] / Multitouch.padMM.height)
+            n = Camera.active(n)
+            done(["point": [v.minX + n.x * v.width, v.minY + n.y * v.height]])
         case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
@@ -294,6 +300,8 @@ final class Robot {
         chrome["capsuleArea"] = app.container.capsule.isHidden ? 0 : app.container.capsule.frame.width * app.container.capsule.frame.height   // robot:needs class StatusCapsule
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
+        s["newLines"] = canvas.newLineCount
+        s["nextLine"] = canvas.nextLineAt.map { [$0.x, $0.y] } ?? []   // robot:needs var nextLineAt
         if let g = app.gallery, app.galleryShown {   // robot:needs class GalleryView
             s["thumbs"] = canvas.pages.map { d -> Int in let c = g.thumbnails.cached(d); return c.image == nil ? 0 : (c.fresh ? 2 : 1) }   // 0 blank, 1 old, 2 up to date
         }

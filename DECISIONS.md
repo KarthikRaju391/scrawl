@@ -121,3 +121,7 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 ## Overview thumbnails
 - Thumbnails (and OCR titles and the page map) draw each stroke as one round line at its average width through points 1.5 px apart, not its exact pressure outline: identical at that size, 6 ms instead of ~5 s for a full page.
 - Pages render in parallel; every page is warmed in the background after launch and again a second after an edit, so the overview opens complete. OCR titles run at background priority, after the thumbnails.
+
+## Line width is a hard limit
+- ½ / ¾ lines end at 50% / 75% of the page width, measured from the page's left edge (it was margin + ½, i.e. 53%), and no ink goes past it: the word that crosses the mark is moved to the start of the next line (one undo step), and the line carries on after it. A line's only word is never moved.
+- No early wrap on a guessed next-word width: it ended full-width lines a word early (checks/pan.sh) and the word move already keeps ink inside the limit.
