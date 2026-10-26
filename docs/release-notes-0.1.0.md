@@ -25,7 +25,7 @@ New in this build:
   hold the second tap and slide to scrub back through your strokes.
 - **Writing flow:** after a pan your last two or three words stay on screen, the page never jumps more than
   half a view, a new line sits low enough to keep the lines above in sight, and panning right by hand to
-  keep writing no longer sends you back to the margin. A page map shows where you are when zoomed in.
+  keep writing no longer sends you back to the margin. A page map shows where you are while you move around when zoomed in, then gets out of the way.
 - **Pick up where you left off:** draw mode starts at the end of your last word, at the zoom you wrote at.
 - **Quieter draw mode:** a short note that fades, a small capsule with the tool and modes, a thin frame
   that says you're drawing.
@@ -35,6 +35,9 @@ New in this build:
 - **Help when you need it:** short tips (each at most twice) and a 30-second practice page.
 - **Feedback:** a haptic tick when an undo lands or a line ends, a hint while the page is about to move,
   and undone strokes fade out.
+- **Delete pages** from the overview (Delete, or right-click) or Edit › Delete Page (⌥⌘⌫), with ⌘Z to undo.
+- **Zoom you can see and reuse:** the zoom in the toolbar and in draw mode, presets and a typed zoom; pinches
+  land on clean values like 300%.
 - **Find and share:** thumbnails show your ink, titled with the first handwritten line; ⌘F searches your
   handwriting; ⌘C copies a page as an image; File › Share Page.
 

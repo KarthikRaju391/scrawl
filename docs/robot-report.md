@@ -4,9 +4,10 @@
 writes `build/robot/report.html`, with a screenshot for every step. This page records the run that
 proved it catches real bugs.
 
-## Main, build 2: 115 of 115 checks pass
+## Main, build 2: 147 checks in 34 scenarios
 
-30 scenarios, 11 minutes, all in the background. Each feature in this round was proven the same way: its
+The last full run passed 145 of 147. Two failures were test setup: a pixel threshold too strict for a thin word, and a
+replay landing on the previous scenario's busy page. Both were fixed and rerun: 6/6. About 13 minutes, all in the background. Each feature in this round was proven the same way: its
 scenario fails on the build before it and passes after.
 
 | Feature | Before | After |
@@ -24,6 +25,10 @@ scenario fails on the build before it and passes after.
 | Haptics, pending-move chevron, undo fade | 0/3 | 3/3 |
 | Overview crop, titles, search, copy, share | 0/7 | 7/7 |
 | Usage counts | n/a (new) | 4/4 |
+| Delete page (overview Delete key, context menu, Edit › Delete Page, undo, last page, relaunch) | 4/10 | 10/10 |
+| Page map only while navigating (hidden while writing, fades after a hand move) | 16/20 | 20/20; hidden during all 10 writing scenarios |
+| Zoom percentage (badge, capsule, toolbar, snap, presets, typed zoom, relaunch) | 0/8 | 8/8 |
+| Page map covers ink past the page's edge | map 0–1600 for ink to 1630 | map −32–1662 |
 
 The run also covers toggles from keys and the toolbar, writing mode in every width and pan mode, double-tap
 undo/redo, the eraser and a pan starting on it, pages and the overview, four window shapes, a 9,000-stroke
@@ -43,6 +48,8 @@ notebook, Karthik's recorded touch frames, and quit and relaunch.
 | ![draw mode: capsule and frame](robot/draw-mode-capsule.jpg) | ![the regrouped toolbar](robot/toolbar.jpg) |
 | ![overview with handwriting titles](robot/overview-titles.jpg) | ![searching handwriting](robot/overview-search.jpg) |
 | ![practice page](robot/practice.jpg) | ![Settings](robot/settings.jpg) |
+| ![zoom badge and capsule](robot/zoom-badge.jpg) | ![zoom in the toolbar](robot/zoom-toolbar.jpg) |
+| ![page map with ink past the edge](robot/page-map-extended.jpg) | |
 
 ## The same robot on old commits with known bugs
 

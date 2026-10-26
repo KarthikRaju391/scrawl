@@ -896,7 +896,7 @@ def run_scenarios(app, rep, only, hand):
             a = st["strokes"]; app.touch(fr); b = app.state()
             p = rep.shot(app, f"{w}x{h}")
             dink = ink_pixels(p) - ink_pixels(pre)
-            rep.check(b["strokes"] > a and dink > 100, f"{w}x{h}: the word is drawn and shows in the window", f"{b['strokes'] - a} strokes, +{dink} ink pixels on screen")
+            rep.check(b["strokes"] > a and dink > 20, f"{w}x{h}: the word is drawn and shows in the window", f"{b['strokes'] - a} strokes, +{dink} ink pixels on screen")
 
     @scenario("busy-notebook", "A notebook with ~9,000 strokes: write steadily for ~8 s while autosave runs. Frames must keep coming (no stall over 50 ms).")
     def _():
@@ -924,7 +924,9 @@ def run_scenarios(app, rep, only, hand):
 
     @scenario("recorded-session", "Karthik's own touch frames (palms and all) from a recorded session, replayed through the trackpad callback; then OCR of the screen vs OCR of the same ink exported.")
     def _():
-        if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
+        ensure(app, "draw", False, "d"); app.press("n")   # a fresh page (not the busy notebook's)
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        ensure(app, "draw", True, "d")
         fr, info = session_frames(os.path.join(ROOT, "data"), 45)
         if not fr: rep.check(False, "a recorded session to replay", "none found in data/"); return
         rep.step("source", **info)

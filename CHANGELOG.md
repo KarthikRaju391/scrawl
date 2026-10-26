@@ -21,7 +21,11 @@ old pages and settings over.
 - Haptic ticks, a chevron while the page waits to move, undo fade.
 - Overview: thumbnails cropped to the ink, handwriting titles (on-device OCR), ⌘F search, ⌘C copy page,
   File › Share Page.
-- Anonymous usage counts (local log; remote only with a configured app ID; off in Settings).
+- Anonymous usage counts (local log; to PostHog only with a configured project token; off in Settings).
+- Delete a page (overview Delete key or right-click, Edit › Delete Page ⌥⌘⌫), undone with ⌘Z.
+- The page map shows only while you move the page by hand and covers ink past the page's edges.
+- Zoom percentage in the toolbar and capsule, a badge while pinching, snapping to clean presets, a preset
+  menu with a field to type any zoom.
 
 ### Drawing
 - Finger drawing on the trackpad with pressure, from MultitouchSupport. The public macOS touch API is
