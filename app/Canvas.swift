@@ -1337,12 +1337,12 @@ final class CanvasView: MTKView {
         case .pan(let c):
             act("autoPan", ["toX": c.x, "toY": c.y, "mode": tools.autoPan.rawValue])
             panCount += 1
-            if let line = lineInk { lastPanWordStart = WritingLayout.wordStarts(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01)).last ?? 0 }
+            if let line = lineInk { lastPanWordStart = WritingLayout.wordStarts(lineStrokes, gap: WritingLayout.wordGap(lineStrokes, visible: camera.visible)).last ?? 0 }
             slideCamera(to: c)
         case .newLine(let c):
             if let line = lineInk {
-                let ws = WritingLayout.words(lineStrokes, gap: max(line.height * 0.45, camera.visible.width * 0.01)).map { $0.end - $0.start }.sorted()
-                if ws.count >= 2 { typicalWordWidth = ws[ws.count / 2] }
+                let ws = WritingLayout.words(lineStrokes, gap: WritingLayout.wordGap(lineStrokes, visible: camera.visible)).map { $0.end - $0.start }.sorted()
+                if ws.count >= 2, ws[ws.count / 2] <= line.width * WritingLayout.maxWordShare { typicalWordWidth = ws[ws.count / 2] }
             }
             if let line = lineInk { nextLineAt = CGPoint(x: WritingLayout().lineStart(pageWidth: camera.page.width), y: line.midY - max(line.height * 1.35, camera.visible.height * 0.12)) }
             act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; segmentStart = nil; handPanX = 0

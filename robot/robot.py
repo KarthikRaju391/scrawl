@@ -885,7 +885,7 @@ def run_scenarios(app, rep, only, hand):
         rep.shot(app, "line moved by a deliberate pan")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
-    def write_rows(cid, words, start_page, font=None):
+    def write_rows(cid, words, start_page, font=None, space=0.9, pause=0.6):
         """Write `words` the way a person does in writing mode at zoom 100%: each word right after the last one;
         when the app starts a new line, carry on there (after the word it moved down, if it moved one). All
         positions are kept in page units and turned into pad positions just before writing."""
@@ -893,16 +893,22 @@ def run_scenarios(app, rep, only, hand):
         p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
         upm = (p1[0] - p0[0]) / 10   # page units per pad mm
         base = list(start_page); lines0 = st["newLines"]; written = 0
+        write_rows.off_pad = 0
         for w in words:
             (px, py), = app.cmd({"cmd": "toPad", "points": [base]})["points"]
             strokes = hand.word(w, px, py, font)
             fr, cid = hand.frames(strokes, cid)
             app.touch(fr, settle=0.05)
             written += len(strokes)
+            # Strokes that run off the trackpad (a person's finger can't), or start in the edge guard's band (5%, ignored
+            # like a resting palm): never drawn, not counted as lost.
+            g = 0.05
+            write_rows.off_pad += sum(1 for st_ in strokes if any(not (0 <= q[0] <= pad_w and 0 <= q[1] <= pad_h) for q in st_)
+                                      or not (g * pad_w <= st_[0][0] <= (1 - g) * pad_w and g * pad_h <= st_[0][1] <= (1 - g) * pad_h))
             mine = app.state()["lastStrokes"][-len(strokes):]
-            app.touch([[0.008, []]] * int(0.6 / 0.008), settle=0.3); settle(app)
+            app.touch([[0.008, []]] * int(pause / 0.008), settle=0.3); settle(app)
             s2 = app.state(); now = s2["lastStrokes"][-len(strokes):]
-            gap = hand.h * 0.9 * upm
+            gap = hand.h * space * upm
             if s2["newLines"] > lines0:
                 lines0 = s2["newLines"]
                 dx, dy = now[0][0] - mine[0][0], now[0][1] - mine[0][1]
@@ -986,6 +992,48 @@ def run_scenarios(app, rep, only, hand):
         over = max(b[2] for b in rest) / W
         rep.check(starts_ok and over <= 0.56, "the next words start before the ½-page mark; a word may only run slightly past it", f"ink to {over:.1%} of the page")
         hand.h = old_h
+        ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
+
+    @scenario("half-line-zoomed", "Karthik's recording (21:22): ½-page lines written zoomed in to 400% with the page following the pen (centre). Each line ends at about half the page, not after a screen or so (his lines ended at 28-32% of the page).")
+    def _():
+        ensure(app, "draw", False, "d"); app.press("n")
+        ensure(app, "writing", True, "w")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        ensure(app, "draw", True, "d")
+        app.cmd({"cmd": "zoomMenu", "pick": "400%"}); settle(app, limit=3)
+        for _ in range(16): app.press("left")
+        for _ in range(16): app.press("up")
+        settle(app, limit=3)
+        st = app.state(); W = st["pageW"]; n0 = st["strokes"]; pad_w, pad_h = st["padMM"]
+        rep.check(abs(st["view"]["zoom"] - 4) < 0.05 and st["view"]["x"] < W * 0.02, "zoomed in to 400% at the page's left edge", str(st["view"]))
+        p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
+        upm = (p1[0] - p0[0]) / 10
+        old_h = hand.h; hand.h = 9   # his letters at 400%: about a tenth of the view's height
+        top = app.cmd({"cmd": "toPagePt", "point": [0, pad_h * 0.7]})["point"][1]
+        words = (SENTENCE + " " + SENTENCE + " " + SENTENCE).split()
+        # Karthik's spacing: word spaces about 18 units for letters 20-26 tall and a line 48 tall with its capitals and
+        # descenders (a space of about 0.35 of the letter height here).
+        cid, written = write_rows(19000, words, [W * 0.035, top], space=0.35, pause=1.6)   # he pauses between words
+        hand.h = old_h
+        s2 = app.state()
+        mine = s2["pageBounds"][n0:]
+        lines = []
+        for b in mine:
+            y = (b[1] + b[3]) / 2
+            for L in lines:
+                if abs(L[0] - y) < hand.h * 1.1 * upm: L[1] = min(L[1], b[0]); L[2] = max(L[2], b[2]); break
+            else: lines.append([y, b[0], b[2]])
+        lines.sort(key=lambda L: -L[0])
+        ends = [round(L[2] / W, 3) for L in lines]
+        rep.step("lines", ends=ends, newLines=s2["newLines"] - st["newLines"], zoom=s2["view"]["zoom"])
+        full = ends[:-1]
+        rep.check(len(full) >= 2 and all(0.42 <= e <= 0.58 for e in full), "every full line ends at about half the page (42-58%)", f"lines end at {[f'{e:.0%}' for e in ends]} of the page")
+        off = write_rows.off_pad
+        rep.check(s2["strokes"] - n0 == written - off, "every stroke written on the trackpad is on the page", f"{written - off} written on the pad ({off} ran off its edge), {s2['strokes'] - n0} on the page")
+        rep.shot(app, "½-page lines written at 400%")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        rep.shot(app, "the same lines, whole page")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
     @scenario("half-line-hard-limit", "½-page lines at zoom 100% (Karthik's screenshot): ink never goes past 50% of the page; the word that would cross the mark goes to the next line.")

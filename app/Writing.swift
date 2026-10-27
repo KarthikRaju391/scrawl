@@ -60,7 +60,7 @@ struct WritingLayout {
         let atEdge = right > v.minX + v.width * edge
         let pitch = max(line.height * 1.35, v.height * 0.12)
         let next = Self.newLineCenter(lineLeft: lineLeft, lineMidY: line.midY, pitch: pitch, visible: v)
-        let gap = max(line.height * 0.45, v.width * 0.01)
+        let gap = Self.wordGap(lineStrokes, visible: v)
         let words = Self.words(lineStrokes, gap: gap)
         if legacyStrokeEdge {
             if right >= lineEnd { return .newLine(next) }
@@ -73,15 +73,19 @@ struct WritingLayout {
             // Decide before the next word starts: if this line's typical word (after a word space) wouldn't fit
             // before the limit, go to the next line now. 80% of a word may hang over: a slight extension is fine.
             let widths = words.map { $0.end - $0.start }.sorted()
-            let typical = words.count >= 2 ? widths[widths.count / 2] : max(wordHint ?? 0, w.end - w.start)
+            var typical = words.count >= 2 ? widths[widths.count / 2] : max(wordHint ?? 0, w.end - w.start)
+            // A "word" a quarter of the line wide means the split failed: fall back on earlier lines' word, or skip the
+            // look-ahead (the line then breaks after the word that crosses the limit).
+            let maxWord = (lineEnd - lineLeft) * Self.maxWordShare
+            if typical > maxWord { typical = (wordHint ?? .infinity) <= maxWord ? wordHint! : 0 }
             let gaps = zip(words, words.dropFirst()).map { $1.start - $0.end }.sorted()
             let space = gaps.isEmpty ? line.height * 0.6 : gaps[gaps.count / 2]
             // (If the last word still looks unfinished, the app waits a longer pause before acting on this.)
-            if right + space + typical * 0.8 > lineEnd { return .newLine(next) }
+            if typical > 0 && right + space + typical * 0.8 > lineEnd { return .newLine(next) }
         }
         guard atEdge, autoPan != .off else { return .none }
         // Keep the last words on screen: the last three if they fit in 60% of the view, else two, else one.
-        let starts = Self.wordStarts(lineStrokes, gap: max(line.height * 0.45, v.width * 0.01))
+        let starts = Self.wordStarts(lineStrokes, gap: Self.wordGap(lineStrokes, visible: v))
         var keep = starts.last ?? right
         for k in [3, 2] where starts.count >= k {
             let st = starts[starts.count - k]
@@ -107,12 +111,23 @@ struct WritingLayout {
     /// Whether the line's last word looks unfinished: much shorter (< 60%) than this line's typical word, so a
     /// pause now is probably inside it. (A line's first word never counts as unfinished.)
     static func lastWordUnfinished(_ lineStrokes: [CGRect], line: CGRect, visible v: CGRect, hint: Double?) -> Bool {
-        let words = Self.words(lineStrokes, gap: max(line.height * 0.45, v.width * 0.01))
+        let words = Self.words(lineStrokes, gap: Self.wordGap(lineStrokes, visible: v))
         guard words.count >= 2, let w = words.last else { return false }
         let widths = words.dropLast().map { $0.end - $0.start }.sorted()
         let typical = widths[widths.count / 2]
         return (w.end - w.start) < typical * 0.6
     }
+
+    /// The space that splits words: 45% of a typical stroke's height (the median). It used to be 45% of the whole line's
+    /// height, which a capital or one descender (the p in "panning") raised from 33 to 48 page units on Karthik's
+    /// line at 400% (27 Oct): his word spaces (~18) fell under it, the whole line became one "word", and the next-word
+    /// look-ahead broke lines at 28-32% of the page instead of ½.
+    static func wordGap(_ strokes: [CGRect], visible v: CGRect) -> Double {
+        let hs = strokes.map(\.height).sorted()
+        return max(hs.isEmpty ? 0 : hs[hs.count / 2] * 0.45, v.width * 0.01)
+    }
+    /// A "word" wider than this share of the line can't be one: the strokes weren't split into words.
+    static let maxWordShare = 0.25
 
     /// The line's words as x ranges, left to right (strokes grouped by x; a gap > `gap` splits words).
     static func words(_ strokes: [CGRect], gap: Double) -> [(start: Double, end: Double)] {
