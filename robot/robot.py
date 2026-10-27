@@ -1554,10 +1554,11 @@ def run_scenarios(app, rep, only, hand):
         def run(mode):
             ensure(app, "draw", False, "d")
             if app.state()["gallery"] >= 0: app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+            app.press("n")   # an empty page: nothing for draw mode to resume to, so every run starts from the same view
             ok = switch(mode != "off")
-            ensure(app, "draw", True, "d"); ensure(app, "writing", False, "w")
-            app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
-            app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app)
+            ensure(app, "draw", True, "d"); ensure(app, "writing", False, "w"); settle(app, limit=3)
+            app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app, limit=3)
+            app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app, limit=3)
             st = app.state(); pw, ph = st["padMM"]
             if mode == "armed":   # a click turns drawing on (a short stroke); the pans come while it's on
                 fr = [[0.008, [[18001, pw * 0.5, ph * 0.9, 130, 0.5, 7.5]]] for _ in range(4)]
@@ -1566,7 +1567,8 @@ def run_scenarios(app, rep, only, hand):
                 settle(app)
             out = {"on": app.state().get("clickDrawOn"), "ok": ok}
             v = lambda: app.state()["view"]
-            v0 = v(); app.touch(two_finger(pw / 2, ph / 2, 25, 25, shift=(-12, -6), dur=0.4)); settle(app); v1 = v()
+            v0 = v(); out["start"] = [round(v0["x"], 1), round(v0["y"], 1), round(v0["zoom"], 3)]
+            app.touch(two_finger(pw / 2, ph / 2, 25, 25, shift=(-12, -6), dur=0.4)); settle(app); v1 = v()
             for _ in range(2): app.touch(two_finger(pw * 0.7, ph / 2, 25, 25, shift=(-70, 0), dur=0.5)); settle(app)
             v2 = v(); out["pageW"] = app.state()["pageW"]
             app.touch(two_finger(pw / 2, ph / 2, 20, 34, dur=0.4)); settle(app); v3 = v()
@@ -1578,6 +1580,7 @@ def run_scenarios(app, rep, only, hand):
         switch(False); ensure(app, "draw", False, "d")
         rep.check(on["ok"] and bool(armed["on"]), "click to draw switched on for the comparison", f"{on['ok']}, drawing on during the armed run: {armed['on']}")
         moved = all(abs(m[0]) + abs(m[1]) > 1 or abs(m[2] - 1) > 0.01 for m in off["moves"])
+        rep.check(off["start"] == on["start"] == armed["start"], "the three runs start from the same view", f"{off['start']}, {on['start']}, {armed['start']}")
         rep.check(moved, "each move (pan, pan into the edge, pinch, arrow) moves the view with click to draw off", str(off["moves"]))
         rep.check(abs(off["edgeX"] - off["pageW"]) < 0.5 and on["edgeX"] == off["edgeX"] and armed["edgeX"] == off["edgeX"], "the pan into the edge stops at the page's right edge, on and off", f"view right edge {off['edgeX']}, {on['edgeX']}, {armed['edgeX']} (page {off['pageW']})")
         def same(a_, b_): return all(abs(x - y) <= 0.5 for m, n in zip(a_["moves"], b_["moves"]) for x, y in zip(m[:2], n[:2])) and all(abs(m[2] - n[2]) < 1e-3 for m, n in zip(a_["moves"], b_["moves"]))
