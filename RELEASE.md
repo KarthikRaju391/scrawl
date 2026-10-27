@@ -1,4 +1,4 @@
-# Release checklist: Scrawl 0.1.0
+# Release checklist: Scrawl 0.1.1
 
 Distribution: a GitHub release with an ad-hoc-signed DMG (Karthik, 2026-10-24). No Developer ID and no
 notarization, so first-open needs the Gatekeeper steps in the README and the release notes.

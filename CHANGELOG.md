@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.1 (2026-10-27, build 3)
+
+- Click to draw (Settings, off by default): a touch shows a blue aim mark under your finger; a firm press
+  (a real click, not a tap-to-click tap) starts the ink at the mark. Let go of the click and keep drawing;
+  lift and touch again for more strokes with no clicks until you stop for 3 s (0-5 s in Settings; 0 means a
+  click for every stroke). Two-finger pan, pinch, arrow keys and the eraser work exactly as with it off.
+- Settings › Start draw mode where I last wrote (on by default).
+- Writing mode never moves a word you've written: the line break is decided at the gap before the next word,
+  and a word started near the edge finishes on its line. ½- and ¾-page lines end at about half and three
+  quarters of the page.
+- The pages overview shows every thumbnail at once (they used to stay blank for seconds on later pages).
+- Settings window: nothing cut off; the click-to-draw time sits under its switch.
+
 ## 0.1.0 (unreleased, 2026-10-26, build 2)
 
 Licensed under the MIT License.
