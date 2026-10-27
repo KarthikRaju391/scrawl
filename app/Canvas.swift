@@ -763,13 +763,15 @@ final class CanvasView: MTKView {
     private var viewAtDrawExit: Camera?
     /// Tests that check views don't want draw mode to move them (the robot turns it on).
     var resumeOnDrawStart = !Launch.testing
+    /// Settings › Start draw mode where I last wrote (on by default): off, draw mode starts at the view you left.
+    nonisolated(unsafe) static var resumeLastPoint = Launch.testing ? true : (UserDefaults.standard.object(forKey: "resumeLastPoint") as? Bool ?? true)
     static let resumeDefaultZoom = 3.0
 
     /// The view draw mode should start at: the last word's end 40% across and its line 57.5% down, at the
     /// zoom you wrote it at. Nil (stay) if the page is empty, if that's in view already, or if you've zoomed
     /// in somewhere else since draw mode ended (you chose that spot).
     func resumeTarget() -> Camera? {
-        guard resumeOnDrawStart, let last = doc.strokes.last else { return nil }
+        guard resumeOnDrawStart, Self.resumeLastPoint, let last = doc.strokes.last else { return nil }
         let info = lastInk[ObjectIdentifier(doc)] ?? (CGPoint(x: last.bounds.maxX, y: last.bounds.midY), Self.resumeDefaultZoom)
         let sameAsExit = viewAtDrawExit.map { abs($0.center.x - camera.center.x) < 0.5 && abs($0.center.y - camera.center.y) < 0.5 && abs($0.zoom - camera.zoom) < 1e-3 } ?? true
         guard sameAsExit || camera.zoom <= 1.05 else { return nil }

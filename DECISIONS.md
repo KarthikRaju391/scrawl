@@ -143,3 +143,9 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 ## Rebuilds never break the app you have open
 - build.sh builds and signs in build/.staging-<config>/, then swaps the bundle in. Before, it deleted the bundle and compiled for 1-2 minutes, so opening build/release/Scrawl.app (Karthik's copy) while the checks rebuilt it found an empty app. checks/bundle-intact.sh polls the bundle during a rebuild.
 - Robot runs turn crash reports off (as the persist crash test already did): a crash fails the run, and never leaves a "quit unexpectedly" dialog on Karthik's screen. ROBOT_CRASH_REPORTS=1 keeps the report when a stack trace is needed. macOS writes the report up to ~30 s after a crash, so the robot scenario crash-no-dialog watches for 40 s.
+
+## Start draw mode where I last wrote (a setting, 27 Oct)
+- Karthik asked for "going back to the last drawing point" to be a setting. That's the resume: draw mode moves the view to the last word, at the zoom it was written at. (Rejoin snapping, a stroke starting near the last lift continuing from it, is off by default and off on his Mac, so it isn't what he sees.) Settings > "Start draw mode where I last wrote", on by default, so nothing changes until it's turned off.
+
+## Settings window layout (27 Oct)
+- The click-to-draw label was cut off, and its time slider sat under the usage-counts switch with its label running under the slider. Labels are shorter, the time is a row under its own switch (label, slider, value; greyed while click to draw is off), and the window is laid out top-down at the height of its rows. Before/after: docs/robot/settings-before.jpg, settings-after.jpg.

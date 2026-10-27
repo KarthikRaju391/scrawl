@@ -639,7 +639,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .init(title: "Scratch out: a quick zig-zag over a word erases it", key: "scratchOut", get: { ScratchOut.enabled }, set: { ScratchOut.enabled = $0 }),
             .init(title: "Page map when zoomed in", key: "pageMap", get: { PageMapView.enabled }, set: { PageMapView.enabled = $0 }),
             .init(title: "Tips (each shows at most twice)", key: "tipsEnabled", get: { Tips.enabled }, set: { Tips.enabled = $0 }),
-            .init(title: "Click to draw: a touch only aims until you click; then draw on, no more clicks, until you stop", key: "clickToDraw",
+            .init(title: "Start draw mode where I last wrote", key: "resumeLastPoint",
+                  get: { CanvasView.resumeLastPoint }, set: { CanvasView.resumeLastPoint = $0 }),
+            .init(title: "Click to draw: a touch aims, a click starts the ink", key: "clickToDraw",
                   get: { CanvasView.clickToDraw }, set: { CanvasView.clickToDraw = $0 }),
             .init(title: "Share anonymous usage counts (never your ink or text)", key: "analyticsEnabledSwitch", get: { Analytics.shared.enabled }, set: { Analytics.shared.enabled = $0 }),
         ])

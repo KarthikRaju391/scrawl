@@ -75,6 +75,8 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   move the page yourself (two fingers, pinch, arrow keys, scrolling) and fades out a second after you stop;
   writing never shows it. Point at it to keep it, then click or drag to move there (outside draw mode).
   View › Page Map turns it off.
+- **Start draw mode where I last wrote** (Settings, on by default): draw mode opens on your last word, at the
+  zoom you wrote it at. Turn it off to stay on the view you left.
 - **Click to draw** (Settings, off by default): touching the trackpad only shows the blue aim mark: it appears
   where your finger lands, follows it while it's down and goes when you lift. Press to click and the stroke
   starts at the mark; let go of the click and keep drawing, lift and touch again for more strokes, with no more
