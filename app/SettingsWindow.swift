@@ -10,7 +10,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
     var onSwitch: ((String) -> Void)?
     var onClose: (() -> Void)?
     var onClickDrawTimeout: ((Double) -> Void)?
-    private let armSlider = NSSlider(value: CanvasView.clickDrawTimeout, minValue: 2, maxValue: 5, target: nil, action: nil)
+    private let armSlider = NSSlider(value: CanvasView.clickDrawTimeout, minValue: 0, maxValue: 5, target: nil, action: nil)
     private let armLabel = NSTextField(labelWithString: "")
 
     init(switches: [Switch]) {
@@ -43,7 +43,7 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         // Click to draw: how long drawing stays on after the last lift.
         armLabel.font = .systemFont(ofSize: 12); armLabel.frame = CGRect(x: 40, y: y - 2, width: 220, height: 18)
         armSlider.frame = CGRect(x: 260, y: y - 4, width: 180, height: 22)
-        armSlider.numberOfTickMarks = 4; armSlider.allowsTickMarkValuesOnly = true
+        armSlider.numberOfTickMarks = 6; armSlider.allowsTickMarkValuesOnly = true
         armSlider.target = self; armSlider.action = #selector(armChanged)
         content.addSubview(armLabel); content.addSubview(armSlider)
         updateArmLabel()
@@ -52,7 +52,10 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
     }
     func windowWillClose(_ n: Notification) { onClose?() }
     @objc private func armChanged() { onClickDrawTimeout?(armSlider.doubleValue); updateArmLabel() }
-    private func updateArmLabel() { armLabel.stringValue = String(format: "Click to draw stays on %.0f s after you stop", armSlider.doubleValue) }
+    private func updateArmLabel() {
+        armLabel.stringValue = armSlider.doubleValue < 0.5 ? "Click to draw: a click for every stroke" : String(format: "Click to draw stays on %.0f s after you stop", armSlider.doubleValue)
+    }
+    var clickDrawRangeForTest: [Int] { [Int(armSlider.minValue), Int(armSlider.maxValue)] }
     required init?(coder: NSCoder) { fatalError() }
 
     @objc private func toggled(_ b: NSButton) {

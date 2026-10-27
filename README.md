@@ -75,11 +75,12 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   move the page yourself (two fingers, pinch, arrow keys, scrolling) and fades out a second after you stop;
   writing never shows it. Point at it to keep it, then click or drag to move there (outside draw mode).
   View › Page Map turns it off.
-- **Click to draw** (Settings, off by default): touching the trackpad only aims (the blue ring) until you
-  click. The click starts a stroke where your finger is; let go of the click and keep drawing, lift and touch
-  again for more strokes, with no more clicks. 3 s after your last stroke (2–5 s in Settings) it turns off and
-  a touch only aims again; while you keep writing it stays on. The eraser works the same way; two- and
-  three-finger gestures never draw.
+- **Click to draw** (Settings, off by default): touching the trackpad only moves the blue aim mark, like a
+  cursor: lift and touch again and it carries on from where it stopped. Press to click and the stroke starts
+  at the mark; let go of the click and keep drawing, lift and touch again for more strokes, with no more
+  clicks. 3 s after your last stroke (0–5 s in Settings; 0 means a click for every stroke) it turns off.
+  Taps don't turn it on, even with tap-to-click: only a real press does. The eraser works the same way;
+  two- and three-finger gestures never draw.
 - **Zoom lock (L)** keeps the zoom fixed while two fingers still pan.
 - **Zoom percentage:** 100% is the page's width filling the view. The toolbar (and the capsule in draw mode)
   always shows it, a badge shows it while you pinch, and a pinch that ends within 4% of 100, 150, 200, 250,

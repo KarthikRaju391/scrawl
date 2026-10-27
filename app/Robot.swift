@@ -211,10 +211,11 @@ final class Robot {
                 }
             }
             done(["pages": canvas.pages.count])
-        case "toPage":   // pad mm -> the page point under it now
+        case "toPage":   // pad mm -> the page point under it now (with click to draw's aim offset unless "raw")
             let v = canvas.camera.visible
+            let aim = (c["raw"] as? Bool ?? false) ? .zero : canvas.aimOffsetForTest   // robot:needs var aimOffsetForTest
             let pts = (c["points"] as? [[Double]] ?? []).filter { $0.count >= 2 }.map { q -> [Double] in
-                var n = CGPoint(x: q[0] / Multitouch.padMM.width, y: q[1] / Multitouch.padMM.height)
+                var n = CGPoint(x: (q[0] + aim.x) / Multitouch.padMM.width, y: (q[1] + aim.y) / Multitouch.padMM.height)   // robot:needs var aimOffsetForTest
                 n = Camera.active(n)   // robot:needs static func active(
                 return [v.minX + n.x * v.width, v.minY + n.y * v.height]
             }
@@ -267,6 +268,8 @@ final class Robot {
         let v = canvas.camera.visible
         var n = CGPoint(x: (p.x - v.minX) / v.width, y: (p.y - v.minY) / v.height)
         n = Camera.pad(fromActive: n)   // robot:needs static func pad(fromActive
+        let aim = canvas.aimOffsetForTest   // robot:needs var aimOffsetForTest
+        return [n.x * Multitouch.padMM.width - aim.x, n.y * Multitouch.padMM.height - aim.y]   // robot:needs var aimOffsetForTest
         return [n.x * Multitouch.padMM.width, n.y * Multitouch.padMM.height]
     }
 
@@ -347,6 +350,8 @@ final class Robot {
         s["practice"] = app.container.practice.isHidden ? [:] : ["done": app.container.practice.done.map { "\($0)" }.sorted()]   // robot:needs final class PracticeView
         s["toolbarTips"] = tb.tooltipsForTest   // robot:needs var tooltipsForTest
         s["settingsWindow"] = app.settingsWindow.window?.isVisible == true ? app.settingsWindow.window!.windowNumber : 0   // robot:needs class SettingsWindow
+        s["aimPad"] = canvas.aimPadForTest.map { [$0.x, $0.y] } as Any   // robot:needs var aimPadForTest
+        s["clickDrawRange"] = app.settingsWindow.clickDrawRangeForTest   // robot:needs var clickDrawRangeForTest
         s["settingsSwitches"] = app.settingsWindow.switchesForTest.map { [$0.0, $0.1] as [Any] }   // robot:needs class SettingsWindow
         s["gallery"] = app.galleryShown ? (app.gallery?.selected ?? -1) : -2   // robot:needs var galleryShown
         s["canUndo"] = canvas.doc.canUndo   // robot:needs var canUndo

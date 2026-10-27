@@ -1368,7 +1368,9 @@ def run_scenarios(app, rep, only, hand):
             if flicker_at is not None:
                 for k, s_ in zip(range(flicker_at, flicker_at + 7), [5, 6, 6, 6, 6, 3, 4]):
                     fr[k][1][0][6] = s_; fr[k][1][0][3] = 3
-            if click_at is not None: fr[click_at] = fr[click_at] + ["click"]
+            if click_at is not None:   # a real click: the finger presses firmly (the sensor reads 100-150) as it clicks
+                for k in range(max(0, click_at - 4), click_at + 1): fr[k][1][0][3] = 130
+                fr[click_at] = fr[click_at] + ["click"]
             app.touch(fr + [[0.008, [[cid, *pts[-1], 0, 0.5, 7.5, 5]]], [0.008, [[cid, *pts[-1], 0, 0.5, 7.5, 7]]], [0.008, []], [0.1, []]], settle=0.1)
             return pts
         line(0.7)
@@ -1426,7 +1428,7 @@ def run_scenarios(app, rep, only, hand):
             ink = app.state()["lastStrokeMid"]; (ex, ey), = app.cmd({"cmd": "toPad", "points": [ink]})["points"]
             cid += 1
             fr = [[0.008, [[cid, ex - 6 + 12 * (k % 2) * (j / 4), ey - 2 + k * 0.5, 40, 0.5, 7.5]]] for k in range(9) for j in range(4)]
-            if click: fr[0] = fr[0] + ["click"]
+            if click: fr[0][1][0][3] = 130; fr[0] = fr[0] + ["click"]
             app.touch(fr + [[0.008, []], [0.2, []]])
         e0 = app.state(); rub(False); e1 = app.state()
         rep.check(e1["strokes"] == e0["strokes"], "eraser, off: rubbing erases nothing", f"{e0['strokes']} -> {e1['strokes']}")
@@ -1447,6 +1449,91 @@ def run_scenarios(app, rep, only, hand):
         ensure(app, "draw", True, "d")
         h0 = app.state(); line(0.3); h1 = app.state()
         rep.check(h1["strokes"] == h0["strokes"] + 1, "with the switch off, a touch draws as before", f"{h1['strokes'] - h0['strokes']} strokes")
+        ensure(app, "draw", False, "d")
+
+    @scenario("click-to-draw-aim", "Click to draw, aiming and arming: taps (macOS tap-to-click sends a click as the finger lifts) never turn drawing on, only a firm press does; the blue aim mark moves like a cursor, carrying on from where it stopped after a lift, and the ink starts exactly at it; with the time set to 0 s every lift turns drawing off.")
+    def _():
+        ensure(app, "draw", False, "d")
+        if app.state()["gallery"] >= 0: app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+        app.press("n"); ensure(app, "writing", False, "w")
+        app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.4)
+        sw = app.state().get("settingsSwitches") or []
+        ci = next((i for i, x in enumerate(sw) if x[0].lower().startswith("click to draw")), None)
+        if ci is None: rep.check(False, "Settings has a Click to draw switch"); app.cmd({"cmd": "closeSettings"}); return
+        app.cmd({"cmd": "settingsSwitch", "index": ci, "on": True}); app.cmd({"cmd": "closeSettings"})
+        ensure(app, "draw", True, "d")
+        st = app.state(); pad_w, pad_h = st["padMM"]; n0 = st["strokes"]
+        cid = 17000
+        def slide(x0, y0, x1, y1, n=30, p=30, click_at=None, lift=True):
+            nonlocal cid
+            cid += 1
+            pts = [(x0 + (x1 - x0) * i / (n - 1), y0 + (y1 - y0) * i / (n - 1)) for i in range(n)]
+            fr = [[0.008, [[cid, x, y, p, 0.5, 7.5, 4]]] for x, y in pts]
+            if click_at is not None:
+                for k in range(max(0, click_at - 4), click_at + 1): fr[k][1][0][3] = 130
+                fr[click_at] = fr[click_at] + ["click"]
+            app.touch(fr + ([[0.008, [[cid, *pts[-1], 0, 0.5, 7.5, 7]]], [0.008, []], [0.1, []]] if lift else []), settle=0.1)
+            return pts
+        # 1) Rapid taps: light touches; tap-to-click's click comes as the finger lifts (and sometimes while it's still light on the pad).
+        for k in range(6):
+            cid += 1
+            x, y = pad_w * (0.3 + 0.05 * k), pad_h * 0.5
+            fr = [[0.008, [[cid, x, y, 25 + 5 * (k % 3), 0.5, 7.5, 4]]] for _ in range(7)]
+            if k % 2: fr[5] = fr[5] + ["click"]   # the click while the light finger is still down
+            fr += [[0.008, [[cid, x, y, 0, 0.5, 7.5, 7]]], [0.008, []] + ([] if k % 2 else ["click"]), [0.05, []]]
+            app.touch(fr, settle=0.05)
+        slide(pad_w * 0.3, pad_h * 0.4, pad_w * 0.6, pad_h * 0.4)
+        a = app.state()
+        rep.check(a["strokes"] == n0 and not a.get("clickDrawOn"), "1) rapid taps (tap-to-click clicks) never start drawing; the next touch only aims", f"{a['strokes'] - n0} strokes, on {a.get('clickDrawOn')}")
+        # 2) The aim mark carries on from where it stopped, like a cursor.
+        p1 = slide(pad_w * 0.2, pad_h * 0.5, pad_w * 0.4, pad_h * 0.5)
+        aim1 = app.state().get("aimPad")
+        slide(pad_w * 0.7, pad_h * 0.3, pad_w * 0.75, pad_h * 0.3, lift=False)   # touch down far away, move 5% right
+        b = app.state(); aim2 = b.get("aimPad")
+        want = [aim1[0] + pad_w * 0.05, aim1[1]] if aim1 else None
+        ok = aim1 and aim2 and math.dist(aim2, want) < 1.0
+        rep.check(bool(ok), "2) after a lift the aim mark carries on from where it stopped (it doesn't jump to the new finger spot)", f"stopped at {aim1}, now {aim2}, expected {want}")
+        app.touch([[0.008, []], [0.1, []]], settle=0.1)
+        # Click while aiming: the ink starts exactly at the aim mark.
+        slide(pad_w * 0.6, pad_h * 0.6, pad_w * 0.6, pad_h * 0.6, n=12, lift=False)
+        aim3 = app.state().get("aimPad")
+        cid_click = cid
+        pts = [(pad_w * 0.6 + i * 0.4, pad_h * 0.6) for i in range(40)]
+        fr = [[0.008, [[cid_click, x, y, 130 if i < 3 else 30, 0.5, 7.5, 4]]] for i, (x, y) in enumerate(pts)]
+        fr[2] = fr[2] + ["click"]
+        app.touch(fr + [[0.008, [[cid_click, *pts[-1], 0, 0.5, 7.5, 7]]], [0.008, []], [0.1, []]], settle=0.1)
+        c = app.state(); ends = c.get("lastStrokeEnds") or []
+        at = app.cmd({"cmd": "toPage", "points": [aim3], "raw": True})["points"] if aim3 else []   # aimPad already includes the offset
+        span = st["pageW"] / pad_w * 16   # 16 mm of finger travel, in page units at zoom 1
+        rep.check(c["strokes"] == n0 + 1 and len(ends) == 2 and at and math.dist(ends[0], at[0]) < span * 0.06,
+                  "2) a click starts the ink exactly at the aim mark", f"{c['strokes'] - n0} strokes; ink starts {ends[:1]}, aim at {at}")
+        rep.shot(app, "click to draw: ink starting at the aim mark after aiming with two touches")
+        # Strokes while drawing is on keep the same offset: a second stroke lands where the finger is relative to the first.
+        slide(pad_w * 0.6, pad_h * 0.5, pad_w * 0.7, pad_h * 0.5)
+        d = app.state(); e2 = d.get("lastStrokeEnds") or []
+        q = app.cmd({"cmd": "toPage", "points": [[pad_w * 0.6, pad_h * 0.6], [pad_w * 0.6, pad_h * 0.5]]})["points"]
+        exp2 = [ends[0][0] + q[1][0] - q[0][0], ends[0][1] + q[1][1] - q[0][1]] if ends else None
+        rep.check(d["strokes"] == n0 + 2 and e2 and exp2 and math.dist(e2[0], exp2) < span * 0.1, "2) the next stroke (no click) keeps the same mapping: it starts 10% of the pad below the first", f"{e2[:1]} vs {exp2}")
+        # 3) The time can be 0 s: every lift turns drawing off, so each stroke needs its own click.
+        app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.3)
+        rng = app.state().get("clickDrawRange")
+        app.cmd({"cmd": "closeSettings"}); ensure(app, "draw", True, "d")
+        rep.check(rng == [0, 5], "3) the Settings slider goes from 0 to 5 s", str(rng))
+        app.cmd({"cmd": "clickDrawTimeout", "seconds": 0})
+        time.sleep(3.2)
+        e0 = app.state()["strokes"]
+        slide(pad_w * 0.3, pad_h * 0.3, pad_w * 0.5, pad_h * 0.3, click_at=3)
+        e1 = app.state()
+        rep.check(e1["strokes"] == e0 + 1 and not e1.get("clickDrawOn"), "3) at 0 s: the click draws one stroke and the lift turns drawing off", f"{e1['strokes'] - e0} strokes, on {e1.get('clickDrawOn')}")
+        time.sleep(0.15); slide(pad_w * 0.3, pad_h * 0.25, pad_w * 0.5, pad_h * 0.25)
+        e2_ = app.state()
+        rep.check(e2_["strokes"] == e1["strokes"], "3) at 0 s: the next touch, right after, only aims", f"{e2_['strokes'] - e1['strokes']} strokes")
+        app.cmd({"cmd": "clickDrawTimeout", "seconds": 3})
+        slide(pad_w * 0.3, pad_h * 0.2, pad_w * 0.5, pad_h * 0.2, click_at=3); time.sleep(1.0)
+        f0 = app.state()["strokes"]; slide(pad_w * 0.3, pad_h * 0.15, pad_w * 0.5, pad_h * 0.15); f1 = app.state()
+        rep.check(f1["strokes"] == f0 + 1, "3) at 3 s: a touch 1 s after the lift still draws", f"{f1['strokes'] - f0} strokes")
+        app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.3)
+        app.cmd({"cmd": "settingsSwitch", "index": ci, "on": False}); app.cmd({"cmd": "closeSettings"})
         ensure(app, "draw", False, "d")
 
     @scenario("crash-no-dialog", "An unexpected crash during a robot run (a bug in the app or the hook) is reported as a failure here and never puts a 'quit unexpectedly' dialog on the screen of the person using the Mac.")

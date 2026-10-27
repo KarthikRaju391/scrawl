@@ -680,7 +680,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: click to draw
 
     func setClickDrawTimeout(_ seconds: Double) {
-        CanvasView.clickDrawTimeout = min(max(seconds.rounded(), 2), 5)
+        CanvasView.clickDrawTimeout = min(max(seconds.rounded(), 0), 5)
         if !Launch.testing { UserDefaults.standard.set(CanvasView.clickDrawTimeout, forKey: "clickToDrawTimeout") }
     }
     /// Test hook: a click on the trackpad in draw mode (the frozen pointer sits on the canvas).

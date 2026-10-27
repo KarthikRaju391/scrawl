@@ -378,12 +378,17 @@ final class GestureEngine {
 final class InputQueue: @unchecked Sendable {
     private let lock = NSLock()
     private var items: [(contacts: [Contact], arrival: Double, sensorT: Double)] = []
+    private var firmAt = -1.0
     /// Returns true if the queue was empty (the caller may schedule a fallback drain).
     @discardableResult
     func push(_ c: [Contact], arrival: Double, sensorT: Double) -> Bool {
-        lock.lock(); let wasEmpty = items.isEmpty; items.append((c, arrival, sensorT)); lock.unlock()
+        let firm = c.contains { $0.isDown && $0.pressure >= CanvasView.clickPressure }
+        lock.lock(); let wasEmpty = items.isEmpty; items.append((c, arrival, sensorT)); if firm { firmAt = arrival }; lock.unlock()
         return wasEmpty
     }
+    /// When a finger last pressed firmly, as the frames arrive: a click can reach the app before the frames that
+    /// pressed it are drained (they wait for the next display tick).
+    var lastFirmPressAt: Double { lock.lock(); defer { lock.unlock() }; return firmAt }
     func drain() -> [(contacts: [Contact], arrival: Double, sensorT: Double)] {
         lock.lock(); defer { lock.unlock() }
         let out = items; items.removeAll(keepingCapacity: true); return out
@@ -488,10 +493,36 @@ final class CanvasView: MTKView {
     // clicks. `clickDrawTimeout` seconds after the last lift with no writing it turns off; never while writing.
 
     nonisolated(unsafe) static var clickToDraw = Launch.testing ? false : UserDefaults.standard.bool(forKey: "clickToDraw")
+    /// 0 turns drawing off at every lift (a click per stroke).
     nonisolated(unsafe) static var clickDrawTimeout: Double = {
         let v = UserDefaults.standard.object(forKey: "clickToDrawTimeout") as? Double ?? 3
-        return Launch.testing ? 3 : min(max(v, 2), 5)
+        return Launch.testing ? 3 : min(max(v, 0), 5)
     }()
+    /// A real click presses the finger down: the sensor reads 100-150 then (Karthik's trackpad). macOS tap-to-click
+    /// sends a click for a light tap (10-80, or after the finger has lifted): that doesn't turn drawing on.
+    static let clickPressure = 90.0, clickPressWindow = 0.25
+    // Aiming moves like a cursor: each new touch carries the aim mark on from where it stopped (an offset in pad mm
+    // added to the finger). While drawing is on the offset stays put, so strokes keep their places relative to each
+    // other, and the ink starts exactly at the mark.
+    private var aimOffset = CGPoint.zero, aimMM: CGPoint?, aimId: Int32?
+    var aimPadForTest: CGPoint? { aimMM }
+    var aimOffsetForTest: CGPoint { Self.clickToDraw ? aimOffset : .zero }
+    private func updateAim() {
+        guard Self.clickToDraw else { aimOffset = .zero; aimMM = nil; aimId = nil; return }
+        let fingers = contacts.filter { !gestures.ignoresAtEdge($0) }
+        guard fingers.count == 1, let c = fingers.first else { if fingers.isEmpty { aimId = nil }; return }
+        let aiming = !clickDrawOn && builder == nil
+        if c.id != aimId {
+            aimId = c.id
+            if aiming, let a = aimMM { aimOffset = CGPoint(x: a.x - c.mm.x, y: a.y - c.mm.y) }
+        }
+        if aiming {   // the mark stops at the pad's edges, like a cursor at the screen's
+            let pad = Multitouch.padMM
+            let a = CGPoint(x: min(max(c.mm.x + aimOffset.x, 0), pad.width), y: min(max(c.mm.y + aimOffset.y, 0), pad.height))
+            aimOffset = CGPoint(x: a.x - c.mm.x, y: a.y - c.mm.y)
+        }
+        aimMM = CGPoint(x: c.mm.x + aimOffset.x, y: c.mm.y + aimOffset.y)
+    }
     private(set) var clickDrawOn = false
     private var clickDrawLastLift = 0.0
     private var clickDrawTimer: Timer?
@@ -499,8 +530,10 @@ final class CanvasView: MTKView {
     private var clickAt = -1.0
     func clickDown() {
         guard drawMode, Self.clickToDraw else { return }
-        act("click")
         let now = CACurrentMediaTime()
+        // Without the private touch API there's no pressure to tell a press from a tap: any click counts.
+        if usingMT && now - input.lastFirmPressAt > Self.clickPressWindow { act("tapClickIgnored"); return }
+        act("click")
         clickDrawOn = true; clickDrawLastLift = now
         if clickDrawTimer == nil {
             let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in self?.clickDrawTick() }
@@ -895,6 +928,7 @@ final class CanvasView: MTKView {
         recorder.record(["k": "touch", "c": cs.map { [Int($0.id), Int($0.state), ($0.norm.x * 10000).rounded() / 10000, ($0.norm.y * 10000).rounded() / 10000, ($0.pressure * 10).rounded() / 10] }], sensorT: sensorT)
         perf.inputsSinceTick += 1
         contacts = cs.filter(\.isDown)
+        updateAim()
         // Only fingers the edge guard counts: a palm resting on the edge must neither cancel nor hold
         // back a pending page move.
         let counted = contacts.filter { !gestures.ignoresAtEdge($0) }
@@ -1107,12 +1141,12 @@ final class CanvasView: MTKView {
             let snap = CGPoint(x: l.mm.x - c.mm.x, y: l.mm.y - c.mm.y)   // continue exactly from the lift
             if settings.rejoinMode == "dir" { pendingSnap = snap } else { strokeOffset = snap; rejoinCount += 1 }
         }
-        let cam = camera, pad = Multitouch.padMM
+        let cam = camera, pad = Multitouch.padMM, aim = aimOffsetForTest
         let model = makeWidthModel(usingMT ? settings.widthModel : "speed")
         let st = settings
         makeBuilder = {
             StrokeBuilder(model: model, minCutoff: st.minCutoff, beta: st.beta) { mm in
-                cam.canvas(fromPad: CGPoint(x: mm.x / pad.width, y: mm.y / pad.height))
+                cam.canvas(fromPad: CGPoint(x: (mm.x + aim.x) / pad.width, y: (mm.y + aim.y) / pad.height))
             }
         }
         builder = makeBuilder!()
@@ -1155,7 +1189,10 @@ final class CanvasView: MTKView {
     }
 
     private func endStroke(_ commit: Bool) {
-        defer { builder = nil; needsRender = true; clickDrawLastLift = CACurrentMediaTime() }
+        defer {
+            builder = nil; needsRender = true; clickDrawLastLift = CACurrentMediaTime()
+            if Self.clickDrawTimeout == 0 { clickDrawOff() }   // 0 s: every lift turns drawing off
+        }
         guard var b = builder else { return }
         b.finish()
         logger.end(committed: commit)
@@ -1355,8 +1392,9 @@ final class CanvasView: MTKView {
         }
         if drawMode {  // finger markers: where each finger is on the page (there is no cursor)
             let ringR = 5 / (ptPerUnit * camera.zoom)
+            let aim = aimOffsetForTest, pad = Multitouch.padMM
             for c in contacts {
-                let p = camera.canvas(fromPad: c.norm)
+                let p = camera.canvas(fromPad: CGPoint(x: c.norm.x + aim.x / pad.width, y: c.norm.y + aim.y / pad.height))
                 let r = liveTool == .eraser && builder != nil ? liveSize / 2 : ringR
                 var v: [SIMD2<Float>] = []
                 let n = 32
