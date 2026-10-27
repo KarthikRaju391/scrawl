@@ -378,17 +378,23 @@ final class GestureEngine {
 final class InputQueue: @unchecked Sendable {
     private let lock = NSLock()
     private var items: [(contacts: [Contact], arrival: Double, sensorT: Double)] = []
-    private var firmAt = -1.0
+    private var firmAt: [Int32: Double] = [:], downNow: Set<Int32> = []
     /// Returns true if the queue was empty (the caller may schedule a fallback drain).
     @discardableResult
     func push(_ c: [Contact], arrival: Double, sensorT: Double) -> Bool {
-        let firm = c.contains { $0.isDown && $0.pressure >= CanvasView.clickPressure }
-        lock.lock(); let wasEmpty = items.isEmpty; items.append((c, arrival, sensorT)); if firm { firmAt = arrival }; lock.unlock()
+        lock.lock(); defer { lock.unlock() }
+        let wasEmpty = items.isEmpty; items.append((c, arrival, sensorT))
+        downNow = Set(c.filter(\.isDown).map(\.id))
+        for x in c where x.isDown && x.pressure >= CanvasView.clickPressure { firmAt[x.id] = arrival }
+        firmAt = firmAt.filter { downNow.contains($0.key) || arrival - $0.value < 1 }
         return wasEmpty
     }
-    /// When a finger last pressed firmly, as the frames arrive: a click can reach the app before the frames that
-    /// pressed it are drained (they wait for the next display tick).
-    var lastFirmPressAt: Double { lock.lock(); defer { lock.unlock() }; return firmAt }
+    /// Whether a finger that's on the pad now (newest frame, as they arrive: a click can reach the app before the
+    /// frames that pressed it are drained) pressed firmly since `since`.
+    func firmFingerDown(since: Double) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return downNow.contains { (firmAt[$0] ?? -1) >= since }
+    }
     func drain() -> [(contacts: [Contact], arrival: Double, sensorT: Double)] {
         lock.lock(); defer { lock.unlock() }
         let out = items; items.removeAll(keepingCapacity: true); return out
@@ -501,6 +507,11 @@ final class CanvasView: MTKView {
     /// A real click presses the finger down: the sensor reads 100-150 then (Karthik's trackpad). macOS tap-to-click
     /// sends a click for a light tap (10-80, or after the finger has lifted): that doesn't turn drawing on.
     static let clickPressure = 90.0, clickPressWindow = 0.25
+    /// Tap-to-click sends its click as the finger lifts (in Karthik's sessions the finger was gone 0-33 ms after
+    /// the click); a real press holds it down longer (66 ms and up). A click-started stroke whose finger lifts
+    /// within this is a tap: the stroke is dropped and drawing goes back off.
+    static let tapLiftWindow = 0.05
+    private var clickStroke: (at: Double, wasOn: Bool)?
     // Aiming is the absolute mapping drawing has always used (the whole pad onto the view), as Karthik aimed
     // before click to draw, two-finger panning the page under it: the mark starts where the finger lands and
     // follows it like a cursor while it's down, and the ink, mapped the same way, starts exactly at it.
@@ -524,8 +535,11 @@ final class CanvasView: MTKView {
         guard drawMode, Self.clickToDraw else { return }
         let now = CACurrentMediaTime()
         // Without the private touch API there's no pressure to tell a press from a tap: any click counts.
-        if usingMT && now - input.lastFirmPressAt > Self.clickPressWindow { act("tapClickIgnored"); return }
+        // A real click is a press: a finger on the pad now that pressed firmly just before. Tap-to-click's click
+        // comes as the finger lifts (often with none down by then) - even a hard quick tap's (90-155).
+        if usingMT && !input.firmFingerDown(since: now - Self.clickPressWindow) { act("tapClickIgnored"); return }
         act("click")
+        clickStroke = (now, clickDrawOn)
         clickDrawOn = true; clickDrawLastLift = now
         if clickDrawTimer == nil {
             let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in self?.clickDrawTick() }
@@ -1098,7 +1112,17 @@ final class CanvasView: MTKView {
         gestures.canInk = { [weak self] in guard let self else { return true }; return !Self.clickToDraw || self.clickDrawOn || CACurrentMediaTime() - self.clickAt < 0.15 }
         gestures.bridgesLift = { [weak self] in Self.clickToDraw && self?.clickDrawOn == true }
         gestures.onMove = { [weak self] c, t in self?.moveStroke(c, t) }
-        gestures.onEnd = { [weak self] commit in self?.endStroke(commit) }
+        gestures.onEnd = { [weak self] commit in
+            guard let self else { return }
+            // The click's finger lifted at once: it was tap-to-click on a hard tap, not a press. No ink, and drawing
+            // goes back to how it was.
+            if let c = self.clickStroke, self.frameArrival - c.at < Self.tapLiftWindow {
+                self.clickStroke = nil; self.act("tapClickUndone"); self.endStroke(false)
+                if !c.wasOn { self.clickDrawOff() }
+                return
+            }
+            self.clickStroke = nil; self.endStroke(commit)
+        }
         gestures.onNavigate = { [weak self] prev, now, ratio in
             guard let self else { return }
             let cx0 = self.camera.center.x

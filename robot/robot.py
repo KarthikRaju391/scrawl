@@ -1485,6 +1485,21 @@ def run_scenarios(app, rep, only, hand):
         slide(pad_w * 0.3, pad_h * 0.4, pad_w * 0.6, pad_h * 0.4)
         a = app.state()
         rep.check(a["strokes"] == n0 and not a.get("clickDrawOn"), "1) rapid taps (tap-to-click clicks) never start drawing; the next touch only aims", f"{a['strokes'] - n0} strokes, on {a.get('clickDrawOn')}")
+        # 1b) Hard quick taps all across the pad (Karthik, 27 Oct): a fast tap can press 90-155 on the sensor, and
+        # tap-to-click sends its click as the finger lifts - sometimes a few ms before the lift reaches the app.
+        for k in range(12):
+            cid += 1
+            x, y = pad_w * (0.12 + 0.07 * k), pad_h * (0.25 + 0.5 * ((k * 7) % 5) / 4)
+            fr = [[0.008, [[cid, x, y, p_, 0.5, 7.5, 4]]] for p_ in (40, 95, 135, 120, 70)]
+            if k % 2: fr[-1] = fr[-1] + ["click"]   # the click before the lift arrives
+            fr += [[0.008, [[cid, x, y, 0, 0.5, 7.5, 7]]], [0.008, []] + ([] if k % 2 else ["click"]), [0.04, []]]
+            app.touch(fr, settle=0.02)
+        time.sleep(0.3)
+        b1 = app.state()
+        rep.check(b1["strokes"] == n0 and not b1.get("clickDrawOn"), "1b) rapid hard taps across the pad (tap-to-click, no press) put down no ink and don't turn drawing on", f"{b1['strokes'] - n0} strokes, on {b1.get('clickDrawOn')}")
+        slide(pad_w * 0.3, pad_h * 0.35, pad_w * 0.6, pad_h * 0.35)
+        b2 = app.state()
+        rep.check(b2["strokes"] == n0, "1b) and the next touch only aims", f"{b2['strokes'] - n0} strokes")
         # 2) Aiming as with the old pan-and-place: the mark starts where the finger lands (left or right of the pad)
         # and follows it like a cursor while it stays down; the click's ink starts exactly at the mark.
         tol = st["pageW"] * 0.01
