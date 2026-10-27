@@ -675,9 +675,13 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "menu", "action": "undo"}); f0 = app.state().get("fading", 0)
         time.sleep(0.3); f1 = app.state().get("fading", 0)
         rep.check(f0 >= 1 and f1 == 0, "an undone stroke fades out (gone after the 120 ms fade)", f"fading right after: {f0}, 0.3 s later: {f1}")
-        # The pending move: write to the right part of the view in writing mode, then look during the pause.
+        # The pending move (the next line): in writing mode, write a word across the line's limit (the faint line),
+        # then look during the pause.
         ensure(app, "writing", True, "w")
-        fr, cid = hand.frames(hand.word("edge", pad_w * 0.66, pad_h * 0.5, hand.roman), cid)
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        lx = app.state()["lineLimitX"]
+        (ex, _), = app.cmd({"cmd": "toPad", "points": [[lx - 20, 0]]})["points"]
+        fr, cid = hand.frames(hand.word("edge", ex, pad_h * 0.5, hand.roman), cid)
         app.touch(fr + [[0.008, []]] * 12, settle=0.0)
         p0 = app.state().get("pendingMove", "")
         app.touch([[0.008, [[cid + 50, pad_w * 0.5, pad_h * 0.2, 2, 0.5, 7.5]]]] * 3 + [[0.008, []]], settle=0.05)   # a light touch: cancels
@@ -842,15 +846,15 @@ def run_scenarios(app, rep, only, hand):
         rep.shot(app, "½-page lines with nudges")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
-    @scenario("half-line-autopan", "½-page lines written with auto-pan only (no hand moves): the line wraps at margin + half a page; auto-pans never free it.")
+    @scenario("half-line-autopan", "½-page lines written with no hand moves (and no sideways pan any more): the page never moves along the line, and the line wraps at margin + half a page.")
     def _():
         st = half_setup(); pad_w, pad_h = st["padMM"]; W = st["pageW"]
         recs, _ = write_words(app, hand, (SENTENCE + " " + SENTENCE).split(), pad_h * 0.55, pad_w * 0.1, 13100, rep)
         full = line_widths(recs)[:-1]
         over = [(l["end"] / W) - (0.03 + 0.5 + l["last"] / W + 0.02) for l in full]
         pans = sum(1 for r in recs if r["view"]["x"] > r["before"]["x"] + 1e-6 and not r["newLine"])
-        rep.check(len(full) >= 1 and pans >= 1 and max(over) <= 0, "with auto-pans only, ½-page lines wrap at margin + half a page",
-                  f"{pans} auto-pans; line ends {[round(l['end'] / W, 2) for l in full]}")
+        rep.check(len(full) >= 1 and pans == 0 and max(over) <= 0, "no sideways pan, and ½-page lines wrap at margin + half a page",
+                  f"{pans} sideways pans; line ends {[round(l['end'] / W, 2) for l in full]}")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
     @scenario("half-line-small-nudge-gap", "A small nudge (6% of the view, under the 10% bar), then a word written with a gap: that's still the same line, so it wraps at margin + half a page.")

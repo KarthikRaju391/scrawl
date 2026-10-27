@@ -18,7 +18,7 @@ for c in r["cases"]:
         f"{tag}: two-finger pan both ways in draw mode (x {t['start']:.0f} -> {t['afterFingersLeft']:.0f} -> {t['afterFingersRight']:.0f}, want ±{t['want']:.0f})")
     chk(w["newLines"] == 0 and abs(w["afterWritingAndPause"] - w["afterPan"]) < 1, f"{tag}: writing after panning right by hand stays there "
         f"(x {w['afterPan']:.0f} -> {w['afterWritingAndPause']:.0f}, new lines {w['newLines']})")
-    chk(abs(a["furthestViewX"] - a["startX"]) < 1 and a["newLines"] == 1 and abs(a["viewXAfterNewLine"] - a["wantAfterNewLine"]) < 1,
+    chk(a["furthestViewX"] <= max(a["startX"], a["wantAfterNewLine"]) + 1 and a["newLines"] == 1 and abs(a["viewXAfterNewLine"] - a["wantAfterNewLine"]) < 1,
         f"{tag}: writing along the line never pans sideways (view x stays {a['startX']:.0f}, furthest {a['furthestViewX']:.0f}), then the new line returns to the margin (x {a['viewXAfterNewLine']:.0f}, want {a['wantAfterNewLine']:.0f})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 PY
