@@ -36,7 +36,8 @@ Everything from 0.1.0 is still here: see its notes and the full list in
 ## Checksums (SHA-256)
 
 ```
-CHECKSUMS
+94516d540af0726a587a8765a87e5c3060dc5d5a0732cb11a87fa4ba4f346ecd  Scrawl-0.1.1.dmg
+6b9a7279cc1f234a5d166542f26a45be3458392155d5458ea7e186423c78f535  Scrawl-0.1.1.zip
 ```
 ## Tested
 
