@@ -221,7 +221,8 @@ final class Robot {
             }
             done(["points": pts])
         case "toPad":   // page points -> where they are on the pad now (mm), as a user sees them on screen
-            let pts = (c["points"] as? [[Double]] ?? []).filter { $0.count >= 2 }.map { Self.padMM(canvas, CGPoint(x: $0[0], y: $0[1])) }   // (a bad point is skipped, never a crash)
+            let raw = c["raw"] as? Bool ?? false   // raw: without click to draw's aim offset
+            let pts = (c["points"] as? [[Double]] ?? []).filter { $0.count >= 2 }.map { Self.padMM(canvas, CGPoint(x: $0[0], y: $0[1]), raw: raw) }   // (a bad point is skipped, never a crash)
             done(["points": pts])
         case "exportPNG":   // the page as stored ink (the OCR reference for the screenshot)
             let path = c["path"] as? String ?? dir + "/page.png"
@@ -264,11 +265,11 @@ final class Robot {
     }
 
     /// Pad millimetres of a page point at the current view (the inverse of the trackpad mapping, edge guard included).
-    static func padMM(_ canvas: CanvasView, _ p: CGPoint) -> [Double] {
+    static func padMM(_ canvas: CanvasView, _ p: CGPoint, raw: Bool = false) -> [Double] {
         let v = canvas.camera.visible
         var n = CGPoint(x: (p.x - v.minX) / v.width, y: (p.y - v.minY) / v.height)
         n = Camera.pad(fromActive: n)   // robot:needs static func pad(fromActive
-        let aim = canvas.aimOffsetForTest   // robot:needs var aimOffsetForTest
+        let aim = raw ? .zero : canvas.aimOffsetForTest   // robot:needs var aimOffsetForTest
         return [n.x * Multitouch.padMM.width - aim.x, n.y * Multitouch.padMM.height - aim.y]   // robot:needs var aimOffsetForTest
         return [n.x * Multitouch.padMM.width, n.y * Multitouch.padMM.height]
     }

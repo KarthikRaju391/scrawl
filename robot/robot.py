@@ -1424,12 +1424,19 @@ def run_scenarios(app, rep, only, hand):
         # The eraser: off, rubbing erases nothing; a click and rub erases, and so does the next rub with no click.
         app.press("e", until=lambda s: s["tool"] == "eraser"); time.sleep(3.4)
         def rub(click):
+            """Rub over the last stroke. As a user does: touch down, steer the aim mark onto the ink (it carries on
+            from where it was, like a cursor, while drawing is off), then click (if `click`) and rub."""
             nonlocal cid
-            ink = app.state()["lastStrokeMid"]; (ex, ey), = app.cmd({"cmd": "toPad", "points": [ink]})["points"]
+            st_ = app.state(); ink = st_["lastStrokeMid"]
+            (tx, ty), = app.cmd({"cmd": "toPad", "points": [ink], "raw": True})["points"]   # the ink, as an aim position
+            aim = st_.get("aimPad") if not st_.get("clickDrawOn") else None
+            sx, sy = pad_w * 0.5, pad_h * 0.5
+            ex, ey = (sx + tx - aim[0], sy + ty - aim[1]) if aim else app.cmd({"cmd": "toPad", "points": [ink]})["points"][0]
             cid += 1
-            fr = [[0.008, [[cid, ex - 6 + 12 * (k % 2) * (j / 4), ey - 2 + k * 0.5, 40, 0.5, 7.5]]] for k in range(9) for j in range(4)]
-            if click: fr[0][1][0][3] = 130; fr[0] = fr[0] + ["click"]
-            app.touch(fr + [[0.008, []], [0.2, []]])
+            fr = [[0.008, [[cid, sx + (ex - sx) * i / 15, sy + (ey - sy) * i / 15, 20, 0.5, 7.5]]] for i in range(16)] if aim else []
+            rubf = [[0.008, [[cid, ex - 6 + 12 * (k % 2) * (j / 4), ey - 2 + k * 0.5, 40, 0.5, 7.5]]] for k in range(9) for j in range(4)]
+            if click: rubf[0][1][0][3] = 130; rubf[0] = rubf[0] + ["click"]
+            app.touch(fr + rubf + [[0.008, []], [0.2, []]])
         e0 = app.state(); rub(False); e1 = app.state()
         rep.check(e1["strokes"] == e0["strokes"], "eraser, off: rubbing erases nothing", f"{e0['strokes']} -> {e1['strokes']}")
         rub(True); e2 = app.state()
