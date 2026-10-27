@@ -211,18 +211,16 @@ final class Robot {
                 }
             }
             done(["pages": canvas.pages.count])
-        case "toPage":   // pad mm -> the page point under it now (with click to draw's aim offset unless "raw")
+        case "toPage":   // pad mm -> the page point under it now
             let v = canvas.camera.visible
-            let aim = (c["raw"] as? Bool ?? false) ? .zero : canvas.aimOffsetForTest   // robot:needs var aimOffsetForTest
             let pts = (c["points"] as? [[Double]] ?? []).filter { $0.count >= 2 }.map { q -> [Double] in
-                var n = CGPoint(x: (q[0] + aim.x) / Multitouch.padMM.width, y: (q[1] + aim.y) / Multitouch.padMM.height)   // robot:needs var aimOffsetForTest
+                var n = CGPoint(x: q[0] / Multitouch.padMM.width, y: q[1] / Multitouch.padMM.height)
                 n = Camera.active(n)   // robot:needs static func active(
                 return [v.minX + n.x * v.width, v.minY + n.y * v.height]
             }
             done(["points": pts])
         case "toPad":   // page points -> where they are on the pad now (mm), as a user sees them on screen
-            let raw = c["raw"] as? Bool ?? false   // raw: without click to draw's aim offset
-            let pts = (c["points"] as? [[Double]] ?? []).filter { $0.count >= 2 }.map { Self.padMM(canvas, CGPoint(x: $0[0], y: $0[1]), raw: raw) }   // (a bad point is skipped, never a crash)
+            let pts = (c["points"] as? [[Double]] ?? []).filter { $0.count >= 2 }.map { Self.padMM(canvas, CGPoint(x: $0[0], y: $0[1])) }   // (a bad point is skipped, never a crash)
             done(["points": pts])
         case "exportPNG":   // the page as stored ink (the OCR reference for the screenshot)
             let path = c["path"] as? String ?? dir + "/page.png"
@@ -265,12 +263,10 @@ final class Robot {
     }
 
     /// Pad millimetres of a page point at the current view (the inverse of the trackpad mapping, edge guard included).
-    static func padMM(_ canvas: CanvasView, _ p: CGPoint, raw: Bool = false) -> [Double] {
+    static func padMM(_ canvas: CanvasView, _ p: CGPoint) -> [Double] {
         let v = canvas.camera.visible
         var n = CGPoint(x: (p.x - v.minX) / v.width, y: (p.y - v.minY) / v.height)
         n = Camera.pad(fromActive: n)   // robot:needs static func pad(fromActive
-        let aim = raw ? .zero : canvas.aimOffsetForTest   // robot:needs var aimOffsetForTest
-        return [n.x * Multitouch.padMM.width - aim.x, n.y * Multitouch.padMM.height - aim.y]   // robot:needs var aimOffsetForTest
         return [n.x * Multitouch.padMM.width, n.y * Multitouch.padMM.height]
     }
 
@@ -351,6 +347,7 @@ final class Robot {
         s["practice"] = app.container.practice.isHidden ? [:] : ["done": app.container.practice.done.map { "\($0)" }.sorted()]   // robot:needs final class PracticeView
         s["toolbarTips"] = tb.tooltipsForTest   // robot:needs var tooltipsForTest
         s["settingsWindow"] = app.settingsWindow.window?.isVisible == true ? app.settingsWindow.window!.windowNumber : 0   // robot:needs class SettingsWindow
+        s["aimMark"] = canvas.markForTest.map { [$0.x, $0.y] } as Any   // robot:needs var markForTest
         s["aimPad"] = canvas.aimPadForTest.map { [$0.x, $0.y] } as Any   // robot:needs var aimPadForTest
         s["clickDrawRange"] = app.settingsWindow.clickDrawRangeForTest   // robot:needs var clickDrawRangeForTest
         s["settingsSwitches"] = app.settingsWindow.switchesForTest.map { [$0.0, $0.1] as [Any] }   // robot:needs class SettingsWindow

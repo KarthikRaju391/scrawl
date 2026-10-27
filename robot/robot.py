@@ -1424,19 +1424,12 @@ def run_scenarios(app, rep, only, hand):
         # The eraser: off, rubbing erases nothing; a click and rub erases, and so does the next rub with no click.
         app.press("e", until=lambda s: s["tool"] == "eraser"); time.sleep(3.4)
         def rub(click):
-            """Rub over the last stroke. As a user does: touch down, steer the aim mark onto the ink (it carries on
-            from where it was, like a cursor, while drawing is off), then click (if `click`) and rub."""
             nonlocal cid
-            st_ = app.state(); ink = st_["lastStrokeMid"]
-            (tx, ty), = app.cmd({"cmd": "toPad", "points": [ink], "raw": True})["points"]   # the ink, as an aim position
-            aim = st_.get("aimPad") if not st_.get("clickDrawOn") else None
-            sx, sy = pad_w * 0.5, pad_h * 0.5
-            ex, ey = (sx + tx - aim[0], sy + ty - aim[1]) if aim else app.cmd({"cmd": "toPad", "points": [ink]})["points"][0]
+            ink = app.state()["lastStrokeMid"]; (ex, ey), = app.cmd({"cmd": "toPad", "points": [ink]})["points"]
             cid += 1
-            fr = [[0.008, [[cid, sx + (ex - sx) * i / 15, sy + (ey - sy) * i / 15, 20, 0.5, 7.5]]] for i in range(16)] if aim else []
-            rubf = [[0.008, [[cid, ex - 6 + 12 * (k % 2) * (j / 4), ey - 2 + k * 0.5, 40, 0.5, 7.5]]] for k in range(9) for j in range(4)]
-            if click: rubf[0][1][0][3] = 130; rubf[0] = rubf[0] + ["click"]
-            app.touch(fr + rubf + [[0.008, []], [0.2, []]])
+            fr = [[0.008, [[cid, ex - 6 + 12 * (k % 2) * (j / 4), ey - 2 + k * 0.5, 40, 0.5, 7.5]]] for k in range(9) for j in range(4)]
+            if click: fr[0][1][0][3] = 130; fr[0] = fr[0] + ["click"]
+            app.touch(fr + [[0.008, []], [0.2, []]])
         e0 = app.state(); rub(False); e1 = app.state()
         rep.check(e1["strokes"] == e0["strokes"], "eraser, off: rubbing erases nothing", f"{e0['strokes']} -> {e1['strokes']}")
         rub(True); e2 = app.state()
@@ -1492,35 +1485,42 @@ def run_scenarios(app, rep, only, hand):
         slide(pad_w * 0.3, pad_h * 0.4, pad_w * 0.6, pad_h * 0.4)
         a = app.state()
         rep.check(a["strokes"] == n0 and not a.get("clickDrawOn"), "1) rapid taps (tap-to-click clicks) never start drawing; the next touch only aims", f"{a['strokes'] - n0} strokes, on {a.get('clickDrawOn')}")
-        # 2) The aim mark carries on from where it stopped, like a cursor.
-        p1 = slide(pad_w * 0.2, pad_h * 0.5, pad_w * 0.4, pad_h * 0.5)
-        aim1 = app.state().get("aimPad")
-        slide(pad_w * 0.7, pad_h * 0.3, pad_w * 0.75, pad_h * 0.3, lift=False)   # touch down far away, move 5% right
-        b = app.state(); aim2 = b.get("aimPad")
-        want = [aim1[0] + pad_w * 0.05, aim1[1]] if aim1 else None
-        ok = aim1 and aim2 and math.dist(aim2, want) < 1.0
-        rep.check(bool(ok), "2) after a lift the aim mark carries on from where it stopped (it doesn't jump to the new finger spot)", f"stopped at {aim1}, now {aim2}, expected {want}")
-        app.touch([[0.008, []], [0.1, []]], settle=0.1)
-        # Click while aiming: the ink starts exactly at the aim mark.
-        slide(pad_w * 0.6, pad_h * 0.6, pad_w * 0.6, pad_h * 0.6, n=12, lift=False)
-        aim3 = app.state().get("aimPad")
-        cid_click = cid
-        pts = [(pad_w * 0.6 + i * 0.4, pad_h * 0.6) for i in range(40)]
-        fr = [[0.008, [[cid_click, x, y, 130 if i < 3 else 30, 0.5, 7.5, 4]]] for i, (x, y) in enumerate(pts)]
-        fr[2] = fr[2] + ["click"]
-        app.touch(fr + [[0.008, [[cid_click, *pts[-1], 0, 0.5, 7.5, 7]]], [0.008, []], [0.1, []]], settle=0.1)
+        # 2) Aiming as with the old pan-and-place: the mark starts where the finger lands (left or right of the pad)
+        # and follows it like a cursor while it stays down; the click's ink starts exactly at the mark.
+        tol = st["pageW"] * 0.01
+        def page(x, y): return app.cmd({"cmd": "toPage", "points": [[x, y]]})["points"][0]
+        def near(a_, b_): return bool(a_) and bool(b_) and math.dist(a_, b_) < tol
+        def down(x, y, p=30, extra=None):
+            fr = [[0.008, [[cid, x, y, p, 0.5, 7.5, 4]]]]
+            if extra: fr[0] = fr[0] + extra
+            app.touch(fr, settle=0.08)
+        def move(x0_, y0_, x1, y1, n=20, p=30):
+            app.touch([[0.008, [[cid, x0_ + (x1 - x0_) * i / n, y0_ + (y1 - y0_) * i / n, p, 0.5, 7.5, 4]]] for i in range(1, n + 1)], settle=0.08)
+        def lift(x, y): app.touch([[0.008, [[cid, x, y, 0, 0.5, 7.5, 7]]], [0.008, []], [0.1, []]], settle=0.1)
+        cid += 1; down(pad_w * 0.2, pad_h * 0.5); move(pad_w * 0.2, pad_h * 0.5, pad_w * 0.3, pad_h * 0.5)
+        m1 = app.state().get("aimMark")
+        rep.check(near(m1, page(pad_w * 0.3, pad_h * 0.5)), "2) on the left of the pad the mark is under the finger", f"mark {m1}, finger {page(pad_w * 0.3, pad_h * 0.5)}")
+        lift(pad_w * 0.3, pad_h * 0.5)
+        gone = app.state().get("aimMark")
+        rep.check(gone is None, "2) when the finger lifts the mark goes away", str(gone))
+        cid += 1; x0, y0 = pad_w * 0.75, pad_h * 0.3; down(x0, y0)
+        m2 = app.state().get("aimMark")
+        rep.check(near(m2, page(x0, y0)), "2) touch down on the right: the mark starts there (it doesn't carry on from the left)", f"mark {m2}, finger {page(x0, y0)}")
+        move(x0, y0, x0 + pad_w * 0.05, y0 + pad_h * 0.05)
+        x1, y1 = x0 + pad_w * 0.05, y0 + pad_h * 0.05
+        m3 = app.state().get("aimMark")
+        rep.check(near(m3, page(x1, y1)), "2) while the finger stays down the mark follows it", f"mark {m3}, finger {page(x1, y1)}")
+        # Press and click right there, let go of the click and keep drawing, lift.
+        app.touch([[0.008, [[cid, x1, y1, 130, 0.5, 7.5, 4]]] for _ in range(3)] + [[0.008, [[cid, x1, y1, 130, 0.5, 7.5, 4]], "click"]], settle=0.05)
+        move(x1, y1, x1 - pad_w * 0.1, y1, n=30); lift(x1 - pad_w * 0.1, y1)
         c = app.state(); ends = c.get("lastStrokeEnds") or []
-        at = app.cmd({"cmd": "toPage", "points": [aim3], "raw": True})["points"] if aim3 else []   # aimPad already includes the offset
-        span = st["pageW"] / pad_w * 16   # 16 mm of finger travel, in page units at zoom 1
-        rep.check(c["strokes"] == n0 + 1 and len(ends) == 2 and at and math.dist(ends[0], at[0]) < span * 0.06,
-                  "2) a click starts the ink exactly at the aim mark", f"{c['strokes'] - n0} strokes; ink starts {ends[:1]}, aim at {at}")
-        rep.shot(app, "click to draw: ink starting at the aim mark after aiming with two touches")
-        # Strokes while drawing is on keep the same offset: a second stroke lands where the finger is relative to the first.
-        slide(pad_w * 0.6, pad_h * 0.5, pad_w * 0.7, pad_h * 0.5)
+        rep.check(c["strokes"] == n0 + 1 and len(ends) == 2 and near(ends[0], m3), "2) a click starts the ink exactly at the mark", f"{c['strokes'] - n0} strokes; ink starts {ends[:1]}, mark {m3}")
+        rep.check(len(ends) == 2 and near(ends[1], page(x1 - pad_w * 0.1, y1)), "2) the ink follows the finger to where it lifts", f"{ends[1:]} vs {page(x1 - pad_w * 0.1, y1)}")
+        rep.shot(app, "click to draw: the mark starts where the finger lands; the ink starts at the mark")
+        # The next stroke (drawing still on, no click) starts under its finger too.
+        cid += 1; down(pad_w * 0.4, pad_h * 0.6); move(pad_w * 0.4, pad_h * 0.6, pad_w * 0.5, pad_h * 0.6); lift(pad_w * 0.5, pad_h * 0.6)
         d = app.state(); e2 = d.get("lastStrokeEnds") or []
-        q = app.cmd({"cmd": "toPage", "points": [[pad_w * 0.6, pad_h * 0.6], [pad_w * 0.6, pad_h * 0.5]]})["points"]
-        exp2 = [ends[0][0] + q[1][0] - q[0][0], ends[0][1] + q[1][1] - q[0][1]] if ends else None
-        rep.check(d["strokes"] == n0 + 2 and e2 and exp2 and math.dist(e2[0], exp2) < span * 0.1, "2) the next stroke (no click) keeps the same mapping: it starts 10% of the pad below the first", f"{e2[:1]} vs {exp2}")
+        rep.check(d["strokes"] == n0 + 2 and e2 and near(e2[0], page(pad_w * 0.4, pad_h * 0.6)), "2) the next stroke, no click, starts under its finger", f"{e2[:1]} vs {page(pad_w * 0.4, pad_h * 0.6)}")
         # 3) The time can be 0 s: every lift turns drawing off, so each stroke needs its own click.
         app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.3)
         rng = app.state().get("clickDrawRange")
@@ -1542,6 +1542,47 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.3)
         app.cmd({"cmd": "settingsSwitch", "index": ci, "on": False}); app.cmd({"cmd": "closeSettings"})
         ensure(app, "draw", False, "d")
+
+    @scenario("click-to-draw-pan", "Panning is the same with click to draw on as off: the same two-finger pan, a pan into the page's edge, a pinch and an arrow-key pan move the view exactly the same, before a click and while drawing is on.")
+    def _():
+        def switch(on):
+            app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.3)
+            sw = app.state().get("settingsSwitches") or []
+            i = next((k for k, x in enumerate(sw) if x[0].lower().startswith("click to draw")), None)
+            if i is not None: app.cmd({"cmd": "settingsSwitch", "index": i, "on": on})
+            app.cmd({"cmd": "closeSettings"}); return i is not None
+        def run(mode):
+            ensure(app, "draw", False, "d")
+            if app.state()["gallery"] >= 0: app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+            ok = switch(mode != "off")
+            ensure(app, "draw", True, "d"); ensure(app, "writing", False, "w")
+            app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+            app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app)
+            st = app.state(); pw, ph = st["padMM"]
+            if mode == "armed":   # a click turns drawing on (a short stroke); the pans come while it's on
+                fr = [[0.008, [[18001, pw * 0.5, ph * 0.9, 130, 0.5, 7.5]]] for _ in range(4)]
+                fr[3] = fr[3] + ["click"]
+                app.touch(fr + [[0.008, [[18001, pw * 0.5 + i * 0.3, ph * 0.9, 30, 0.5, 7.5]]] for i in range(10)] + [[0.008, []], [0.1, []]], settle=0.1)
+                settle(app)
+            out = {"on": app.state().get("clickDrawOn"), "ok": ok}
+            v = lambda: app.state()["view"]
+            v0 = v(); app.touch(two_finger(pw / 2, ph / 2, 25, 25, shift=(-12, -6), dur=0.4)); settle(app); v1 = v()
+            for _ in range(2): app.touch(two_finger(pw * 0.7, ph / 2, 25, 25, shift=(-70, 0), dur=0.5)); settle(app)
+            v2 = v(); out["pageW"] = app.state()["pageW"]
+            app.touch(two_finger(pw / 2, ph / 2, 20, 34, dur=0.4)); settle(app); v3 = v()
+            app.press("right"); settle(app); v4 = v()
+            out["moves"] = [[round(b["x"] - a["x"], 2), round(b["y"] - a["y"], 2), round(b["zoom"] / a["zoom"], 4)] for a, b in [(v0, v1), (v1, v2), (v2, v3), (v3, v4)]]
+            out["edgeX"] = round(v2["x"] + v2["w"], 2)
+            return out
+        off = run("off"); on = run("on"); armed = run("armed")
+        switch(False); ensure(app, "draw", False, "d")
+        rep.check(on["ok"] and bool(armed["on"]), "click to draw switched on for the comparison", f"{on['ok']}, drawing on during the armed run: {armed['on']}")
+        moved = all(abs(m[0]) + abs(m[1]) > 1 or abs(m[2] - 1) > 0.01 for m in off["moves"])
+        rep.check(moved, "each move (pan, pan into the edge, pinch, arrow) moves the view with click to draw off", str(off["moves"]))
+        rep.check(abs(off["edgeX"] - off["pageW"]) < 0.5 and on["edgeX"] == off["edgeX"] and armed["edgeX"] == off["edgeX"], "the pan into the edge stops at the page's right edge, on and off", f"view right edge {off['edgeX']}, {on['edgeX']}, {armed['edgeX']} (page {off['pageW']})")
+        def same(a_, b_): return all(abs(x - y) <= 0.5 for m, n in zip(a_["moves"], b_["moves"]) for x, y in zip(m[:2], n[:2])) and all(abs(m[2] - n[2]) < 1e-3 for m, n in zip(a_["moves"], b_["moves"]))
+        rep.check(same(off, on), "before a click, the pans, the edge, the pinch and the arrow move the view exactly as with click to draw off", f"off {off['moves']}  on {on['moves']}")
+        rep.check(same(off, armed) and armed["on"], "while drawing is on, they still move the view exactly as with it off", f"off {off['moves']}  armed {armed['moves']}")
 
     @scenario("crash-no-dialog", "An unexpected crash during a robot run (a bug in the app or the hook) is reported as a failure here and never puts a 'quit unexpectedly' dialog on the screen of the person using the Mac.")
     def _():

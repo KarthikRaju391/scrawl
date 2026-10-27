@@ -501,27 +501,19 @@ final class CanvasView: MTKView {
     /// A real click presses the finger down: the sensor reads 100-150 then (Karthik's trackpad). macOS tap-to-click
     /// sends a click for a light tap (10-80, or after the finger has lifted): that doesn't turn drawing on.
     static let clickPressure = 90.0, clickPressWindow = 0.25
-    // Aiming moves like a cursor: each new touch carries the aim mark on from where it stopped (an offset in pad mm
-    // added to the finger). While drawing is on the offset stays put, so strokes keep their places relative to each
-    // other, and the ink starts exactly at the mark.
-    private var aimOffset = CGPoint.zero, aimMM: CGPoint?, aimId: Int32?
+    // Aiming is the absolute mapping drawing has always used (the whole pad onto the view), as Karthik aimed
+    // before click to draw, two-finger panning the page under it: the mark starts where the finger lands and
+    // follows it like a cursor while it's down, and the ink, mapped the same way, starts exactly at it.
+    // (7ddf404 carried the mark on from where it last stopped instead; Karthik wants it to start under the finger.)
+    private var aimMM: CGPoint?
     var aimPadForTest: CGPoint? { aimMM }
-    var aimOffsetForTest: CGPoint { Self.clickToDraw ? aimOffset : .zero }
+    /// Where the blue mark for a finger is on the page (the ink starts here).
+    func markPoint(_ c: Contact) -> CGPoint { camera.canvas(fromPad: c.norm) }
+    /// The mark of the one finger down, if exactly one is (test hook).
+    var markForTest: CGPoint? { contacts.count == 1 ? markPoint(contacts[0]) : nil }
     private func updateAim() {
-        guard Self.clickToDraw else { aimOffset = .zero; aimMM = nil; aimId = nil; return }
         let fingers = contacts.filter { !gestures.ignoresAtEdge($0) }
-        guard fingers.count == 1, let c = fingers.first else { if fingers.isEmpty { aimId = nil }; return }
-        let aiming = !clickDrawOn && builder == nil
-        if c.id != aimId {
-            aimId = c.id
-            if aiming, let a = aimMM { aimOffset = CGPoint(x: a.x - c.mm.x, y: a.y - c.mm.y) }
-        }
-        if aiming {   // the mark stops at the pad's edges, like a cursor at the screen's
-            let pad = Multitouch.padMM
-            let a = CGPoint(x: min(max(c.mm.x + aimOffset.x, 0), pad.width), y: min(max(c.mm.y + aimOffset.y, 0), pad.height))
-            aimOffset = CGPoint(x: a.x - c.mm.x, y: a.y - c.mm.y)
-        }
-        aimMM = CGPoint(x: c.mm.x + aimOffset.x, y: c.mm.y + aimOffset.y)
+        if Self.clickToDraw, fingers.count == 1 { aimMM = fingers[0].mm }
     }
     private(set) var clickDrawOn = false
     private var clickDrawLastLift = 0.0
@@ -1141,12 +1133,12 @@ final class CanvasView: MTKView {
             let snap = CGPoint(x: l.mm.x - c.mm.x, y: l.mm.y - c.mm.y)   // continue exactly from the lift
             if settings.rejoinMode == "dir" { pendingSnap = snap } else { strokeOffset = snap; rejoinCount += 1 }
         }
-        let cam = camera, pad = Multitouch.padMM, aim = aimOffsetForTest
+        let cam = camera, pad = Multitouch.padMM
         let model = makeWidthModel(usingMT ? settings.widthModel : "speed")
         let st = settings
         makeBuilder = {
             StrokeBuilder(model: model, minCutoff: st.minCutoff, beta: st.beta) { mm in
-                cam.canvas(fromPad: CGPoint(x: (mm.x + aim.x) / pad.width, y: (mm.y + aim.y) / pad.height))
+                cam.canvas(fromPad: CGPoint(x: mm.x / pad.width, y: mm.y / pad.height))
             }
         }
         builder = makeBuilder!()
@@ -1392,9 +1384,8 @@ final class CanvasView: MTKView {
         }
         if drawMode {  // finger markers: where each finger is on the page (there is no cursor)
             let ringR = 5 / (ptPerUnit * camera.zoom)
-            let aim = aimOffsetForTest, pad = Multitouch.padMM
             for c in contacts {
-                let p = camera.canvas(fromPad: CGPoint(x: c.norm.x + aim.x / pad.width, y: c.norm.y + aim.y / pad.height))
+                let p = markPoint(c)
                 let r = liveTool == .eraser && builder != nil ? liveSize / 2 : ringR
                 var v: [SIMD2<Float>] = []
                 let n = 32

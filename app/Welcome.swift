@@ -42,7 +42,7 @@ enum HelpText {
         ("2-finger double tap", "Undo (in draw mode)"),
         ("3-finger double tap", "Redo (in draw mode)"),
         ("2-finger double tap, hold, slide", "Scrub through undo: slide left to go back, right to come forward"),
-        ("Click (click to draw)", "With Settings › Click to draw: a touch moves the aim mark like a cursor; press to click and the stroke starts at the mark, then draw on with no more clicks until you stop for 3 s"),
+        ("Click (click to draw)", "With Settings › Click to draw: a touch shows the aim mark under your finger; press to click and the stroke starts at the mark, then draw on with no more clicks until you stop for 3 s"),
         ("Scratch out", "A quick zig-zag over a word erases it (pen or marker; one undo brings it back)"),
         ("M  H  E", "Marker, highlighter, eraser; press again for the pen"),
         ("P", "Pen; on the pen, back to the last other tool"),
