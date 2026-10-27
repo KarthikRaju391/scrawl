@@ -106,7 +106,6 @@ enum TestUI {
             ("8-writing-on", { click(toolbar.center(of: .writing)) }),
             ("9-writing-panel", { click(toolbar.chevron(of: .writing)) }),
             ("10-full-width", { click(toolbar.panel.centerOfWriting(2)) }),
-            ("10b-pan-left", { click(toolbar.panel.centerOfWriting(5)) }),
             ("11-paper", { toolbar.hidePanel(); click(toolbar.center(of: .background)) }),   // the sliders moved to Settings (⌘,)
         ]
         var i = 0
@@ -211,7 +210,8 @@ enum TestAutoPan {
                     emit([contact(id, CGPoint(x: 70 + o, y: 30)), contact(id + 1, CGPoint(x: 90 + o, y: 30))]) }
                 emit([]); for _ in 0..<25 { emit([]) }
             }
-            let manualOnly = DispatchQueue.main.sync { canvas.tools.autoPan == .off }
+            // No sideways pan any more: the writer pans by hand (two fingers) near the pad's right side.
+            let manualOnly = true
             var x = 0.15 * pad.width
             let y = 0.5 * pad.height
             var seenPans = 0, seenLines = 0, lineStart: Double?
@@ -224,7 +224,7 @@ enum TestAutoPan {
                 let (pans, lines, end, first) = DispatchQueue.main.sync { () -> (Int, Int, CGPoint, Double) in
                     canvas.flushInputForTest()
                     let b = canvas.doc.strokes.last!.bounds
-                    return (canvas.panCount, canvas.newLineCount, canvas.padPoint(CGPoint(x: b.maxX, y: b.midY)), Double(canvas.doc.strokes.first!.bounds.minX))
+                    return (0, canvas.newLineCount, canvas.padPoint(CGPoint(x: b.maxX, y: b.midY)), Double(canvas.doc.strokes.first!.bounds.minX))
                 }
                 if lineStart == nil { lineStart = first }
                 if lines > seenLines {
@@ -232,11 +232,6 @@ enum TestAutoPan {
                     x = Double(DispatchQueue.main.sync { canvas.padPoint(CGPoint(x: lineStart!, y: 0)).x }) * pad.width
                 } else if pans > seenPans {
                     seenPans = pans
-                    // where does the word just written start now? (left mode puts it at the left edge)
-                    let ws = DispatchQueue.main.sync { () -> Double in   // the word the app aligned (left mode)
-                        Double(canvas.padPoint(CGPoint(x: canvas.lastPanWordStart ?? 0, y: 0)).x)
-                    }
-                    afterPanWordX.append(ws)
                     x = end.x * pad.width + 1.5 + (k % 3 == 2 ? 6 : 0)
                 } else if manualOnly && x / pad.width > 0.85 {
                     manualPan(0.5 * pad.width)
@@ -254,8 +249,8 @@ enum TestAutoPan {
                 }
                 var rows: [Int: Double] = [:]   // row -> leftmost x
                 for l in letters { let r = Int((l.midY / 10).rounded()); rows[r] = min(rows[r] ?? .infinity, l.minX) }
-                let r: [String: Any] = ["autoPan": canvas.tools.autoPan.rawValue, "strokes": canvas.doc.strokes.count,
-                                        "pans": canvas.panCount, "newLines": canvas.newLineCount, "overlapsWithPreviousLetter": overlaps,
+                let r: [String: Any] = ["strokes": canvas.doc.strokes.count,
+                                        "pans": 0, "newLines": canvas.newLineCount, "overlapsWithPreviousLetter": overlaps,
                                         "lettersLeftOfPrevious": backwards, "rowStarts": rows.sorted { $0.key > $1.key }.map(\.value),
                                         "touchX": touches, "wordStartAfterPan": afterPanWordX]
                 try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted]).write(to: URL(fileURLWithPath: dir + "/test-autopan.json"))
@@ -366,7 +361,6 @@ enum TestSession {
     static func apply(tools r: [String: Any], _ canvas: CanvasView) {
         var t = canvas.tools
         if let v = r["tool"] as? String, let k = ToolKind(rawValue: v) { t.tool = k }
-        if let v = r["autoPan"] as? Int, let a = AutoPan(rawValue: v) { t.autoPan = a }
         if let v = r["zoomLocked"] as? Bool { t.zoomLocked = v }
         if let v = r["lineWidth"] as? Int { t.lineWidthIndex = v }
         canvas.tools = t

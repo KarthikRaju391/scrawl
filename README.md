@@ -63,11 +63,11 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   switches for scratch-out and the page map.
 - **Toolbar:** Draw first, then the tools and paper, writing and zoom lock, undo and redo, and pages.
   Hover over any button for what it does and its shortcut.
-- **Writing mode (W):** pans along the line as you write, and goes to the start of the next line
-  when the line is full, back at the left margin (Return does it by hand). The page waits until your
-  finger has been up for 0.4 s, so it never moves in the middle of a word. A pan keeps your last two or
-  three words on screen and moves at most half the view; a new line sits a little below the middle, so
-  the lines you just wrote stay in sight. If you pan by hand (a real move, not a nudge) and write somewhere
+- **Writing mode (W):** the page stays put while you write along a line (pan by hand with two fingers if
+  you need room), and goes to the start of the next line when the line reaches its width (½, ¾ or the
+  full page), back at the left margin (Return does it by hand). A faint vertical line marks where that
+  happens. The page waits until your finger has been up for 0.4 s, so it never moves in the middle of a
+  word; a new line sits a little below the middle, so the lines you just wrote stay in sight. If you pan by hand (a real move, not a nudge) and write somewhere
   new, the line starts there and still ends ½ or ¾ of a page later; small nudges and pinches don't change it. Choose the line width (½, ¾, full) and how it pans in the panel. A ½ line ends about the middle of the
   page: when the next word wouldn't fit, the line breaks at the word gap, before you start it. A word you've
   started is always finished on its line (it may run a little past), and nothing you've written ever moves.

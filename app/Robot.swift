@@ -190,7 +190,7 @@ final class Robot {
         case "canvasClick":   // a trackpad click in draw mode: the frozen pointer sits on the canvas, so it lands there
             app.robotCanvasClick()   // robot:needs func robotCanvasClick
             done(["ok": true])
-        case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, pan 3-5)
+        case "panelPick":   // a click on a tile of the open writing panel (line width 0-2, 3 writing off)
             let tb = app.container.toolbar
             guard !tb.panel.isHidden, let i = c["writing"] as? Int else { done(["error": "panel not open"]); return }
             let p = tb.panel.centerOfWriting(i)
@@ -287,7 +287,7 @@ final class Robot {
         let sorted = gaps.sorted()
         var s: [String: Any] = [
             "draw": canvas.drawMode, "writing": canvas.writingMode, "tool": canvas.tools.tool.rawValue, "zoomLocked": canvas.tools.zoomLocked,
-            "lineWidth": canvas.tools.lineWidthIndex, "autoPan": canvas.tools.autoPan.rawValue,
+            "lineWidth": canvas.tools.lineWidthIndex,
             "page": canvas.pageIndex, "pages": canvas.pages.count, "strokes": canvas.doc.strokes.count,
             "strokesPerPage": canvas.pages.map { $0.strokes.count },
             "view": Self.view(canvas),
@@ -347,6 +347,10 @@ final class Robot {
         s["practice"] = app.container.practice.isHidden ? [:] : ["done": app.container.practice.done.map { "\($0)" }.sorted()]   // robot:needs final class PracticeView
         s["toolbarTips"] = tb.tooltipsForTest   // robot:needs var tooltipsForTest
         s["settingsWindow"] = app.settingsWindow.window?.isVisible == true ? app.settingsWindow.window!.windowNumber : 0   // robot:needs class SettingsWindow
+        s["lineLimitX"] = canvas.lineLimitX as Any   // robot:needs var lineLimitX
+        s["limitDrawn"] = canvas.limitDrawnForTest as Any   // robot:needs var limitDrawnForTest
+        let wf = app.window.frame, cf = canvas.convert(canvas.bounds, to: nil)
+        s["canvasFrame"] = [cf.minX, wf.height - cf.maxY, cf.width, cf.height, wf.width]   // window points, from the window's top-left
         s["aimMark"] = canvas.markForTest.map { [$0.x, $0.y] } as Any   // robot:needs var markForTest
         s["aimPad"] = canvas.aimPadForTest.map { [$0.x, $0.y] } as Any   // robot:needs var aimPadForTest
         s["clickDrawRange"] = app.settingsWindow.clickDrawRangeForTest   // robot:needs var clickDrawRangeForTest

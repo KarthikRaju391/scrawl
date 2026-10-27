@@ -38,9 +38,9 @@ the pointer or the trackpad, so they're safe to run while you use the Mac. The s
 | `checks/mapping.sh` | The trackpad covers the whole view (window and three full-screen sizes); corners at zoom 1 and zoom 3 (panned) |
 | `checks/edge.sh`, `checks/edge_cf.sh` | Edge guard: synthetic palm and thumb cases with a guard-off control; Karthik's sessions replayed with the guard off and at 5% |
 | `checks/keys.sh`, `checks/modes.sh` | Every mode key pressed twice; the state × input matrix (every key, toolbar button and menu item from all 32 mode states, 592 cases) |
-| `checks/pan.sh` | Horizontal page moves in every window shape: hand pans both ways, writing after a hand pan right, auto-pan and new lines |
+| `checks/pan.sh` | Horizontal page moves in every window shape: hand pans both ways, writing after a hand pan right, no sideways pan while writing, new lines |
 | `make robot` | The robot user: the real app driven like a person in 30 scenarios, with screenshots (see `robot/README.md`) |
-| `checks/zoomlock.sh`, `autopan.sh`, `ui.sh` | zoom lock on every path, writing-mode panning, toolbar clicks |
+| `checks/zoomlock.sh`, `autopan.sh`, `ui.sh` | zoom lock on every path, writing mode end to end (panning by hand), toolbar clicks |
 | `checks/gallery.sh` | Pages overview:<br>• open/close round trips<br>• transition rects (cell ↔ canvas)<br>• thumbnails vs page contents, caching<br>• 40 pages scrolling, the New page tile<br>• persistence across a restart, screenshots |
 | `checks/arrowkeys.sh` | Arrow keys:<br>• pan steps and clamps, windowed and full screen, zoom 1 and 3, lock on and off<br>• draw and writing mode (no new line or page change)<br>• a focused text field keeps its keys<br>• overview selection over first, last and row edges and a partial last row<br>• Return, Space and New page |
 | `checks/taps.sh` | Two-/three-finger double taps:<br>• one undo or redo each<br>• single, slow and moving taps, pans and pinches do nothing<br>• no ink, the view stays put<br>• writing mode<br>• eraser (including the rollback fix)<br>Bench: the detector, and a replay of all recorded sessions (no false double taps; looser rules fail it) |
@@ -79,7 +79,7 @@ Manual checks still need a person (see CHECKS.md):
 - `app/Ink.swift`: One Euro filter, width models, perfect-freehand radius, CPU stroke path (export)
 - `app/Renderer.swift`: Metal stroke meshes, per-stroke stencil, shader backgrounds
 - `app/Canvas.swift`: document, camera, gesture engine, canvas view, input paths, session recorder
-- `app/Writing.swift`: writing-mode layout (auto-pan, new line)
+- `app/Writing.swift`: writing-mode layout (the new line at the width limit)
 - `app/Notebook.swift`: file locations, the notebook file, autosave
 - `app/Export.swift`: PNG and PDF export
 - `app/DrawMode.swift`: pointer lock, watchdog process, signals, global hotkey

@@ -2,23 +2,17 @@
 // has stayed up for `pauseBeforeMoveMs` (400 ms): Karthik's lift->touch gaps are 77% under 300 ms
 // within words, with a long tail past 600 ms between words. A touch before then cancels it (it's
 // re-decided at the next lift), so the page never moves mid-word.
-//  - auto-pan (off / centre / left): when the line's ink passes 70% of the view, pan so it ends
-//    mid-screen (centre), or so the last words sit at the left edge (left). Either way the last 2-3
-//    words stay on screen and a pan moves at most half the view;
-//  - new line: when the line reaches the chosen width (or, after you panned right by hand, the page's
-//    margin), go to the start of the next line: one line down, back to the left margin, with the new
-//    line a little below the middle of the view so the lines above stay in sight.
+// The only move is the new line (Karthik, 28 Oct: the sideways pan that followed the pen along a line was
+// distracting, and is gone): when the line reaches the chosen width (or, after you panned right by hand,
+// that width after where you moved to), go to the start of the next line: one line down, back to the left
+// margin, with the new line a little below the middle of the view so the lines above stay in sight. A faint
+// vertical line in the canvas marks the limit (`lineEnd`).
 // Lines always start at the page's left margin (`lineStart`), not at wherever the current line's
 // first stroke happened to be: that made every new line after a hand pan, an undo or a page switch
 // return to the middle of the page.
 import CoreGraphics
 
-enum AutoPan: Int { case off = 0, centre = 1, left = 2 }
-
 struct WritingLayout {
-    var autoPan = AutoPan.centre
-    var edge = 0.70        // line's ink past this fraction of the view -> pan (at the next pause, so
-                           // the next word starts with room; 0.85 ran words off the pad edge)
     var lineWidth = 0.75   // fraction of the page width a line may span (½, ¾, full)
     var margin = 0.03      // page side margin, fraction of the page width
     /// Where every line starts (page units).
@@ -26,8 +20,8 @@ struct WritingLayout {
     var legacyStrokeEdge = false   // replays of old sessions: the edge check used only the last stroke
 
     enum Move: Equatable {
-        case none, pan(CGPoint), newLine(CGPoint)
-        var kind: String { switch self { case .none: return "none"; case .pan: return "autoPan"; case .newLine: return "newLine" } }
+        case none, newLine(CGPoint)
+        var kind: String { switch self { case .none: return "none"; case .newLine: return "newLine" } }
     }
 
     /// Where this line started, if a deliberate hand pan moved it (Canvas decides that): the line then ends ½ or
@@ -41,8 +35,6 @@ struct WritingLayout {
     }
     /// A hand pan counts as deliberate when the view moved sideways by at least this much of its width.
     static let deliberatePan = 0.10
-    /// A pan moves the view at most this much (fraction of its width), so you can follow it.
-    var maxJump = 0.5
     /// Where the line sits in the view after a new line, from the top: below the middle, so the lines
     /// you just wrote stay in view above it.
     static let lineFromTop = 0.575
@@ -57,7 +49,6 @@ struct WritingLayout {
         // The line's rightmost ink, not just this stroke: an i-dot or t-cross placed back inside the
         // word must not cancel a move that the word's end already called for.
         let right = legacyStrokeEdge ? s.maxX : max(s.maxX, line.maxX)
-        let atEdge = right > v.minX + v.width * edge
         let pitch = max(line.height * 1.35, v.height * 0.12)
         let next = Self.newLineCenter(lineLeft: lineLeft, lineMidY: line.midY, pitch: pitch, visible: v)
         let gap = Self.wordGap(lineStrokes, visible: v)
@@ -83,23 +74,7 @@ struct WritingLayout {
             // (If the last word still looks unfinished, the app waits a longer pause before acting on this.)
             if typical > 0 && right + space + typical * 0.8 > lineEnd { return .newLine(next) }
         }
-        guard atEdge, autoPan != .off else { return .none }
-        // Keep the last words on screen: the last three if they fit in 60% of the view, else two, else one.
-        let starts = Self.wordStarts(lineStrokes, gap: Self.wordGap(lineStrokes, visible: v))
-        var keep = starts.last ?? right
-        for k in [3, 2] where starts.count >= k {
-            let st = starts[starts.count - k]
-            if right - st <= v.width * 0.6 { keep = st; break }
-        }
-        let keepX = keep - v.width * 0.04
-        var minX: Double
-        switch autoPan {
-        case .left: minX = keepX                                  // those words at the left edge
-        default:    minX = min(right - v.width * 0.5, keepX)      // centre: the line's end mid-screen
-        }
-        minX = min(minX, v.minX + v.width * maxJump, pageWidth - v.width)
-        guard minX > v.minX + 0.5 else { return .none }
-        return .pan(CGPoint(x: minX + v.width / 2, y: v.midY))
+        return .none
     }
 
     /// The view after a new line: one line (`pitch`) down, the line `lineFromTop` down the view, with the

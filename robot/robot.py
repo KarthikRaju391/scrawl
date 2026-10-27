@@ -297,7 +297,7 @@ def settle(app, quiet=0.12, limit=1.5):
 def write_words(app, hand, words, line_y, x0, cid, rep, font=None, nudge_every=0, nudge_frac=0.0, pinch_at=None, jump_after=None, jump_pad_x=None, stop_on_new_line=False, jump_shift=0.22):
     """Write `words` like a person in writing mode. Each word goes just after the last word, where that is
     on the screen now (the page may have moved); when the page has gone to a new line, the next word starts
-    that line, below the line's first word. With no room left on the pad and no page move (No pan), the
+    that line, below the line's first word. With no room left on the pad (there is no sideways pan), the
     person pans with two fingers. Returns one record per word."""
     pad_w, pad_h = app.state()["padMM"]
     line = None   # this line in page units: left x, baseline y, ink height
@@ -361,16 +361,15 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None, nudge_every=0
     return recs, cid
 
 
-def scenario_writing(app, rep, hand, zoom, width_index, pan, words):
-    """Writing mode at `zoom`, line width ½/¾/full, pan none/centre/left: a sentence across the line, a pause,
-    the next line."""
+def scenario_writing(app, rep, hand, zoom, width_index, words):
+    """Writing mode at `zoom`, line width ½/¾/full (no sideways pan: the writer pans by hand when the pad runs out):
+    a sentence across the line, a pause, the next line."""
     st = app.state()
     pad_w, pad_h = st["padMM"]
-    # Set up the way a person does: the writing panel (chevron) for width and pan, W for writing mode.
+    # Set up the way a person does: the writing panel (chevron) for the width, W for writing mode.
     if not st["writing"]: app.press("w", until=lambda s: s["writing"])
     app.click("writing", "chevron")
     app.cmd({"cmd": "panelPick", "writing": width_index})
-    app.cmd({"cmd": "panelPick", "writing": 3 + pan})
     app.press("esc")
     s, ms = app.press("d", until=lambda s: s["draw"])
     if not s["draw"]: app.click("draw"); s = app.state()   # builds from before D entered draw mode
@@ -380,7 +379,7 @@ def scenario_writing(app, rep, hand, zoom, width_index, pan, words):
         app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 15 * zoom, dur=0.6))
         time.sleep(1.6)   # the page map shown by the pinch fades before writing starts
     st = app.state()
-    rep.step("view", zoom=round(st["view"]["zoom"], 2), lineWidth=st["lineWidth"], autoPan=st["autoPan"])
+    rep.step("view", zoom=round(st["view"]["zoom"], 2), lineWidth=st["lineWidth"])
     app.cmd({"cmd": "mark"})
     recs, _ = write_words(app, hand, words, pad_h * 0.62, pad_w * 0.12, 1000, rep)
     st = app.state()
@@ -431,36 +430,34 @@ def run_scenarios(app, rep, only, hand):
         rep.shot(app, "marker chevron: sizes and colours")
         app.press("esc")
 
-    @scenario("write-zoom1", "Writing mode at zoom 1, full width, centre pan: a sentence across the line, pauses, the next line. The page must never move inside a word.")
+    @scenario("write-zoom1", "Writing mode at zoom 1, full width: a sentence across the line, pauses, the next line. The page must never move inside a word, nor sideways along the line.")
     def _():
         words = (SENTENCE + " " + SENTENCE).split()
-        recs, st = scenario_writing(app, rep, hand, 1, 2, 1, words)
+        recs, st = scenario_writing(app, rep, hand, 1, 2, words)
         judge_writing(app, rep, recs, st, " ".join(words))
 
-    @scenario("write-zoom3", "The same at zoom 3 (pinched in with two fingers): writing mode pans along the line and goes to the next line.")
+    @scenario("write-zoom3", "The same at zoom 3 (pinched in with two fingers): no sideways pan (the writer pans by hand when the pad runs out); the next line where the width runs out.")
     def _():
         app.press("n", until=lambda s: s["page"] > 0 or True)
         words = (SENTENCE + " " + SENTENCE).split()
-        recs, st = scenario_writing(app, rep, hand, 3, 2, 1, words)
+        recs, st = scenario_writing(app, rep, hand, 3, 2, words)
         judge_writing(app, rep, recs, st, " ".join(words))
 
-    for wi, wname in enumerate(["half", "three-quarter", "full"]):
-        for pi, pname in enumerate(["no-pan", "centre", "left"]):
-            if (wi, pi) == (2, 1): continue   # write-zoom3 covers full + centre
-            def make(wi=wi, pi=pi, wname=wname, pname=pname):
-                def f():
-                    app.press("n")
-                    recs, st = scenario_writing(app, rep, hand, 3, wi, pi, SENTENCE.split()[:7])
-                    judge_writing(app, rep, recs, st, " ".join(SENTENCE.split()[:7]), ocr_check=False)
-                return f
-            S[f"write-{wname}-{pname}"] = (f"Writing mode at zoom 3, {wname} line width, {pname.replace('-', ' ')}: seven words, with the new line where the width runs out.", make())
+    for wi, wname in enumerate(["half", "three-quarter"]):   # (full: write-zoom3)
+        def make(wi=wi):
+            def f():
+                app.press("n")
+                recs, st = scenario_writing(app, rep, hand, 3, wi, SENTENCE.split()[:7])
+                judge_writing(app, rep, recs, st, " ".join(SENTENCE.split()[:7]), ocr_check=False)
+            return f
+        S[f"write-{wname}"] = (f"Writing mode at zoom 3, {wname} line width: seven words, no sideways pan, the new line where the width runs out.", make())
 
     @scenario("pan-right-by-hand", "Karthik's case: start a line, pan right with two fingers past the line width, keep writing there and pause. The page must stay where he put it (no jump back to the margin).")
     def _():
         app.press("n")
         st = app.state()
         if not st["writing"]: app.press("w", until=lambda s: s["writing"])
-        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.press("esc")
         if not app.state()["draw"]: app.press("d", until=lambda s: s["draw"])
         st = app.state(); pad_w, pad_h = st["padMM"]
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)        # View › Zoom to Whole Page
@@ -822,7 +819,7 @@ def run_scenarios(app, rep, only, hand):
     def half_setup():
         ensure(app, "draw", False, "d"); app.press("n")
         ensure(app, "writing", True, "w")
-        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.press("esc")
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
         ensure(app, "draw", True, "d")
         st = app.state(); pad_w, pad_h = st["padMM"]
@@ -885,7 +882,7 @@ def run_scenarios(app, rep, only, hand):
         rep.shot(app, "line moved by a deliberate pan")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
-    def write_rows(cid, words, start_page, font=None, space=0.9, pause=0.6):
+    def write_rows(cid, words, start_page, font=None, space=0.9, pause=0.6, on_word=None):
         """Write `words` the way a person does in writing mode at zoom 100%: each word right after the last one;
         when the app starts a new line, carry on there (after the word it moved down, if it moved one). All
         positions are kept in page units and turned into pad positions just before writing."""
@@ -896,8 +893,12 @@ def run_scenarios(app, rep, only, hand):
         write_rows.off_pad = 0
         for w in words:
             (px, py), = app.cmd({"cmd": "toPad", "points": [base]})["points"]
+            if px + hand.width(w, font) > pad_w * 0.92:   # no room left on the pad: pan by hand with two fingers, as a person does
+                app.touch(two_finger(pad_w / 2, pad_h / 2, 25, 25, shift=(-(pad_w * 0.45), 0), dur=0.5)); settle(app)
+                (px, py), = app.cmd({"cmd": "toPad", "points": [base]})["points"]
             strokes = hand.word(w, px, py, font)
             fr, cid = hand.frames(strokes, cid)
+            before_word = app.state()
             app.touch(fr, settle=0.05)
             written += len(strokes)
             # Strokes that run off the trackpad (a person's finger can't), or start in the edge guard's band (5%, ignored
@@ -908,6 +909,7 @@ def run_scenarios(app, rep, only, hand):
             mine = app.state()["lastStrokes"][-len(strokes):]
             app.touch([[0.008, []]] * int(pause / 0.008), settle=0.3); settle(app)
             s2 = app.state(); now = s2["lastStrokes"][-len(strokes):]
+            if on_word: on_word(w, s2, before_word)
             gap = hand.h * space * upm
             if s2["newLines"] > lines0:
                 lines0 = s2["newLines"]
@@ -924,7 +926,7 @@ def run_scenarios(app, rep, only, hand):
     def hard_limit(frac, idx, name):
         ensure(app, "draw", False, "d"); app.press("n")
         ensure(app, "writing", True, "w")
-        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": idx}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": idx}); app.press("esc")
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)   # zoom 100%, as in Karthik's screenshot
         ensure(app, "draw", True, "d")
         st = app.state(); W = st["pageW"]
@@ -946,7 +948,7 @@ def run_scenarios(app, rep, only, hand):
     def _():
         ensure(app, "draw", False, "d"); app.press("n")
         ensure(app, "writing", True, "w")
-        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.press("esc")
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
         ensure(app, "draw", True, "d")
         st = app.state(); W = st["pageW"]; pad_w, pad_h = st["padMM"]
@@ -998,7 +1000,7 @@ def run_scenarios(app, rep, only, hand):
     def _():
         ensure(app, "draw", False, "d"); app.press("n")
         ensure(app, "writing", True, "w")
-        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.cmd({"cmd": "panelPick", "writing": 4}); app.press("esc")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.press("esc")
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
         ensure(app, "draw", True, "d")
         app.cmd({"cmd": "zoomMenu", "pick": "400%"}); settle(app, limit=3)
@@ -1035,6 +1037,86 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
         rep.shot(app, "the same lines, whole page")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
+
+    def limit_line_px(shot, st):
+        """The canvas column where the line limit is (window screenshot pixels), and how blue it is against the paper
+        a few pixels either side (mean of blue minus red over the canvas's middle half, height-wise)."""
+        from PIL import Image
+        im = Image.open(shot).convert("RGB"); k = im.width / st["canvasFrame"][4]
+        cx, cy, cw, ch = (v * k for v in st["canvasFrame"][:4])
+        d = st.get("limitDrawn")   # where the app last drew it: page x, and the view's left and width then
+        if not d: return None, 0.0
+        col = cx + (d[0] - d[1]) / d[2] * cw
+        def tint(x):
+            px = [im.getpixel((int(x), int(cy + ch * (0.25 + 0.5 * i / 40)))) for i in range(41)]
+            return sum(b - r for r, g, b in px) / len(px)
+        return col, max(tint(col + d) for d in (-1, 0, 1)) - (tint(col - 8) + tint(col + 8)) / 2
+
+    @scenario("writing-limit-border", "Writing mode, Karthik's design (28 Oct): no sideways pan while writing (at 400%, ½-page lines), the next-line pan when a line reaches the limit, and a faint vertical line at the limit, only in writing mode, at the right page x at any zoom; never in exports or thumbnails.")
+    def _():
+        ensure(app, "draw", False, "d"); app.press("n")
+        ensure(app, "writing", True, "w")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.press("esc")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        ensure(app, "draw", True, "d")
+        app.cmd({"cmd": "zoomMenu", "pick": "400%"}); settle(app, limit=3)
+        for _ in range(16): app.press("left")
+        for _ in range(16): app.press("up")
+        settle(app, limit=3)
+        st = app.state(); W = st["pageW"]; n0 = st["strokes"]; pad_w, pad_h = st["padMM"]; nl0 = st["newLines"]
+        old_h = hand.h; hand.h = 9
+        top = app.cmd({"cmd": "toPagePt", "point": [0, pad_h * 0.7]})["point"][1]
+        views = []
+        def seen(w, s_, b_): views.append((w, b_["view"]["x"], s_["view"]["x"], s_["newLines"] - b_["newLines"]))
+        words = (SENTENCE + " " + SENTENCE).split()
+        cid, written = write_rows(20000, words, [W * 0.035, top], space=0.6, pause=1.0, on_word=seen)
+        hand.h = old_h
+        # (a) sideways moves only with a new line (the view goes back to the margin), never while writing along a line
+        # The view from just before each word (after any hand pan) to after its pause: it moves only with a new line.
+        side = [(w, round(after - before, 1)) for w, before, after, nl in views if abs(after - before) > 1 and nl == 0]
+        rep.check(not side, "(a) no sideways pan while writing along a line (400%, ½-page lines)", f"sideways moves without a new line: {side[:4]} ({len(views)} words)")
+        s2 = app.state()
+        rep.check(s2["newLines"] > nl0, "(b) the next-line pan still comes", f"{s2['newLines'] - nl0} new lines")
+        mine = s2["pageBounds"][n0:]
+        p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
+        upm = (p1[0] - p0[0]) / 10
+        lines = []
+        for b in mine:
+            y = (b[1] + b[3]) / 2
+            for L in lines:
+                if abs(L[0] - y) < 9 * 1.1 * upm: L[1] = max(L[1], b[2]); break
+            else: lines.append([y, b[2]])
+        lines.sort(key=lambda L: -L[0])
+        ends = [L[1] / W for L in lines]
+        full_lines = ends[:-1]
+        rep.check(full_lines and all(0.42 <= e <= 0.58 for e in full_lines), "(b) it comes near the ½-page limit (lines end at 42-58% of the page)", f"{[f'{e:.0%}' for e in ends]}")
+        # (c) the border: at the limit's page x, drawn, at 400% and at 100%
+        lx = s2.get("lineLimitX")
+        first_x = min(b[0] for b in mine) if mine else 0
+        rep.check(lx is not None and (abs(lx - 0.5 * W) < 1 or abs(lx - (first_x + 0.5 * W)) < 1),
+                  "(c) the limit line is where the next-line pan comes: ½ page from the line's start", f"limit x {lx}, page {W}, line start {first_x:.0f}")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app, limit=3); time.sleep(0.6)
+        s3 = app.state(); shot = rep.shot(app, "writing mode, ½-page lines: the faint line at the limit (100%)")
+        col, tint = limit_line_px(shot, s3)
+        rep.check(tint > 6, "(c) the faint line is drawn there at 100%", f"column {col and round(col)}, blue tint {tint:.1f}")
+        app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app, limit=3)
+        for _ in range(4): app.press("right")
+        settle(app, limit=3); time.sleep(0.6)
+        s4 = app.state(); shot = rep.shot(app, "zoomed to 300%: the line stays at the same page x")
+        col4, tint4 = limit_line_px(shot, s4)
+        d4 = s4.get("limitDrawn") or [None]
+        rep.check(d4[0] is not None and abs(d4[0] - (s4.get("lineLimitX") or -1)) < 1e-6 and abs(d4[0] - lx) < 1 and tint4 > 6,
+                  "(c) at 300% it's drawn at the same page x", f"drawn at {d4[0]}, limit {lx}, view {round(s4['view']['x'])}-{round(s4['view']['x'] + s4['view']['w'])}, column {col4 and round(col4)}, tint {tint4:.1f}")
+        # Hidden without writing mode (no width chosen), and never in the page export.
+        ensure(app, "writing", False, "w"); time.sleep(0.3)
+        s5 = app.state(); shot5 = rep.shot(app, "writing mode off: no line")
+        rep.check(s5.get("lineLimitX") is None, "(c) hidden when writing mode is off", str(s5.get("lineLimitX")))
+        png = os.path.join(app.out, "limit-export.png"); app.cmd({"cmd": "exportPNG", "path": png})
+        from PIL import Image
+        im = Image.open(png).convert("RGB")
+        blue = sum(1 for x in range(im.width) for y in range(0, im.height, 7) if (lambda p: p[2] - p[0] > 25 and p[0] > 150)(im.getpixel((x, y))))
+        rep.check(blue == 0, "(c) not in the page export", f"{blue} bluish pixels")
+        ensure(app, "draw", False, "d")
 
     @scenario("half-line-hard-limit", "½-page lines at zoom 100% (Karthik's screenshot): ink never goes past 50% of the page; the word that would cross the mark goes to the next line.")
     def _():
@@ -1721,11 +1803,7 @@ def judge_writing(app, rep, recs, st, text, ocr_check=True):
         rep.check(not seen, "the page map stays hidden while writing (auto-pans and new lines don't show it)", f"shown while writing: {seen}" if seen else f"{len(recs)} words")
     pans, lines = flow_metrics(recs)
     rep.step("page moves", pans=[(p["wordsVisible"], round(p["jump"], 2)) for p in pans], newLines=len(lines))
-    if pans:
-        few = min(p["wordsVisible"] for p in pans)
-        big = max(p["jump"] for p in pans)
-        rep.check(few >= 2, "after every pan the last 2-3 words are still on screen", f"fewest words visible after a pan: {few} ({len(pans)} pans)")
-        rep.check(big <= 0.52, "no pan jumps more than half a screen", f"largest jump {big:.0%} of the view")
+    rep.check(not pans, "no sideways pan along the line (only the next-line move)", f"{len(pans)} sideways pans, jumps {[round(p['jump'], 2) for p in pans]}")
     if lines:
         seen = sum(l["prevLineVisible"] for l in lines)
         rep.check(seen == len(lines), "after a new line the line just written is still in view", f"{seen} of {len(lines)} new lines")

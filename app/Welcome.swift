@@ -48,7 +48,7 @@ enum HelpText {
         ("P", "Pen; on the pen, back to the last other tool"),
         ("1 – 5", "Pen size"),
         ("Toolbar", "The same: a click turns a tool or mode on, a second click turns it off. The ⌃ chevron (or a right-click) opens sizes, colours and writing settings"),
-        ("W", "Writing mode on / off (pans along the line, then to the next line)"),
+        ("W", "Writing mode on / off (the next line when a line reaches its width, marked by a faint line)"),
         ("Return", "Writing mode: next line, back at the left margin"),
         ("L", "Lock / unlock zoom"),
         ("N", "New page (K keeps writing on this one)"),

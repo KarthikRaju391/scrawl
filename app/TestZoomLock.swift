@@ -64,12 +64,12 @@ extension AppDelegate {
         }
         add("pen panel: colour + size") { self.exitDrawMode(); click(tb.center(of: .tool(.pen))); click(tb.panel.centerOfColor(7)); click(tb.panel.centerOfSize(2)); tb.hidePanel() }
         add("background panel: dot") { click(tb.center(of: .background)); click(tb.panel.centerOfBackground(2)); tb.hidePanel() }
-        add("writing on (toolbar), panel: ½ page, Left, Centre") {
+        add("writing on (toolbar), panel: ½ page") {
             click(tb.center(of: .writing)); click(tb.center(of: .writing))
-            click(tb.panel.centerOfWriting(0)); click(tb.panel.centerOfWriting(5)); click(tb.panel.centerOfWriting(4)); tb.hidePanel()
+            click(tb.panel.centerOfWriting(0)); tb.hidePanel()
         }
         add("paper panel opened and closed") { click(tb.center(of: .background)); click(tb.center(of: .background)) }
-        add("writing: strokes to the edge (auto-pan) and past the line width (new line)") {
+        add("writing: strokes to the edge and past the line width (new line)") {
             self.enterDrawMode(lock: false)
             var x = 0.2
             for _ in 0..<14 { stroke(from: x, to: x + 0.06); x += 0.08; if x > 0.85 { x = 0.45 } }

@@ -41,12 +41,6 @@ struct Settings {
         if let i = a.firstIndex(of: "--pause-ms"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
         return d.object(forKey: "pauseBeforeMoveMs") as? Double ?? 400
     }
-    /// Writing-mode pan trigger (fraction of the view); `--pan-edge` overrides (replays of old sessions use 0.85).
-    var panEdge: Double {
-        let a = CommandLine.arguments
-        if let i = a.firstIndex(of: "--pan-edge"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
-        return d.object(forKey: "panEdge") as? Double ?? 0.70
-    }
     /// Edge guard: touches that start within this fraction of the pad from any edge are ignored (a resting
     /// palm or thumb). 0 = off; `--edge-guard` overrides (replays of old sessions use 0). The inner area
     /// maps to the whole writing area.
@@ -222,12 +216,11 @@ struct ToolState {
     static let lineWidths = [0.5, 0.75, 1.0]  // writing mode line width, fraction of the page width
     var lineWidthIndex = 1
     var zoomLocked = false
-    var autoPan = AutoPan.centre
 
     /// Saved in defaults ("toolState") so the app reopens with the same tools, sizes, colours,
     /// background, line width and zoom lock. (Smoothing/prediction are saved by their sliders.)
     func save(to defaults: UserDefaults = .standard) {
-        let d: [String: Any] = ["tool": tool.rawValue, "background": background, "lineWidthIndex": lineWidthIndex, "zoomLocked": zoomLocked, "autoPan": autoPan.rawValue,
+        let d: [String: Any] = ["tool": tool.rawValue, "background": background, "lineWidthIndex": lineWidthIndex, "zoomLocked": zoomLocked,
                                 "colorIndex": Dictionary(uniqueKeysWithValues: colorIndex.map { ($0.key.rawValue, $0.value) }),
                                 "sizeIndex": Dictionary(uniqueKeysWithValues: sizeIndex.map { ($0.key.rawValue, $0.value) })]
         defaults.set(d, forKey: "toolState")
@@ -239,7 +232,7 @@ struct ToolState {
         if let v = d["background"] as? Int, (0...3).contains(v) { t.background = v }
         if let v = d["lineWidthIndex"] as? Int, ToolState.lineWidths.indices.contains(v) { t.lineWidthIndex = v }
         if let v = d["zoomLocked"] as? Bool { t.zoomLocked = v }
-        if let v = d["autoPan"] as? Int, let a = AutoPan(rawValue: v) { t.autoPan = a }
+        // "autoPan" (the sideways pan along a line, removed 28 Oct) may still be in old settings: ignored.
         // "aimFirst" (aim-first mode, removed in 0.1.0) may still be in old settings: ignored.
         for (k, v) in d["colorIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), ToolState.colors.indices.contains(v) { t.colorIndex[kind] = v } }
         for (k, v) in d["sizeIndex"] as? [String: Int] ?? [:] { if let kind = ToolKind(rawValue: k), (0..<5).contains(v) { t.sizeIndex[kind] = v } }
@@ -435,8 +428,8 @@ final class CanvasView: MTKView {
     var tools = Launch.testing ? ToolState() : ToolState.load() {
         didSet {
             if tools.zoomLocked != oldValue.zoomLocked { logger.event(["what": "zoomLock", "locked": tools.zoomLocked, "source": source]) }
-            if tools.tool != oldValue.tool || tools.autoPan != oldValue.autoPan || tools.zoomLocked != oldValue.zoomLocked || tools.lineWidthIndex != oldValue.lineWidthIndex {
-                act("tools", ["tool": tools.tool.rawValue, "autoPan": tools.autoPan.rawValue, "zoomLocked": tools.zoomLocked, "lineWidth": tools.lineWidthIndex])
+            if tools.tool != oldValue.tool || tools.zoomLocked != oldValue.zoomLocked || tools.lineWidthIndex != oldValue.lineWidthIndex {
+                act("tools", ["tool": tools.tool.rawValue, "zoomLocked": tools.zoomLocked, "lineWidth": tools.lineWidthIndex])
             }
             if tools.lineWidthIndex != oldValue.lineWidthIndex { endWritingLine() }
             if !testMode { tools.save() }
@@ -606,8 +599,6 @@ final class CanvasView: MTKView {
     private var lineStrokes: [CGRect] = []
 
     private var camAnim: (from: Camera, to: Camera, start: Double, src: String, duration: Double)?
-    private(set) var panCount = 0
-    private(set) var lastPanWordStart: Double?   // test/diagnostics: start of the word at the last pan
     private(set) var newLineCount = 0
     /// Where the next line starts (page units: line start x, the line's middle y), once the page has gone there.
     private(set) var nextLineAt: CGPoint?
@@ -719,6 +710,16 @@ final class CanvasView: MTKView {
     private func endWritingLine() { lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil; segmentStart = nil; handPanX = 0 }
     /// Where the line started after a deliberate hand pan (WritingLayout.segmentStart).
     private var segmentStart: Double?
+    /// Where the next-line pan comes for the current line (page x): its width limit, moved along when a deliberate hand
+    /// pan moved the line's start. Nil outside writing mode (no width chosen). Drawn as a faint line.
+    var lineLimitX: Double? {
+        guard writingMode else { return nil }
+        var l = WritingLayout(); l.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]; l.segmentStart = segmentStart
+        return l.lineEnd(lineLeft: l.lineStart(pageWidth: camera.page.width), pageWidth: camera.page.width)
+    }
+    static let limitLineColor = SIMD4<Float>(0.10, 0.45, 0.91, 0.22)
+    /// Test hook: the limit line as last drawn (page x, and the view's left and width then).
+    private(set) var limitDrawnForTest: [Double]?
     /// How far the view's centre moved sideways by hand since the last stroke (page units). Pinches zoom about
     /// the fingers and barely move it; nudges stay under 10% of the view.
     private var handPanX = 0.0
@@ -1260,7 +1261,7 @@ final class CanvasView: MTKView {
             }
             // A deliberate hand pan (10% of the view or more) and then writing somewhere new on the line (not right
             // after its last word): the line starts here now, and ends ½ / ¾ of the page later. Carrying on where the
-            // line ended (as with No pan) keeps its start.
+            // line ended keeps its start.
             let vw = camera.visible.width
             if handPanX >= vw * WritingLayout.deliberatePan {
                 if let line = lineInk {
@@ -1282,8 +1283,6 @@ final class CanvasView: MTKView {
             lineStrokes.append(s.bounds)
             var layout = WritingLayout()
             layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
-            layout.autoPan = tools.autoPan
-            layout.edge = settings.panEdge
             layout.legacyStrokeEdge = legacyWriting
             layout.segmentStart = segmentStart
             layout.wordHint = typicalWordWidth
@@ -1334,11 +1333,6 @@ final class CanvasView: MTKView {
     private func applyMove(_ move: WritingLayout.Move) {
         switch move {
         case .none: break
-        case .pan(let c):
-            act("autoPan", ["toX": c.x, "toY": c.y, "mode": tools.autoPan.rawValue])
-            panCount += 1
-            if let line = lineInk { lastPanWordStart = WritingLayout.wordStarts(lineStrokes, gap: WritingLayout.wordGap(lineStrokes, visible: camera.visible)).last ?? 0 }
-            slideCamera(to: c)
         case .newLine(let c):
             if let line = lineInk {
                 let ws = WritingLayout.words(lineStrokes, gap: WritingLayout.wordGap(lineStrokes, visible: camera.visible)).map { $0.end - $0.start }.sorted()
@@ -1386,6 +1380,15 @@ final class CanvasView: MTKView {
             }
             if !verts.isEmpty { items.append(.init(mesh: Mesh(), verts: verts, color: premul(SIMD4(0.55, 0.6, 0.68, 0.6)))) }
         }
+        // Writing mode: a faint vertical line where the next-line pan will come (the line's width limit), 1 pt wide at any
+        // zoom. The live view only: exports, thumbnails and the page map render the page without it.
+        if let x = lineLimitX, x > vis.minX, x < vis.maxX {
+            let w = 0.5 / (ptPerUnit * camera.zoom)
+            let a = SIMD2<Float>(Float(x - w), Float(vis.minY)), b = SIMD2<Float>(Float(x + w), Float(vis.minY))
+            let c = SIMD2<Float>(Float(x + w), Float(vis.maxY)), d = SIMD2<Float>(Float(x - w), Float(vis.maxY))
+            items.append(.init(mesh: Mesh(), verts: [a, b, c, a, c, d], color: premul(Self.limitLineColor)))
+            limitDrawnForTest = [x, vis.minX, vis.width]
+        } else { limitDrawnForTest = nil }
         items += doc.strokes.compactMap { s in
             guard s.bounds.intersects(vis) else { return nil }  // off-screen (most of the page when zoomed in)
             if s.mesh.buffer == nil { s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit)) }

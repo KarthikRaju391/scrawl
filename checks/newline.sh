@@ -12,9 +12,9 @@ for c in cases:
     ok = c["newLines"] >= 1 and abs(c["viewMinX"] - c["wantMinX"]) < 1.0 and c["movedDown"] > 0 and (not c["locked"] or abs(c["zoomAfter"] - c["zoom"]) < 1e-9)
     if not ok: bad.append(c)
 print(("PASS" if not bad else "FAIL"), f"auto new line returns to the line start: {len(cases) - len(bad)}/{len(cases)} cases "
-      "(3 auto-pan modes x 3 line widths x zoom 2/3/5 x zoom lock off/on x 2 starts)")
+      "(3 line widths x zoom 2/3/5 x zoom lock off/on x 2 starts)")
 for c in bad[:12]:
-    print(f"   {c['autoPan']:>6} {c['lineWidth']:>4} zoom {c['zoom']} {'locked' if c['locked'] else 'free  '} {c['start']:<24} "
+    print(f"   {c['lineWidth']:>4} zoom {c['zoom']} {'locked' if c['locked'] else 'free  '} {c['start']:<24} "
           f"{c['letters']} letters, {c['strokes']} strokes, new lines {c['newLines']}, view x {c['viewMinX']:.0f} (want {c['wantMinX']:.0f}), down {c['movedDown']:.0f}")
 if len(bad) > 12: print(f"   ... and {len(bad) - 12} more")
 pc = r["palmOnEdgeDuringPause"]

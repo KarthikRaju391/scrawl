@@ -33,13 +33,13 @@ enum TestNewLine {
             canvas.flushInputForTest()
         }
         var results: [[String: Any]] = []
-        for autoPan in [AutoPan.off, .centre, .left] {
+        do {
             for lw in 0..<3 {
                 for zoom in [2.0, 3.0, 5.0] {
                     for locked in [false, true] {
                         for start in ["page left", "after a manual pan right"] {
                             canvas.clearPage()
-                            var t = canvas.tools; t.autoPan = autoPan; t.lineWidthIndex = lw; t.zoomLocked = locked; canvas.tools = t
+                            var t = canvas.tools; t.lineWidthIndex = lw; t.zoomLocked = locked; canvas.tools = t
                             let w = canvas.camera.page.width / zoom
                             let x0 = start == "page left" ? 0 : canvas.camera.page.width * 0.4
                             canvas.setVisibleForReplay(x: x0, y: canvas.camera.page.height - canvas.camera.page.height / zoom, w: w, z: zoom)
@@ -63,7 +63,7 @@ enum TestNewLine {
                             let v = canvas.camera.visible
                             let margin = WritingLayout().margin * canvas.camera.page.width
                             let want = max(margin - v.width * 0.05, 0)
-                            results.append(["autoPan": ["off", "centre", "left"][autoPan.rawValue], "lineWidth": ["½", "¾", "full"][lw], "zoom": zoom,
+                            results.append(["lineWidth": ["½", "¾", "full"][lw], "zoom": zoom,
                                             "locked": locked, "start": start, "letters": n, "strokes": canvas.doc.strokes.count, "newLines": canvas.newLineCount - lines0,
                                             "viewMinX": v.minX, "wantMinX": want, "zoomAfter": canvas.camera.zoom,
                                             "movedDown": v0.midY - v.midY, "lineHeightApprox": lw_ * 0.9])
@@ -76,7 +76,7 @@ enum TestNewLine {
         var palmCase: [String: Any] = [:]
         do {
             canvas.clearPage()
-            var t = canvas.tools; t.autoPan = .off; t.lineWidthIndex = 0; t.zoomLocked = false; canvas.tools = t
+            var t = canvas.tools; t.lineWidthIndex = 0; t.zoomLocked = false; canvas.tools = t
             // At the page's right end: a stroke past 70% of the view calls for a new line.
             canvas.setVisibleForReplay(x: canvas.camera.page.width * 2 / 3, y: canvas.camera.page.height - canvas.camera.page.height / 3, w: canvas.camera.page.width / 3, z: 3)
             let v0 = canvas.camera.visible, lines0 = canvas.newLineCount
@@ -100,7 +100,7 @@ enum TestNewLine {
         }
         // Return: a new line by hand, same rule.
         canvas.clearPage()
-        var t = canvas.tools; t.autoPan = .centre; t.lineWidthIndex = 1; t.zoomLocked = false; canvas.tools = t
+        var t = canvas.tools; t.lineWidthIndex = 1; t.zoomLocked = false; canvas.tools = t
         canvas.setVisibleForReplay(x: canvas.camera.page.width * 0.3, y: canvas.camera.page.height - canvas.camera.page.height / 3, w: canvas.camera.page.width / 3, z: 3)
         let v0 = canvas.camera.visible
         for k in 0..<3 { letter(x: v0.minX + v0.width * (0.3 + Double(k) * 0.05), y: v0.midY, w: v0.width * 0.035); wait(0.12) }

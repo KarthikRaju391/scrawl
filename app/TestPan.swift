@@ -47,7 +47,7 @@ enum TestPan {
                 var s: [String: Any] = ["shape": name, "locked": locked]
                 if canvas.drawMode { app.exitDrawMode("test") }
                 canvas.clearPage()
-                var t = canvas.tools; t.zoomLocked = locked; t.autoPan = .centre; t.lineWidthIndex = 0; canvas.tools = t
+                var t = canvas.tools; t.zoomLocked = locked; t.lineWidthIndex = 0; canvas.tools = t
                 if !canvas.writingMode { app.toggleWriting() }
                 let pw = canvas.camera.page.width
                 canvas.setVisibleForReplay(x: pw * 0.25, y: canvas.camera.page.height - canvas.camera.page.height / 2, w: pw / 2, z: 2)
@@ -80,11 +80,11 @@ enum TestPan {
                 for k in 0..<6 { letter(x: vv.minX + vv.width * (0.3 + Double(k) * 0.05), y: y, w: lw); wait(0.12) }
                 wait(0.7)
                 s["writeAfterPanRight"] = ["afterPan": afterPan, "afterWritingAndPause": canvas.camera.visible.minX, "newLines": canvas.newLineCount - lines0]
-                // Auto-pan along the line still moves right; a full line returns to the margin.
+                // Writing along the line never pans sideways (Karthik, 28 Oct); a full line returns to the margin.
                 canvas.clearPage()
                 canvas.setVisibleForReplay(x: 0, y: canvas.camera.page.height - canvas.camera.page.height / 2, w: pw / 2, z: 2)
                 canvas.flushInputForTest()
-                let pans0 = canvas.panCount, nl0 = canvas.newLineCount
+                let nl0 = canvas.newLineCount, x0 = canvas.camera.visible.minX
                 var maxX = 0.0, x = canvas.camera.visible.minX + canvas.camera.visible.width * 0.1, n = 0
                 while canvas.newLineCount == nl0 && n < 200 {
                     letter(x: x, y: y, w: lw); n += 1; x += lw * 1.25
@@ -92,36 +92,12 @@ enum TestPan {
                     maxX = max(maxX, canvas.camera.visible.minX)
                 }
                 wait(0.7)
-                s["autoPan"] = ["pans": canvas.panCount - pans0, "furthestViewX": maxX, "newLines": canvas.newLineCount - nl0,
+                s["alongLine"] = ["startX": x0, "furthestViewX": maxX, "newLines": canvas.newLineCount - nl0,
                                 "viewXAfterNewLine": canvas.camera.visible.minX, "wantAfterNewLine": max(WritingLayout().margin * pw - canvas.camera.visible.width * 0.05, 0)]
                 out.append(s)
             }
         }
-        // Zoom 3, Full width: crossing the visible edge pans and stays on the line; the new line comes only at
-        // the page-width limit (Full = the whole page), never at the edge of the zoomed-in view.
-        container.setFrameSize(CGSize(width: 1512, height: 950)); container.needsLayout = true; container.layoutSubtreeIfNeeded()
-        var zoom3: [[String: Any]] = []
-        for mode in [AutoPan.centre, .left] {
-            if !canvas.drawMode { app.enterDrawMode(lock: false) }
-            canvas.clearPage()
-            var t = canvas.tools; t.zoomLocked = false; t.autoPan = mode; t.lineWidthIndex = 2; canvas.tools = t
-            let pw = canvas.camera.page.width
-            canvas.setVisibleForReplay(x: 0, y: canvas.camera.page.height - canvas.camera.page.height / 3, w: pw / 3, z: 3)
-            canvas.flushInputForTest()
-            let lw = canvas.camera.visible.width * 0.035, y = canvas.camera.visible.midY, pans0 = canvas.panCount, nl0 = canvas.newLineCount
-            var x = canvas.camera.visible.minX + canvas.camera.visible.width * 0.1, n = 0, inkRightAtNewLine = 0.0, pansBefore = 0
-            var maxRight = 0.0
-            while canvas.newLineCount == nl0 && n < 400 {
-                letter(x: x, y: y, w: lw); n += 1; maxRight = max(maxRight, x + lw); x += lw * 1.25
-                if n % 4 == 0 { x += lw * 1.5; wait(0.7) } else { wait(0.12) }
-                if canvas.newLineCount > nl0 { inkRightAtNewLine = maxRight; pansBefore = canvas.panCount - pans0 }
-                // Keep writing just right of the last letter as it now appears (the writer follows the ink).
-            }
-            let limit = min(WritingLayout().margin * pw + 1.0 * pw, pw * (1 - WritingLayout().margin))
-            zoom3.append(["mode": ["off", "centre", "left"][mode.rawValue], "letters": n, "pansBeforeNewLine": pansBefore, "inkRightAtNewLine": inkRightAtNewLine,
-                          "limit": limit, "visibleWidth": pw / 3, "newLines": canvas.newLineCount - nl0])
-        }
-        try? JSONSerialization.data(withJSONObject: ["cases": out, "zoom3Full": zoom3], options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-pan.json"))
+        try? JSONSerialization.data(withJSONObject: ["cases": out], options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-pan.json"))
         try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
     }
 }

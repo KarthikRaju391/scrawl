@@ -11,7 +11,7 @@ func aimRemovedChecks(_ check: (Bool, String) -> Void) {
     let t = ToolState.load(from: d)
     t.save(to: d)
     let saved = d.dictionary(forKey: "toolState") ?? [:]
-    check(t.tool == .marker && t.background == 3 && t.lineWidthIndex == 2 && t.zoomLocked && t.autoPan == .left && saved["aimFirst"] == nil,
-          "old settings with aimFirst load (tool, background, line width, zoom lock, pan mode kept) and aimFirst isn't saved again")
+    check(t.tool == .marker && t.background == 3 && t.lineWidthIndex == 2 && t.zoomLocked && saved["aimFirst"] == nil && saved["autoPan"] == nil,
+          "old settings with aimFirst and the removed sideways-pan mode load (tool, background, line width, zoom lock kept); neither is saved again")
     d.removePersistentDomain(forName: suite)
 }

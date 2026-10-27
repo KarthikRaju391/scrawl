@@ -43,7 +43,6 @@ extension AppDelegate {
         case "scratchOut": usage.record("scratch_out", ["strokes": (extra["ids"] as? [Int])?.count ?? 0])
         case "newLineByHand": u.manualNewLine = true
         case "newLine": usage.record("new_line", ["kind": u.manualNewLine ? "manual" : "auto"]); u.manualNewLine = false
-        case "autoPan": usage.record("auto_pan")
         case "newPage": usage.record("new_page", ["pages": canvas.pages.count])
         case "resume": usage.record("resume")
         default: break

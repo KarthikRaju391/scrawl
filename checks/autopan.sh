@@ -1,5 +1,5 @@
 #!/bin/sh
-# Auto-pan end to end: checks/autopan.sh [--writing-off]. Simulated writer at zoom 3 writes 40
+# Writing mode end to end (no sideways pan: the writer pans by hand near the pad's right side): checks/autopan.sh. Simulated writer at zoom 3 writes 40
 # letters left to right, continuing just right of its last ink as it appears on screen.
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d /tmp/td-autopan.XXXX)
@@ -10,12 +10,11 @@ screencapture -x -o -l"$WID" "$OUT/final.png"; kill -TERM $PID
 python3 -I - "$OUT/test-autopan.json" <<'PY'
 import json, sys
 r = json.load(open(sys.argv[1]))
-print("auto-pan:", ["off", "centre", "left"][r["autoPan"]], " strokes:", r["strokes"], " auto-pans:", r["pans"], " new lines:", r["newLines"])
+print("strokes:", r["strokes"], " auto-pans:", r["pans"], " new lines:", r["newLines"])
 print("letters overlapping the previous letter:", r["overlapsWithPreviousLetter"], " rows (left edge of each):", [round(x) for x in r["rowStarts"]])
 print("touch-down x on the pad: min %.2f max %.2f" % (min(r["touchX"]), max(r["touchX"])))
 if r["wordStartAfterPan"]: print("after each auto-pan, the word just written starts at pad x:", " ".join(f"{x:.2f}" for x in r["wordStartAfterPan"]))
-mode = ["off", "centre", "left"][r["autoPan"]]
-ok = r["strokes"] == 90 and r["overlapsWithPreviousLetter"] == 0 and r["newLines"] >= 4 and ((r["pans"] == 0) if mode == "off" else (r["pans"] > 0))
-print(("PASS" if ok else "FAIL"), f"writing mode ({mode}): every letter drawn (90), none overlapping, {r['newLines']} new lines, {r['pans']} auto-pans")
+ok = r["strokes"] == 90 and r["overlapsWithPreviousLetter"] == 0 and r["newLines"] >= 4
+print(("PASS" if ok else "FAIL"), f"writing mode (panning by hand, no sideways pan): every letter drawn (90), none overlapping, {r['newLines']} new lines")
 PY
 echo "$OUT"

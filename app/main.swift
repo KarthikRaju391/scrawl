@@ -570,7 +570,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
                 var t = canvas.tools; t.lineWidthIndex = 0   // ½ page
-                if let i = a.firstIndex(of: "--autopan"), i + 1 < a.count { t.autoPan = ["off": .off, "left": .left][a[i + 1]] ?? .centre } else { t.autoPan = .centre }
                 canvas.tools = t
                 toggleWriting()
                 TestAutoPan.run(canvas: canvas, dir: dir) { [self] in
@@ -755,7 +754,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         case "gestureRedo", "scrubStep": Haptics.tick()
         case "newLine": Haptics.tick(); container.pendingMove.hide()
         case "movePending": container.pendingMove.show(extra["kind"] as? String == "newLine" ? .newLine : .pan)
-        case "moveCancelled", "autoPan", "drawMode", "writingMode": container.pendingMove.hide()
+        case "moveCancelled", "drawMode", "writingMode": container.pendingMove.hide()
         case "scrubStart": tips.gestureUndo(); practiceTick(.undo)
         case "pinchZoom": tips.pinchZoom(at: CACurrentMediaTime())
         case "scratchOut": tips.scratchedOut(); practiceTick(.scratch); Haptics.tick()
