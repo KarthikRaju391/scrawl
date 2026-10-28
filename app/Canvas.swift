@@ -718,6 +718,37 @@ final class CanvasView: MTKView {
         return l.lineEnd(lineLeft: l.lineStart(pageWidth: camera.page.width), pageWidth: camera.page.width)
     }
     static let limitLineColor = SIMD4<Float>(0.10, 0.45, 0.91, 0.22)
+    /// Karthik (28 Oct evening): the line only as you approach the width point. It starts to show when the line's ink
+    /// (with the stroke being drawn) is within 15% of the line width of the limit (120 page units for ½-page lines),
+    /// fading in in proportion to full strength at the limit, and fades out (0.25 s) after the new line or when the
+    /// ink is no longer near it (an undo, a line started elsewhere).
+    static let limitShowWithin = 0.15, limitFadeSeconds = 0.25
+    private var limitAlpha = 0.0, limitAlphaAt = 0.0
+    var limitAlphaForTest: Double { limitAlpha }
+    /// The current line's rightmost ink (page x), including the stroke being drawn.
+    var lineRightForTest: Double? { lineRight }
+    private var lineRight: Double? {
+        let live = builder?.points.last.map { Double($0.p.x) }
+        switch (lineInk?.maxX, live) {
+        case let (a?, b?): return max(a, b)
+        case let (a?, nil): return a
+        case let (nil, b?): return b
+        default: return nil
+        }
+    }
+    private var limitTargetAlpha: Double {
+        guard let lim = lineLimitX, let right = lineRight else { return 0 }
+        let within = Self.limitShowWithin * ToolState.lineWidths[tools.lineWidthIndex] * camera.page.width
+        return Double(Self.limitLineColor.w) * min(max(1 - (lim - right) / within, 0), 1)
+    }
+    /// Moves the drawn strength toward the target (a full fade takes `limitFadeSeconds`); keeps frames coming until there.
+    private func stepLimitAlpha() {
+        let now = CACurrentMediaTime(), dt = limitAlphaAt == 0 ? 0 : min(now - limitAlphaAt, 0.1)
+        limitAlphaAt = now
+        let target = limitTargetAlpha, step = dt / Self.limitFadeSeconds * Double(Self.limitLineColor.w)
+        limitAlpha = target > limitAlpha ? min(target, limitAlpha + step) : max(target, limitAlpha - step)
+        if abs(limitAlpha - target) > 1e-4 { needsRender = true }
+    }
     /// Test hook: the limit line as last drawn (page x, and the view's left and width then).
     private(set) var limitDrawnForTest: [Double]?
     /// How far the view's centre moved sideways by hand since the last stroke (page units). Pinches zoom about
@@ -1381,12 +1412,15 @@ final class CanvasView: MTKView {
             if !verts.isEmpty { items.append(.init(mesh: Mesh(), verts: verts, color: premul(SIMD4(0.55, 0.6, 0.68, 0.6)))) }
         }
         // Writing mode: a faint vertical line where the next-line pan will come (the line's width limit), 1 pt wide at any
-        // zoom. The live view only: exports, thumbnails and the page map render the page without it.
-        if let x = lineLimitX, x > vis.minX, x < vis.maxX {
+        // zoom, only as the line's ink nears it (fading in), gone after the new line. The live view only: exports,
+        // thumbnails and the page map render the page without it.
+        stepLimitAlpha()
+        if limitAlpha > 0.002, let x = lineLimitX, x > vis.minX, x < vis.maxX {
             let w = 0.5 / (ptPerUnit * camera.zoom)
             let a = SIMD2<Float>(Float(x - w), Float(vis.minY)), b = SIMD2<Float>(Float(x + w), Float(vis.minY))
             let c = SIMD2<Float>(Float(x + w), Float(vis.maxY)), d = SIMD2<Float>(Float(x - w), Float(vis.maxY))
-            items.append(.init(mesh: Mesh(), verts: [a, b, c, a, c, d], color: premul(Self.limitLineColor)))
+            var col = Self.limitLineColor; col.w = Float(limitAlpha)
+            items.append(.init(mesh: Mesh(), verts: [a, b, c, a, c, d], color: premul(col)))
             limitDrawnForTest = [x, vis.minX, vis.width]
         } else { limitDrawnForTest = nil }
         items += doc.strokes.compactMap { s in

@@ -349,6 +349,8 @@ final class Robot {
         s["settingsWindow"] = app.settingsWindow.window?.isVisible == true ? app.settingsWindow.window!.windowNumber : 0   // robot:needs class SettingsWindow
         s["lineLimitX"] = canvas.lineLimitX as Any   // robot:needs var lineLimitX
         s["limitDrawn"] = canvas.limitDrawnForTest as Any   // robot:needs var limitDrawnForTest
+        s["lineRight"] = canvas.lineRightForTest as Any   // robot:needs var lineRightForTest
+        s["limitAlpha"] = canvas.limitAlphaForTest   // robot:needs var limitAlphaForTest
         let wf = app.window.frame, cf = canvas.convert(canvas.bounds, to: nil)
         s["canvasFrame"] = [cf.minX, wf.height - cf.maxY, cf.width, cf.height, wf.width]   // window points, from the window's top-left
         s["aimMark"] = canvas.markForTest.map { [$0.x, $0.y] } as Any   // robot:needs var markForTest

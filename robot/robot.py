@@ -905,6 +905,8 @@ def run_scenarios(app, rep, only, hand):
             before_word = app.state()
             app.touch(fr, settle=0.05)
             written += len(strokes)
+            after_word = None
+            if on_word: time.sleep(0.25); after_word = app.state()   # just after the word, inside the pause
             # Strokes that run off the trackpad (a person's finger can't), or start in the edge guard's band (5%, ignored
             # like a resting palm): never drawn, not counted as lost.
             g = 0.05
@@ -913,7 +915,7 @@ def run_scenarios(app, rep, only, hand):
             mine = app.state()["lastStrokes"][-len(strokes):]
             app.touch([[0.008, []]] * int(pause / 0.008), settle=0.3); settle(app)
             s2 = app.state(); now = s2["lastStrokes"][-len(strokes):]
-            if on_word: on_word(w, s2, before_word)
+            if on_word: on_word(w, s2, before_word, after_word)
             gap = hand.h * space * upm
             if s2["newLines"] > lines0:
                 lines0 = s2["newLines"]
@@ -1071,7 +1073,16 @@ def run_scenarios(app, rep, only, hand):
         old_h = hand.h; hand.h = 9
         top = app.cmd({"cmd": "toPagePt", "point": [0, pad_h * 0.7]})["point"][1]
         views = []
-        def seen(w, s_, b_): views.append((w, b_["view"]["x"], s_["view"]["x"], s_["newLines"] - b_["newLines"]))
+        start_shot, samples, after_nl = [], [], []
+        def seen(w, s_, b_, a_):
+            views.append((w, b_["view"]["x"], s_["view"]["x"], s_["newLines"] - b_["newLines"]))
+            if a_ and a_.get("lineLimitX") is not None and a_.get("lineRight") is not None and a_["newLines"] == b_["newLines"]:
+                lim, right = a_["lineLimitX"], a_["lineRight"]
+                width = W * 0.5   # the ½-page line width
+                inview = a_["view"]["x"] < lim < a_["view"]["x"] + a_["view"]["w"]
+                samples.append((w, (lim - right) / width, a_.get("limitAlpha", 0), a_.get("limitDrawn"), lim, inview))
+            if s_["newLines"] > b_["newLines"]:
+                time.sleep(0.4); after_nl.append(app.state().get("limitAlpha", 0))
         words = (SENTENCE + " " + SENTENCE).split()
         cid, written = write_rows(20000, words, [W * 0.035, top], space=0.6, pause=1.0, on_word=seen)
         hand.h = old_h
@@ -1094,23 +1105,61 @@ def run_scenarios(app, rep, only, hand):
         ends = [L[1] / W for L in lines]
         full_lines = ends[:-1]
         rep.check(full_lines and all(0.42 <= e <= 0.58 for e in full_lines), "(b) it comes near the ½-page limit (lines end at 42-58% of the page)", f"{[f'{e:.0%}' for e in ends]}")
-        # (c) the border: at the limit's page x, drawn, at 400% and at 100%
+        # (c) the limit line (Karthik, 28 Oct evening: only when approaching the width point): hidden at the start of a
+        # line, fading in within 15% of the line width from the limit, gone after the next-line move.
         lx = s2.get("lineLimitX")
         first_x = min(b[0] for b in mine) if mine else 0
         rep.check(lx is not None and (abs(lx - 0.5 * W) < 1 or abs(lx - (first_x + 0.5 * W)) < 1),
-                  "(c) the limit line is where the next-line pan comes: ½ page from the line's start", f"limit x {lx}, page {W}, line start {first_x:.0f}")
+                  "(c) the limit is where the next-line pan comes: ½ page from the line's start", f"limit x {lx}, page {W}, line start {first_x:.0f}")
+        far = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d > 0.3]
+        near = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d <= 0.15]
+        rep.step("limit line", samples=[(w, round(d, 2), round(a, 3)) for w, d, a, _, _, _ in samples], afterNewLine=[round(a, 3) for a in after_nl])
+        rep.check(far and all(a <= 0.01 for _, _, a in far), "(c) hidden while the line's ink is far from the limit (more than 30% of the line width)", f"{far[:6]}")
+        rep.check(near and max(a for _, _, a in near) >= 0.05, "(c) fades in as the ink comes within 15% of the line width of the limit", f"{near}")
+        shown_in_view = [(d, l) for _, _, a, d, l, iv in samples if a > 0.002 and iv]
+        rep.check(shown_in_view and all(d and abs(d[0] - l) < 1e-6 for d, l in shown_in_view), "(c) when shown (and the limit is in view), it's drawn at the limit's page x", f"{len(shown_in_view)} shown in view: drawn at {[d and round(d[0]) for d, _ in shown_in_view]}")
+        # The last line has only a few words (far from the limit): at 100%, with the limit in view, no line to be seen.
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app, limit=3); time.sleep(0.6)
-        s3 = app.state(); shot = rep.shot(app, "writing mode, ½-page lines: the faint line at the limit (100%)")
-        col, tint = limit_line_px(shot, s3)
-        rep.check(tint > 6, "(c) the faint line is drawn there at 100%", f"column {col and round(col)}, blue tint {tint:.1f}")
-        app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app, limit=3)
-        for _ in range(4): app.press("right")
-        settle(app, limit=3); time.sleep(0.6)
-        s4 = app.state(); shot = rep.shot(app, "zoomed to 300%: the line stays at the same page x")
-        col4, tint4 = limit_line_px(shot, s4)
-        d4 = s4.get("limitDrawn") or [None]
-        rep.check(d4[0] is not None and abs(d4[0] - (s4.get("lineLimitX") or -1)) < 1e-6 and abs(d4[0] - lx) < 1 and tint4 > 6,
-                  "(c) at 300% it's drawn at the same page x", f"drawn at {d4[0]}, limit {lx}, view {round(s4['view']['x'])}-{round(s4['view']['x'] + s4['view']['w'])}, column {col4 and round(col4)}, tint {tint4:.1f}")
+        st0 = app.state(); start_shot.append((rep.shot(app, "a line just started (100%): no limit line"), st0))
+        # Then a word on that line that ends just short of the limit: the line fades in (screenshot before the pause ends).
+        last = s2["pageBounds"][-1]; lim0 = st0["lineLimitX"]
+        q0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; q1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
+        upm1 = (q1[0] - q0[0]) / 10
+        old_h = hand.h; hand.h = 4.5   # handwriting size at 100%
+        start = lim0 - W * 0.02 - hand.width("near") * upm1   # ends about 2% of the page short of the limit
+        (nx, ny), = app.cmd({"cmd": "toPad", "points": [[start, (last[1] + last[3]) / 2]]})["points"]
+        strokes_ = hand.word("near", nx, ny); hand.h = old_h
+        f_, _ = hand.frames(strokes_, 21500)
+        # Hold the finger still at the word's end for 2 s (the stroke still live: no new line yet), and take the
+        # screenshot 1.2 s in, from another thread (the window's frames reach the screen with some delay).
+        tip = f_[-2][1][0] if len(f_) > 1 and f_[-2][1] else None
+        if tip: f_ = f_[:-1] + [[0.008, [list(tip)]]] * int(2.0 / 0.008) + [f_[-1]]
+        import threading
+        shot_box = []
+        th = threading.Thread(target=lambda: (time.sleep(1.4), shot_box.append(rep.shot(app, "a word just short of the limit (100%): the limit line fades in"))))
+        th.start(); app.touch(f_, settle=0.05); th.join()
+        st1 = app.state(); sh1 = shot_box[0]
+        from PIL import Image
+        im1 = Image.open(sh1).convert("RGB"); k1 = im1.width / st1["canvasFrame"][4]
+        cx1, cy1, cw1, ch1 = (v * k1 for v in st1["canvasFrame"][:4]); v1 = st1["view"]
+        col1 = cx1 + (st1["lineLimitX"] - v1["x"]) / v1["w"] * cw1
+        def tint_at(x): 
+            px = [im1.getpixel((int(x), int(cy1 + ch1 * (0.25 + 0.5 * i / 40)))) for i in range(41)]
+            return sum(b - r_ for r_, g_, b in px) / len(px)
+        tint1 = max(tint_at(col1 + d) for d in (-1, 0, 1)) - (tint_at(col1 - 8) + tint_at(col1 + 8)) / 2
+        rep.check(tint1 > 6 and st1.get("limitAlpha", 0) > 0.05, "(c) you can see it as the ink nears the limit (screenshot)", f"strength {st1.get('limitAlpha', 0):.3f}, blue tint {tint1:.1f}, ink {(st1.get('lineRight') or 0) / W:.1%} of the page")
+        if start_shot:
+            sh, st_ = start_shot[0]
+            from PIL import Image
+            im = Image.open(sh).convert("RGB"); k = im.width / st_["canvasFrame"][4]
+            cx, cy, cw, ch = (v * k for v in st_["canvasFrame"][:4]); v = st_["view"]
+            col = cx + (st_["lineLimitX"] - v["x"]) / v["w"] * cw
+            t0 = 0.0
+            if cx < col < cx + cw:
+                px = [im.getpixel((int(col), int(cy + ch * (0.25 + 0.5 * i / 40)))) for i in range(41)]
+                t0 = sum(b - r_ for r_, g_, b in px) / len(px)
+            rep.check(t0 < 3, "(c) not to be seen at the start of a line (screenshot)", f"blue tint at the limit's column {t0:.1f}")
+        rep.check(after_nl and all(a <= 0.01 for a in after_nl), "(c) gone after the next-line move", f"{after_nl}")
         # Hidden without writing mode (no width chosen), and never in the page export.
         ensure(app, "writing", False, "w"); time.sleep(0.3)
         s5 = app.state(); shot5 = rep.shot(app, "writing mode off: no line")
