@@ -677,13 +677,24 @@ def run_scenarios(app, rep, only, hand):
         rep.check(f0 >= 1 and f1 == 0, "an undone stroke fades out (gone after the 120 ms fade)", f"fading right after: {f0}, 0.3 s later: {f1}")
         # The pending move (the next line): in writing mode, write a word across the line's limit (the faint line),
         # then look during the pause.
-        ensure(app, "writing", True, "w")
+        # A clean page and a fresh block (writing mode off, then on), 50% lines; then draw mode (Esc closing the panel
+        # would leave it).
+        ensure(app, "draw", False, "d"); app.press("n")
+        ensure(app, "writing", False, "w"); ensure(app, "writing", True, "w")
+        app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": 0}); app.press("esc")
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        ensure(app, "draw", True, "d")
+        st_ = app.state(); pad_w, pad_h = st_["padMM"]
+        # A first word at the left starts the block (its width counts from there); then a word just short of its limit.
+        fr0, cid = hand.frames(hand.word("go", pad_w * 0.08, pad_h * 0.5, hand.roman), cid)
+        app.touch(fr0 + [[0.008, []]] * 12, settle=0.1)
         lx = app.state()["lineLimitX"]
         (ex, _), = app.cmd({"cmd": "toPad", "points": [[lx - 20, 0]]})["points"]
         fr, cid = hand.frames(hand.word("edge", ex, pad_h * 0.5, hand.roman), cid)
         app.touch(fr + [[0.008, []]] * 12, settle=0.0)
-        p0 = app.state().get("pendingMove", "")
+        sd = app.state(); p0 = sd.get("pendingMove", "")
+        rep.step("chevron setup", limit=lx, padX=round(ex, 1), padW=pad_w, lineRight=sd.get("lineRight"), strokes=sd["strokes"], lineWidth=sd.get("lineWidth"),
+                 writing=sd["writing"], draw=sd["draw"], pending=p0, view=sd["view"])
         app.touch([[0.008, [[cid + 50, pad_w * 0.5, pad_h * 0.2, 2, 0.5, 7.5]]]] * 3 + [[0.008, []]], settle=0.05)   # a light touch: cancels
         p1 = app.state().get("pendingMove", "")
         rep.check(p0 != "" and p1 == "", "a chevron shows while the page waits to move, and a touch cancels it", f"during the pause: {p0!r}, after a touch: {p1!r}")
@@ -1117,9 +1128,11 @@ def run_scenarios(app, rep, only, hand):
         near = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d <= 0.15]
         rep.step("limit line", samples=[(w, round(d, 2), round(a, 3)) for w, d, a, _, _, _ in samples], afterNewLine=[round(a, 3) for a in after_nl])
         rep.check(far and all(a <= 0.01 for _, _, a in far), "(c) hidden while the line's ink is far from the limit (more than 30% of the line width)", f"{far[:6]}")
-        rep.check(near and max(a for _, _, a in near) >= 0.05, "(c) fades in as the ink comes within 15% of the line width of the limit", f"{near}")
+        # Strength 22% x (1 - distance / 15% of the line width): e.g. 0.015 at 14%, 0.044 at 12%, 0.22 at the limit.
+        rep.check(near and all(abs(a - 0.22 * max(0.0, 1 - d / 0.15)) < 0.03 for _, d, a in near) and max(a for _, _, a in near) > 0.005,
+                  "(c) fades in as the ink comes within 15% of the line width of the limit (in proportion)", f"{near}")
         shown_in_view = [(d, l) for _, _, a, d, l, iv in samples if a > 0.002 and iv]
-        rep.check(shown_in_view and all(d and abs(d[0] - l) < 1e-6 for d, l in shown_in_view), "(c) when shown (and the limit is in view), it's drawn at the limit's page x", f"{len(shown_in_view)} shown in view: drawn at {[d and round(d[0]) for d, _ in shown_in_view]}")
+        rep.check(all(d and abs(d[0] - l) < 1e-6 for d, l in shown_in_view), "(c) when shown (and the limit is in view), it's drawn at the limit's page x (the 100% screenshot below checks it too)", f"{len(shown_in_view)} shown in view: drawn at {[d and round(d[0]) for d, _ in shown_in_view]}")
         # The last line has only a few words (far from the limit): at 100%, with the limit in view, no line to be seen.
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app, limit=3); time.sleep(0.6)
         st0 = app.state(); start_shot.append((rep.shot(app, "a line just started (100%): no limit line"), st0))
