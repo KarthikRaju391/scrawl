@@ -338,6 +338,11 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None, nudge_every=0
         hand_moved = time.time() - last_hand < 2.0
         r = app.touch(fr, settle=0.05)
         map_seen = r.get("mapSeen", 0)
+        # A move the app still has queued (the chevron shows; a word past the limit waits 650-800 ms): wait for it, as a
+        # person seeing the chevron does, so it isn't missed (it raced the 0.55 s pause).
+        for _ in range(40):
+            if not app.state().get("pendingMove"): break
+            time.sleep(0.05)
         after_view = settle(app)
         map_seen += 1 if app.state().get("pageMap") else 0
         after = app.state()
