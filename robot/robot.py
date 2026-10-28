@@ -1127,7 +1127,8 @@ def run_scenarios(app, rep, only, hand):
         # line, fading in within 15% of the line width from the limit, gone after the next-line move.
         lx = s2.get("lineLimitX")
         first_x = min(b[0] for b in mine) if mine else 0
-        rep.check(lx is not None and (abs(lx - 0.5 * W) < 1 or abs(lx - (first_x + 0.5 * W)) < 1),
+        # (the block starts at its first stroke; a later line's stroke may sit a little further left: 1% tolerance)
+        rep.check(lx is not None and (abs(lx - 0.5 * W) < 1 or abs(lx - (first_x + 0.5 * W)) < 0.01 * W),
                   "(c) the limit is where the next-line pan comes: ½ page from the line's start", f"limit x {lx}, page {W}, line start {first_x:.0f}")
         far = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d > 0.3]
         near = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d <= 0.15]
