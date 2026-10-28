@@ -64,8 +64,10 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 - **Toolbar:** Draw first, then the tools and paper, writing and zoom lock, undo and redo, and pages.
   Hover over any button for what it does and its shortcut.
 - **Writing mode (W):** the page stays put while you write along a line (pan by hand with two fingers if
-  you need room), and goes to the start of the next line when the line reaches its width (½, ¾ or the
-  full page), back at the left margin (Return does it by hand). As a line nears its width a faint
+  you need room), and goes to the next line when the line reaches its width: 50%, 75% or 100% of the page,
+  counted from where the block you're writing began (capped at the page's right margin). The next line
+  starts back where that block's first line began, so a block started mid-page stays mid-page (Return does
+  it by hand). Moving somewhere new by hand, a page change or switching writing mode on starts a new block. As a line nears its width a faint
   vertical line fades in where that happens, and it fades out after the new line. The page waits until your finger has been up for 0.4 s, so it never moves in the middle of a
   word; a new line sits a little below the middle, so the lines you just wrote stay in sight. If you pan by hand (a real move, not a nudge) and write somewhere
   new, the line starts there and still ends ½ or ¾ of a page later; small nudges and pinches don't change it. Choose the line width (½, ¾, full) and how it pans in the panel. A ½ line ends about the middle of the

@@ -162,3 +162,10 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 
 ## The limit line only as you approach it (Karthik, 28 Oct evening)
 - "Only show the guide line when we are approaching the width point." It's hidden while you write a line; it starts to show when the line's rightmost ink (including the stroke being drawn) is within 15% of the line width of the limit (120 page units for ½-page lines, 180 for ¾, 240 for full: from about 43% of the page on a ½-page line), and its strength grows in proportion, to the full faint blue (22%) at the limit. After the new line, or when the ink is no longer near (an undo, a line started elsewhere), it fades out. Fades take 0.25 s for the full change. All internal (`CanvasView.limitShowWithin`, `limitFadeSeconds`): one more slider wasn't worth it.
+
+## The next line goes back to the block's start (Karthik, 28 Oct)
+- Recording 14:29: writing a block in the right half of the page, the next-line pan took him to the page's left margin, onto older notes. The next line now goes back to where the current writing run's first line began, and every line's width counts from there.
+- A run (block) starts with the first stroke after: writing mode turning on, a page change or new page, a deliberate hand pan (10% of the view or more) followed by writing somewhere away from the line's end (the rule that already moved a line's start), or writing well above or below the current line. A pause doesn't start one (an idle gap isn't a move). An undo keeps the run (rewriting the last word doesn't move the block's start). Return keeps it too.
+- Widths are 50% / 75% / 100% of the page width from the run's start (the panel says so now), capped at the page's right margin (97% of the page; 100% always ends there). A run starting at 55% with 50% wraps at 97%. From the margin (3.5%), 50% lines end at about 53.5% of the page (they ended at 50% before, measured from the page's edge).
+- Only writing mode moves to the next line (unchanged): with it off, the page never moves while you write.
+- The limit line sits at the run's start + the width (same value), fading in within 15% of it.

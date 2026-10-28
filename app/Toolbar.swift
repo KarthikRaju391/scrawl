@@ -374,7 +374,7 @@ final class PanelView: NSView {
                 }
             }
         case .writing:  // line width ½ / ¾ / full · writing off
-            let names = ["½ page", "¾ page", "Full", "Off"]
+            let names = ["50%", "75%", "100%", "Off"]   // of the page, from where the block's first line began
             for i in 0..<4 {
                 let r = writingRect(i), tile = CGRect(x: r.midX - 18, y: r.maxY - 42, width: 36, height: 36)
                 NSColor(white: 0.97, alpha: 1).setFill(); NSBezierPath(roundedRect: tile, xRadius: 6, yRadius: 6).fill()

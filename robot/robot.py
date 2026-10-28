@@ -945,7 +945,8 @@ def run_scenarios(app, rep, only, hand):
         s = app.state()
         ink = s["inkBounds"]
         rep.step("ink", maxX=round(ink[2] / W, 4), newLines=s["newLines"], strokesWritten=written, strokesOnPage=s["strokes"] - n0)
-        rep.check(ink[2] <= (frac + 0.06) * W, f"{name} lines end at about {frac:.0%} of the page (a word may run slightly past it)", f"ink reaches {ink[2] / W:.1%} of the page")
+        start = ink[0]   # the block's start: the width counts from there (28 Oct)
+        rep.check(ink[2] <= start + (frac + 0.06) * W, f"{name} lines end at about {frac:.0%} of the page after the block's start (a word may run slightly past it)", f"ink from {start / W:.1%} to {ink[2] / W:.1%} of the page (limit {(start / W + frac):.1%})")
         rep.check(s["strokes"] - n0 == written, "every stroke stays where it was written", f"{written} written, {s['strokes'] - n0} on the page")
         rep.shot(app, f"{name} lines at 100%")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
@@ -996,9 +997,10 @@ def run_scenarios(app, rep, only, hand):
         cid, written = write_rows(cid, "quick brown fox jumps over the lazy dog again and again".split(), [after["nextLine"][0], after["nextLine"][1] - hand.h * 0.35 * upm])
         fin = app.state()
         rest = fin["pageBounds"][n0:]
-        starts_ok = all(b[0] <= W * 0.5 for b in rest)
+        mark = min(b[0] for b in after["pageBounds"][:n0]) + W * 0.5   # ½ a page after the block's start (28 Oct)
+        starts_ok = all(b[0] <= mark for b in rest)
         over = max(b[2] for b in rest) / W
-        rep.check(starts_ok and over <= 0.56, "the next words start before the ½-page mark; a word may only run slightly past it", f"ink to {over:.1%} of the page")
+        rep.check(starts_ok and over <= mark / W + 0.06, "the next words start before the ½-page mark (from the block's start); a word may only run slightly past it", f"ink to {over:.1%} of the page, mark {mark / W:.1%}")
         hand.h = old_h
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
@@ -1169,6 +1171,72 @@ def run_scenarios(app, rep, only, hand):
         im = Image.open(png).convert("RGB")
         blue = sum(1 for x in range(im.width) for y in range(0, im.height, 7) if (lambda p: p[2] - p[0] > 25 and p[0] > 150)(im.getpixel((x, y))))
         rep.check(blue == 0, "(c) not in the page export", f"{blue} bluish pixels")
+        ensure(app, "draw", False, "d")
+
+    @scenario("next-line-run-start", "Karthik (28 Oct): in writing mode a block wraps back to where its first line began (not the page's left margin), and the width (50% / 75% / 100% of the page) counts from there, capped at the page's right margin. A block from the margin still wraps to the margin. Outside writing mode the page never moves. At 300%.")
+    def _():
+        def run(start_frac, width_idx, label):
+            ensure(app, "draw", False, "d"); app.press("n")
+            ensure(app, "writing", True, "w")
+            app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": width_idx}); app.press("esc")
+            app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+            ensure(app, "draw", True, "d")
+            app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app, limit=3)
+            for _ in range(16): app.press("up")
+            for _ in range(16): app.press("left")
+            st = app.state(); W = st["pageW"]; vw = st["view"]["w"]
+            for _ in range(40):   # move the view (by hand: arrow keys) until the run's start is a fifth into it
+                if st["view"]["x"] >= W * start_frac - vw * 0.2 - 1 or st["view"]["x"] + vw >= W - 1: break
+                app.press("right"); settle(app); st = app.state()
+            time.sleep(1.4)
+            n0 = st["strokes"]; pad_w, pad_h = st["padMM"]
+            top = app.cmd({"cmd": "toPagePt", "point": [0, pad_h * 0.75]})["point"][1]
+            views, limits = [], []
+            def seen(w, s_, b_, a_):
+                if a_ and a_.get("lineLimitX") is not None and a_["newLines"] == b_["newLines"]: limits.append(a_["lineLimitX"])
+                if s_["newLines"] > b_["newLines"]: views.append((s_["view"], s_.get("nextLine")))
+            write_rows(23000 + int(start_frac * 1000) + width_idx * 100, (SENTENCE + " " + SENTENCE + " " + SENTENCE).split()[:16], [W * start_frac, top], on_word=seen)
+            s2 = app.state()
+            mine = s2["pageBounds"][n0:]
+            lines = []
+            for b in mine:
+                y = (b[1] + b[3]) / 2
+                for L in lines:
+                    if abs(L[0] - y) < 30: L[1] = min(L[1], b[0]); L[2] = max(L[2], b[2]); break
+                else: lines.append([y, b[0], b[2]])
+            lines.sort(key=lambda L: -L[0])
+            rep.step(label, lines=[(round(L[1] / W, 3), round(L[2] / W, 3)) for L in lines], limits=sorted({round(l / W, 3) for l in limits}),
+                     afterNewLine=[(round(v["x"] / W, 3), nl and round(nl[0] / W, 3)) for v, nl in views])
+            rep.shot(app, f"{label}: after the next-line pan")
+            app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app, limit=3); time.sleep(0.6)
+            rep.shot(app, f"{label}: the whole page")
+            return W, lines, views, limits
+        for start, wi, wname in [(0.30, 0, "50%"), (0.20, 1, "75%"), (0.55, 0, "50%"), (0.035, 0, "50%"), (0.035, 2, "100%")]:
+            label = f"{wname} from {'the margin' if start < 0.05 else f'{start:.0%}'}"
+            W, lines, views, limits = run(start, wi, label)
+            want = min(lines[0][1] / W + [0.5, 0.75, 1.0][wi], 0.97) if lines else None
+            rep.check(len(lines) >= 2 and views, f"{label}: the block wraps to a second line", f"{len(lines)} lines, {len(views)} next-line pans")
+            if len(lines) < 2 or not views: continue
+            rep.check(limits and all(abs(l / W - want) < 0.005 for l in limits), f"{label}: the line's limit is its start + {wname} of the page (capped at the right margin, 97%)",
+                      f"start {lines[0][1] / W:.1%}, limit {sorted({round(l / W, 3) for l in limits})}, want {want:.1%}")
+            rep.check(all(want - 0.15 <= L[2] / W <= want + 0.06 for L in lines[:-1]), f"{label}: full lines end near it", f"line ends {[round(L[2] / W, 3) for L in lines]}, limit {want:.1%}")
+            v, nl = views[0]
+            rep.check(abs(lines[1][1] - lines[0][1]) / W < 0.04, f"{label}: the next line starts where the block's first line began",
+                      f"first line {lines[0][1] / W:.1%}, second {lines[1][1] / W:.1%}")
+            rep.check(v["x"] <= lines[0][1] <= v["x"] + v["w"] * 0.25, f"{label}: the next-line pan brings the view back to the block's start",
+                      f"view {v['x'] / W:.1%}-{(v['x'] + v['w']) / W:.1%}, block start {lines[0][1] / W:.1%}")
+        # Outside writing mode the page never moves: write past the middle of the page at 100%.
+        ensure(app, "draw", False, "d"); app.press("n"); ensure(app, "writing", False, "w")
+        app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        ensure(app, "draw", True, "d")
+        st = app.state(); W = st["pageW"]; nl0 = st["newLines"]; v0 = st["view"]
+        old_h = hand.h; hand.h = 4.5
+        top = app.cmd({"cmd": "toPagePt", "point": [0, st["padMM"][1] * 0.8]})["point"][1]
+        write_rows(24500, (SENTENCE + " " + SENTENCE).split(), [W * 0.3, top])
+        hand.h = old_h
+        st2 = app.state()
+        rep.check(st2["newLines"] == nl0 and abs(st2["view"]["x"] - v0["x"]) < 1 and abs(st2["view"]["y"] - v0["y"]) < 1 and max(b[2] for b in st2["pageBounds"]) > W * 0.85,
+                  "writing mode off: writing across the page never moves it (no next-line pan)", f"new lines {st2['newLines'] - nl0}, view {v0['x']:.0f},{v0['y']:.0f} -> {st2['view']['x']:.0f},{st2['view']['y']:.0f}, ink to {max(b[2] for b in st2['pageBounds']) / W:.0%}")
         ensure(app, "draw", False, "d")
 
     @scenario("half-line-hard-limit", "½-page lines at zoom 100% (Karthik's screenshot): ink never goes past 50% of the page; the word that would cross the mark goes to the next line.")

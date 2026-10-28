@@ -707,9 +707,19 @@ final class CanvasView: MTKView {
         needsRender = true; onStatus?()
     }
 
-    private func endWritingLine() { lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil; segmentStart = nil; handPanX = 0 }
-    /// Where the line started after a deliberate hand pan (WritingLayout.segmentStart).
+    /// `keepRun`: an undo ends the line but not the block you're writing (rewriting the last word keeps the run's start).
+    private func endWritingLine(keepRun: Bool = false) {
+        lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil; handPanX = 0
+        if !keepRun { runStart = nil }
+        segmentStart = runStart
+    }
+    /// Where the current line started (WritingLayout.segmentStart): the writing run's start.
     private var segmentStart: Double?
+    /// Writing run (Karthik, 28 Oct): the x where the first line of the block you're writing now began. Every next
+    /// line goes back to it, and every line's width counts from it. A run starts with the first stroke after writing
+    /// mode turns on, a page change, a deliberate hand pan to write somewhere new, or writing well above or below the
+    /// line; a pause doesn't start one.
+    private var runStart: Double?
     /// Where the next-line pan comes for the current line (page x): its width limit, moved along when a deliberate hand
     /// pan moved the line's start. Nil outside writing mode (no width chosen). Drawn as a faint line.
     var lineLimitX: Double? {
@@ -763,7 +773,7 @@ final class CanvasView: MTKView {
         let v = camera.visible, layout = WritingLayout()
         let midY = lineInk?.midY ?? v.midY
         let pitch = max((lineInk?.height ?? 0) * 1.35, v.height * 0.12)
-        applyMove(.newLine(WritingLayout.newLineCenter(lineLeft: layout.lineStart(pageWidth: camera.page.width), lineMidY: midY, pitch: pitch, visible: v)))
+        applyMove(.newLine(WritingLayout.newLineCenter(lineLeft: runStart ?? layout.lineStart(pageWidth: camera.page.width), lineMidY: midY, pitch: pitch, visible: v)))
     }
 
 
@@ -1288,7 +1298,7 @@ final class CanvasView: MTKView {
             let vh = camera.visible.height
             // A stroke well above or below the current line (you moved there yourself): new line here.
             if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
-                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; segmentStart = nil
+                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; segmentStart = nil; runStart = nil   // a new run here
             }
             // A deliberate hand pan (10% of the view or more) and then writing somewhere new on the line (not right
             // after its last word): the line starts here now, and ends ½ / ¾ of the page later. Carrying on where the
@@ -1298,16 +1308,18 @@ final class CanvasView: MTKView {
                 if let line = lineInk {
                     let gap = max(line.height * 1.5, vw * 0.08)
                     if s.bounds.minX > line.maxX + gap || s.bounds.maxX < line.minX - gap {
-                        segmentStart = s.bounds.minX; lineInk = nil; lineStrokes = []
+                        runStart = s.bounds.minX; lineInk = nil; lineStrokes = []   // a new run where you moved to
                         act("lineMoved", ["x": s.bounds.minX])
                     }
                 } else {
-                    // No line open (a new line just came, or nothing written yet): the line starts where you moved to.
-                    segmentStart = s.bounds.minX
+                    // No line open (a new line just came, or nothing written yet): a new run where you moved to.
+                    runStart = s.bounds.minX
                     act("lineMoved", ["x": s.bounds.minX])
                 }
             }
             handPanX = 0
+            if runStart == nil { runStart = s.bounds.minX }   // the run's first stroke
+            segmentStart = runStart
             if legacyLineLeft == nil { legacyLineLeft = s.bounds.minX }
             let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
             lineInk = line
@@ -1317,7 +1329,7 @@ final class CanvasView: MTKView {
             layout.legacyStrokeEdge = legacyWriting
             layout.segmentStart = segmentStart
             layout.wordHint = typicalWordWidth
-            let start = legacyWriting ? legacyLineLeft! : layout.lineStart(pageWidth: camera.page.width)
+            let start = legacyWriting ? legacyLineLeft! : (runStart ?? layout.lineStart(pageWidth: camera.page.width))
             let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: start,
                                     visible: camera.visible, pageWidth: camera.page.width)
             if move == .none { pendingMove = nil }
@@ -1369,8 +1381,8 @@ final class CanvasView: MTKView {
                 let ws = WritingLayout.words(lineStrokes, gap: WritingLayout.wordGap(lineStrokes, visible: camera.visible)).map { $0.end - $0.start }.sorted()
                 if ws.count >= 2, ws[ws.count / 2] <= line.width * WritingLayout.maxWordShare { typicalWordWidth = ws[ws.count / 2] }
             }
-            if let line = lineInk { nextLineAt = CGPoint(x: WritingLayout().lineStart(pageWidth: camera.page.width), y: line.midY - max(line.height * 1.35, camera.visible.height * 0.12)) }
-            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; segmentStart = nil; handPanX = 0
+            if let line = lineInk { nextLineAt = CGPoint(x: runStart ?? WritingLayout().lineStart(pageWidth: camera.page.width), y: line.midY - max(line.height * 1.35, camera.visible.height * 0.12)) }
+            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; segmentStart = runStart; handPanX = 0   // the run goes on
             slideCamera(to: c, src: "newLine")
         }
         needsRender = true
@@ -1504,7 +1516,7 @@ final class CanvasView: MTKView {
         logger.event(["what": "undo", "strokesBefore": doc.strokes.count])   // the "that landed wrong" signal
         act("undo", ["strokes": doc.strokes.count])
         let before = doc.strokes
-        doc.undo(); endWritingLine(); updateScreensFilled(); markDirty(); needsRender = true
+        doc.undo(); endWritingLine(keepRun: true); updateScreensFilled(); markDirty(); needsRender = true
         fadeOut(before.filter { s in !doc.strokes.contains { $0 === s } })
     }
     /// Strokes that just went (undo, scratch-out) fade out over 120 ms, so you see what was taken away.

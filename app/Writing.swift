@@ -13,7 +13,7 @@
 import CoreGraphics
 
 struct WritingLayout {
-    var lineWidth = 0.75   // fraction of the page width a line may span (½, ¾, full)
+    var lineWidth = 0.75   // fraction of the page width a line may span (50%, 75%, 100%), from where its writing run began
     var margin = 0.03      // page side margin, fraction of the page width
     /// Where every line starts (page units).
     func lineStart(pageWidth: Double) -> Double { margin * pageWidth }
@@ -43,8 +43,8 @@ struct WritingLayout {
     /// `lineLeft` = where lines start (the app passes `lineStart`).
     func after(stroke s: CGRect, line: CGRect, lineStrokes: [CGRect], lineLeft: Double, visible v: CGRect, pageWidth: Double) -> Move {
         let pageEnd = pageWidth * (1 - margin)
-        // A hard limit: ½ / ¾ of the page width from its left edge (lines start at the margin), or ½ / ¾ of the
-        // page after a start a deliberate hand pan moved.
+        // A hard limit: 50 / 75 / 100% of the page width from where the writing run began (the app passes it as
+        // `segmentStart`; without one, from the page's left edge), capped at the page's right margin.
         let lineEnd = min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageEnd)
         // The line's rightmost ink, not just this stroke: an i-dot or t-cross placed back inside the
         // word must not cancel a move that the word's end already called for.

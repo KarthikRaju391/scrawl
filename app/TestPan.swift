@@ -93,7 +93,7 @@ enum TestPan {
                 }
                 wait(0.7)
                 s["alongLine"] = ["startX": x0, "furthestViewX": maxX, "newLines": canvas.newLineCount - nl0,
-                                "viewXAfterNewLine": canvas.camera.visible.minX, "wantAfterNewLine": max(WritingLayout().margin * pw - canvas.camera.visible.width * 0.05, 0)]
+                                "viewXAfterNewLine": canvas.camera.visible.minX, "wantAfterNewLine": max((canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - canvas.camera.visible.width * 0.05, 0)]   // back to the block's start
                 out.append(s)
             }
         }

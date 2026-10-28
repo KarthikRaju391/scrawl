@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Writing mode: the next line goes back to where the block you're writing began (not the page's left margin),
+  and the line width (now labelled 50% / 75% / 100%) counts from there, capped at the page's right margin. A new
+  block starts with the first stroke after writing mode turns on, a page change, a hand pan to write somewhere
+  new, or writing well above or below the line.
+
 - Writing mode no longer pans sideways along the line (Karthik: distracting). The page moves only for the
   next line, when the line reaches its width; a faint vertical line fades in where as the line's ink
   gets within 15% of the line width of it, and fades out after the new line (not in exports, thumbnails or
