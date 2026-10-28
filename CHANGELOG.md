@@ -3,8 +3,9 @@
 ## Unreleased
 
 - Writing mode no longer pans sideways along the line (Karthik: distracting). The page moves only for the
-  next line, when the line reaches its width; a faint vertical line in the canvas marks where (not in exports,
-  thumbnails or the page map). The writing panel's pan choices (No pan / Centre / Left) are gone.
+  next line, when the line reaches its width; a faint vertical line fades in where as the line's ink
+  gets within 15% of the line width of it, and fades out after the new line (not in exports, thumbnails or
+  the page map). The writing panel's pan choices (No pan / Centre / Left) are gone.
 - Lines no longer break early (28-32% of the page) when a capital or descender made the line's ink tall.
 - Click to draw: hard quick taps with tap-to-click no longer start drawing.
 
