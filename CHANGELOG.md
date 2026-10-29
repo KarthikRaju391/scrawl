@@ -2,28 +2,34 @@
 
 ## Unreleased
 
-- Writing mode: the next line goes back to where the block you're writing began (not the page's left margin),
-  and the line width (now labelled 50% / 75% / 100%) counts from there, capped at the page's right margin. A new
-  block starts with the first stroke after writing mode turns on, a page change, a hand pan to write somewhere
-  new, or writing well above or below the line.
+## 0.1.1 (2026-10-30, build 4)
 
+Build 3 (27 Oct) was held as a draft and never published; build 4 replaces it.
+
+- Writing mode, the next line: when a line's ink crosses the width marker, the next line comes at the next
+  word gap (400 ms after you lift; a touch before then cancels it). The longer 650 ms / 1.5 s waits are gone,
+  and there's no look-ahead break before you reach the marker. Ink that stops at 93-95% of the page, with the
+  marker at the page's edge, brings the next line at the same 400 ms.
+- Writing mode, blocks: the next line goes back to where the block you're writing began. It no longer drifts
+  or jumps to the page's edge after a hand pan, a pinch, an undo, or going back to finish the previous line;
+  panning right by hand to carry a zoomed-in line on keeps the block.
+- The width marker is capped at 95% of the page (reachable inside the pad's edge band), and widths are 50% /
+  75% / 100% counted from the block's start. 100% is the default (a saved choice is kept).
+- Width panel: a click on the page closes it and keeps writing mode on.
+- The "filled a screen" note doesn't come back for a page you chose to keep writing on.
 - Writing mode no longer pans sideways along the line (Karthik: distracting). The page moves only for the
-  next line, when the line reaches its width; a faint vertical line fades in where as the line's ink
+  next line, when the line reaches its width; a faint vertical line fades in there as the line's ink
   gets within 15% of the line width of it, and fades out after the new line (not in exports, thumbnails or
   the page map). The writing panel's pan choices (No pan / Centre / Left) are gone.
 - Lines no longer break early (28-32% of the page) when a capital or descender made the line's ink tall.
 - Click to draw: hard quick taps with tap-to-click no longer start drawing.
-
-## 0.1.1 (2026-10-27, build 3)
-
 - Click to draw (Settings, off by default): a touch shows a blue aim mark under your finger; a firm press
   (a real click, not a tap-to-click tap) starts the ink at the mark. Let go of the click and keep drawing;
   lift and touch again for more strokes with no clicks until you stop for 3 s (0-5 s in Settings; 0 means a
   click for every stroke). Two-finger pan, pinch, arrow keys and the eraser work exactly as with it off.
 - Settings › Start draw mode where I last wrote (on by default).
 - Writing mode never moves a word you've written: the line break is decided at the gap before the next word,
-  and a word started near the edge finishes on its line. ½- and ¾-page lines end at about half and three
-  quarters of the page.
+  and a word started near the edge finishes on its line.
 - The pages overview shows every thumbnail at once (they used to stay blank for seconds on later pages).
 - Settings window: nothing cut off; the click-to-draw time sits under its switch.
 
