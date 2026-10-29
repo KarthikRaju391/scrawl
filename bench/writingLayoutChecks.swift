@@ -31,8 +31,7 @@ func writingLayoutChecks(_ check: (Bool, String) -> Void) {
         } else { check(false, "\(a): expected a new line after the word that ran past the limit") }
         // Room left for less than 80% of a typical word after a space: break now, before the next word starts.
         l.lineWidth = (last.maxX + 36 + 68 * 0.8 - 5) / pageW
-        if case .newLine = after(l) { check(true, "\(a): the next word wouldn't fit: the line breaks before it starts") }
-        else { check(false, "\(a): expected a new line before a word that wouldn't fit") }
+        check(after(l) == .none, "\(a): no look-ahead (29 Oct): short of the limit the line doesn't break, even if the next word wouldn't fit")
         // A pause inside a word near the limit (the last 'word' is only a letter so far): no break yet.
         var partial = strokes.dropLast(2).map { $0 }
         let lp = partial.last!, lineP = partial.reduce(CGRect.null) { $0.union($1) }

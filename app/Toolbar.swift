@@ -158,6 +158,8 @@ final class ToolbarView: NSView {
         if hasPanel(items[i]) && (e.modifierFlags.contains(.control) || chevronRect(of: i).insetBy(dx: -3, dy: -3).contains(p)) {
             openPanel(of: i); needsDisplay = true; return
         }
+        // The writing panel open: a click on its button only closes it (writing mode stays on; Karthik, 29 Oct).
+        if case .writing = items[i], !panel.isHidden, panel.mode == .writing { hidePanel(); return }
         switch items[i] {
         case .undo: onUndo?()
         case .redo: onRedo?()

@@ -117,6 +117,9 @@ final class Document {
     /// 0.1.0 had no dates and keep `created == nil` ("date unknown"); loading never changes either date.
     var created: Date?
     var edited: Date?
+    /// You chose to keep writing on this page past a screen (K, or wrote on with the "filled a screen" note showing):
+    /// the note doesn't come back for it, also after the notebook is reopened (saved with the page).
+    var keptWriting = false
     nonisolated(unsafe) static var clock: () -> Date = { Date() }
 
     static let maxUndo = 100
@@ -214,7 +217,7 @@ struct ToolState {
     var sizeIndex: [ToolKind: Int] = [.pen: 1, .marker: 2, .highlighter: 2, .eraser: 2]
     var background = 0  // 0 none, 1 square, 2 dot, 3 ruled
     static let lineWidths = [0.5, 0.75, 1.0]  // writing mode line width, fraction of the page width
-    var lineWidthIndex = 1
+    var lineWidthIndex = 2   // 100% (Karthik, 29 Oct)
     var zoomLocked = false
 
     /// Saved in defaults ("toolState") so the app reopens with the same tools, sizes, colours,
@@ -611,7 +614,7 @@ final class CanvasView: MTKView {
     }
     /// Screens of this page already filled with writing (shows the "new page?" hint).
     private(set) var screensFilled = 0
-    var showPageHint: Bool { screensFilled > hintDismissedAt }
+    var showPageHint: Bool { !doc.keptWriting && screensFilled > hintDismissedAt }
     private var hintDismissedAt = 0
 
     private func updateScreensFilled() {
@@ -764,6 +767,10 @@ final class CanvasView: MTKView {
     /// How far the view's centre moved sideways by hand since the last stroke (page units). Pinches zoom about
     /// the fingers and barely move it; nudges stay under 10% of the view.
     private var handPanX = 0.0
+    /// The view's centre after the last stroke (or where the last next-line move went). Any move of yours since then
+    /// (two-finger pan in or out of draw mode, a pinch, scrolling, arrows, the page map) counts toward starting a new
+    /// block: Karthik scrolled to the middle of the page outside draw mode, and the old block (on the left) stayed.
+    private var handRef: CGPoint?
 
     /// Return in writing mode: next line now (one line down, back to the line start).
     func newLineByHand() {
@@ -1092,7 +1099,9 @@ final class CanvasView: MTKView {
     override func touchesEnded(with e: NSEvent) { nsTouchFrame(e) }
     override func touchesCancelled(with e: NSEvent) { nsTouchFrame(e) }
     // In draw mode physical clicks land on the frozen cursor over this view: swallow them.
-    override func mouseDown(with e: NSEvent) { if drawMode { clickDown() } else { super.mouseDown(with: e) } }
+    override func mouseDown(with e: NSEvent) { if drawMode { clickDown() } else { onBackgroundClick?(); super.mouseDown(with: e) } }
+    /// A click on the page outside draw mode (closes an open toolbar panel; the width picked there stays).
+    var onBackgroundClick: (() -> Void)?
     /// In draw mode a click draws (click to draw), even if it's the click that brings the window forward.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { drawMode }
     // A two-finger tap is also the system's right-click; in draw mode it lands on the frozen pointer here.
@@ -1290,6 +1299,7 @@ final class CanvasView: MTKView {
         s.id = nextStrokeIdValue; nextStrokeIdValue += 1
         doc.add(s)
         lastInk[ObjectIdentifier(doc)] = (CGPoint(x: s.bounds.maxX, y: s.bounds.midY), camera.zoom)
+        if showPageHint { doc.keptWriting = true; onStatus?() }   // wrote on with the note showing: keeping this page
         act("commit", ["id": s.id, "page": pageIndex])
         markDirty()
         updateScreensFilled()
@@ -1304,7 +1314,8 @@ final class CanvasView: MTKView {
             // after its last word): the line starts here now, and ends ½ / ¾ of the page later. Carrying on where the
             // line ended keeps its start.
             let vw = camera.visible.width
-            if handPanX >= vw * WritingLayout.deliberatePan {
+            let movedByHand = max(handPanX, handRef.map { abs(camera.center.x - $0.x) } ?? 0)
+            if movedByHand >= vw * WritingLayout.deliberatePan {
                 if let line = lineInk {
                     let gap = max(line.height * 1.5, vw * 0.08)
                     if s.bounds.minX > line.maxX + gap || s.bounds.maxX < line.minX - gap {
@@ -1317,7 +1328,7 @@ final class CanvasView: MTKView {
                     act("lineMoved", ["x": s.bounds.minX])
                 }
             }
-            handPanX = 0
+            handPanX = 0; handRef = camera.center
             if runStart == nil { runStart = s.bounds.minX }   // the run's first stroke
             segmentStart = runStart
             if legacyLineLeft == nil { legacyLineLeft = s.bounds.minX }
@@ -1335,15 +1346,9 @@ final class CanvasView: MTKView {
             if move == .none { pendingMove = nil }
             else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
             else {
-                // A line break waits for a word gap (the usual 400 ms after the lift; a touch before then cancels it).
-                // Once the line's ink has crossed the limit it goes at that gap (Karthik, 29 Oct, option A: the longer
-                // 650 ms / 1.5 s waits after crossing are gone). Before the limit (the next word wouldn't fit), a last
-                // word that still looks unfinished waits 800 ms. Written ink never moves.
-                var wait = settings.pauseBeforeMoveMs
-                if case .newLine = move {
-                    let over = line.maxX >= layout.lineEnd(lineLeft: start, pageWidth: camera.page.width)
-                    if !over && WritingLayout.lastWordUnfinished(lineStrokes, line: line, visible: camera.visible, hint: typicalWordWidth) { wait = max(wait, 800) }
-                }
+                // A line break waits for a word gap: the usual 400 ms after the lift (a touch before then cancels it),
+                // once the line's ink has crossed the limit (Karthik, 29 Oct, option A). Written ink never moves.
+                let wait = settings.pauseBeforeMoveMs
                 pendingMove = (move, now(), wait)
                 act("movePending", ["kind": move.kind])
             }
@@ -1382,7 +1387,7 @@ final class CanvasView: MTKView {
                 if ws.count >= 2, ws[ws.count / 2] <= line.width * WritingLayout.maxWordShare { typicalWordWidth = ws[ws.count / 2] }
             }
             if let line = lineInk { nextLineAt = CGPoint(x: runStart ?? WritingLayout().lineStart(pageWidth: camera.page.width), y: line.midY - max(line.height * 1.35, camera.visible.height * 0.12)) }
-            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; segmentStart = runStart; handPanX = 0   // the run goes on
+            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; segmentStart = runStart; handPanX = 0; handRef = c   // the run goes on (the app's own move isn't yours)
             slideCamera(to: c, src: "newLine")
         }
         needsRender = true
@@ -1532,7 +1537,7 @@ final class CanvasView: MTKView {
     func clearPage() {
         act("clear", ["strokes": doc.strokes.count]); doc.clear(); markDirty(); endWritingLine(); updateScreensFilled(); needsRender = true }
     /// Dismiss the "new page?" hint until another screen fills up.
-    func dismissPageHint() { hintDismissedAt = screensFilled; onStatus?() }
+    func dismissPageHint() { hintDismissedAt = screensFilled; doc.keptWriting = true; markDirty(); onStatus?() }
     /// Test: add a finished stroke as if drawn at the current zoom.
     func testAddStroke(_ pts: [StrokePoint], tool: ToolKind = .pen) {
         let s = Stroke(tool: tool, color: SIMD4(0, 0, 0, 1), size: tools.sizePt / (ptPerUnit * camera.zoom), points: pts, maxStep: smoothStep)

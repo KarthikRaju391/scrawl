@@ -51,29 +51,15 @@ struct WritingLayout {
         let right = legacyStrokeEdge ? s.maxX : max(s.maxX, line.maxX)
         let pitch = max(line.height * 1.35, v.height * 0.12)
         let next = Self.newLineCenter(lineLeft: lineLeft, lineMidY: line.midY, pitch: pitch, visible: v)
-        let gap = Self.wordGap(lineStrokes, visible: v)
-        let words = Self.words(lineStrokes, gap: gap)
         if legacyStrokeEdge {
             if right >= lineEnd { return .newLine(next) }
         } else if right >= lineEnd {
-            // A word that started before the limit ran past it: it stays on its line (written ink never moves);
-            // the line breaks after it (the app waits a longer pause for this one, so a pause inside the word
-            // doesn't split it).
+            // The line's ink crossed the limit: the next line at the next word gap. A word that started before the
+            // limit and ran past it stays on its line (written ink never moves).
             return .newLine(next)
-        } else if let w = words.last {
-            // Decide before the next word starts: if this line's typical word (after a word space) wouldn't fit
-            // before the limit, go to the next line now. 80% of a word may hang over: a slight extension is fine.
-            let widths = words.map { $0.end - $0.start }.sorted()
-            var typical = words.count >= 2 ? widths[widths.count / 2] : max(wordHint ?? 0, w.end - w.start)
-            // A "word" a quarter of the line wide means the split failed: fall back on earlier lines' word, or skip the
-            // look-ahead (the line then breaks after the word that crosses the limit).
-            let maxWord = (lineEnd - lineLeft) * Self.maxWordShare
-            if typical > maxWord { typical = (wordHint ?? .infinity) <= maxWord ? wordHint! : 0 }
-            let gaps = zip(words, words.dropFirst()).map { $1.start - $0.end }.sorted()
-            let space = gaps.isEmpty ? line.height * 0.6 : gaps[gaps.count / 2]
-            // (If the last word still looks unfinished, the app waits a longer pause before acting on this.)
-            if typical > 0 && right + space + typical * 0.8 > lineEnd { return .newLine(next) }
         }
+        // (No look-ahead any more: breaking before a word that "wouldn't fit" moved the page before Karthik reached the
+        // end of the line, 29 Oct. The line goes to the next once its ink crosses the limit.)
         return .none
     }
 

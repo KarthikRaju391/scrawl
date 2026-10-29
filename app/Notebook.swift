@@ -85,6 +85,7 @@ struct NotebookFile: Codable {
         var centerY: Double
         var created: Double?         // seconds since 1970; absent in notebooks saved before 0.1.0
         var edited: Double?
+        var kept: Bool?              // kept writing past a screen: no "filled a screen" note (absent = false)
     }
     struct StrokeFile: Codable {
         var id: Int
@@ -129,7 +130,7 @@ extension Document {
 /// can then happen on the save queue: doing that on the main thread blocked drawing for ~100 ms per save on
 /// a 4.5 MB notebook (the ink froze, then jumped).
 struct NotebookSnapshot {
-    struct Page { var strokes: [Stroke]; var undo: [[Stroke]]; var redo: [[Stroke]]; var camera: Camera; var created: Date?; var edited: Date? }
+    struct Page { var strokes: [Stroke]; var undo: [[Stroke]]; var redo: [[Stroke]]; var camera: Camera; var created: Date?; var edited: Date?; var kept = false }
     var appVersion: String
     var pageIndex: Int
     var nextStrokeId: Int
@@ -146,7 +147,7 @@ extension NotebookFile {
             for list in p.undo + p.redo { for s in list { table[s.id] = s } }
             pages.append(.init(strokes: p.strokes.map(\.id), undo: p.undo.map { $0.map(\.id) }, redo: p.redo.map { $0.map(\.id) },
                                zoom: p.camera.zoom, centerX: p.camera.center.x, centerY: p.camera.center.y,
-                               created: p.created?.timeIntervalSince1970, edited: p.edited?.timeIntervalSince1970))
+                               created: p.created?.timeIntervalSince1970, edited: p.edited?.timeIntervalSince1970, kept: p.kept ? true : nil))
         }
         strokes = table.values.sorted { $0.id < $1.id }.map {
             .init(id: $0.id, tool: $0.tool.rawValue, color: [$0.color.x, $0.color.y, $0.color.z, $0.color.w], size: $0.size, points: NotebookFile.pack($0.points))
@@ -163,7 +164,7 @@ extension CanvasView {
                              let h = doc.history
                              return .init(strokes: doc.strokes, undo: h.undo, redo: h.redo,
                                           camera: i == pageIndex ? camera : (i < pageCamerasForSave.count ? pageCamerasForSave[i] : camera),
-                                          created: doc.created, edited: doc.edited)
+                                          created: doc.created, edited: doc.edited, kept: doc.keptWriting)
                          })
     }
     func notebookFile() -> NotebookFile { NotebookFile(notebookSnapshot()) }
@@ -184,6 +185,7 @@ extension CanvasView {
             d.restore(strokes: list(p.strokes), undo: p.undo.map(list), redo: p.redo.map(list))
             d.created = p.created.map(Date.init(timeIntervalSince1970:))
             d.edited = p.edited.map(Date.init(timeIntervalSince1970:))
+            d.keptWriting = p.kept ?? false
             docs.append(d)
             var c = camera; c.zoom = p.zoom; c.center = CGPoint(x: p.centerX, y: p.centerY); c.clamp()
             cams.append(c)

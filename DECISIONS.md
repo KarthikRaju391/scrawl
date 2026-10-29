@@ -172,3 +172,10 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 
 ## The next line at the next word gap once past the limit (Karthik, 29 Oct, option A)
 - Once the line's ink has crossed the width marker, the next line comes at the next normal word gap: 400 ms after the lift, like every other page move; a touch before then cancels it. The longer waits after crossing (650 ms, and 1.5 s for a word that looked unfinished) are gone. Before the marker (the look-ahead: the next word wouldn't fit), an unfinished-looking last word still waits 800 ms. Written ink never moves.
+
+## Karthik's feedback on e2753a7 (29 Oct)
+- "Filled a screen" note: once you keep writing on a page (K, or more ink with the note showing), it doesn't come back for that page, also after reopening (saved per page as `kept`).
+- The writing width defaults to 100% (a saved choice is kept).
+- The width panel: a click on the page closes it and keeps writing mode on (the picked width is already applied); a click on the writing button while the panel is open only closes it.
+- The next line went to the left of the page (recording 17:16): the block start was never moved. He scrolled to the middle of the page outside draw mode and pinched; only a two-finger pan in draw mode counted as moving somewhere new, so the block stayed at text written earlier on the left (x 34; next lines went to x 250-340; his strokes were at 1040+). Now any move of the view by you since the last stroke (pan in or out of draw mode, pinch, scroll, arrows, page map) of 10% of the view counts; the app's own next-line move doesn't.
+- No look-ahead line break: "it panned before I even reached the end of the line". The next line comes only when the ink crosses the limit (at the next word gap, 400 ms).
