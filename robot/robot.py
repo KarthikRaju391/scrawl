@@ -1416,6 +1416,110 @@ def run_scenarios(app, rep, only, hand):
         rep.shot(app, "block from the middle to the page's right side")
         ensure(app, "draw", False, "d")
 
+    @scenario("block-pan-continue", "Karthik (29 Oct, 74c61cf, page 18): a block started at 22% of the page, 50% width, at 200%. He wrote, undid a word and rewrote it, then panned right by hand and went on writing the same line a word gap after its end: that started a new block there (the limit jumped to the page's edge and the move went back to where he'd panned to). Carrying on the line after a hand pan keeps the block; the move comes at its start + 50% and goes back to its start. Also: ink that stops at 93-95% of the page (blocks from 20/50/60%, widths 50/75/100%) always brings the next line at the block's start.")
+    def _():
+        def setup(width_idx, zoom, start):
+            ensure(app, "draw", False, "d"); app.press("n")
+            ensure(app, "writing", False, "w"); ensure(app, "writing", True, "w")
+            app.click("writing", "chevron"); app.cmd({"cmd": "panelPick", "writing": width_idx}); app.press("esc")
+            app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+            ensure(app, "draw", True, "d")
+            st = app.state(); W = st["pageW"]
+            if zoom != "100%":
+                app.cmd({"cmd": "zoomMenu", "pick": zoom}); settle(app, limit=3)
+                for _ in range(16): app.press("up")
+                for _ in range(16): app.press("left")
+                st = app.state()
+                for _ in range(40):
+                    if st["view"]["x"] >= W * start - st["view"]["w"] * 0.15 - 1: break
+                    app.press("right"); settle(app); st = app.state()
+            time.sleep(1.4)
+            return app.state()
+        cid = [29000]
+        def word_at(w, x, y, wait=1.0, pan=True):
+            st = app.state(); pad_w, pad_h = st["padMM"]
+            (px, py), = app.cmd({"cmd": "toPad", "points": [[x, y]]})["points"]
+            if pan and px + hand.width(w) > pad_w * 0.9:   # out of pad: pan by hand first, as a person does
+                app.touch(two_finger(pad_w / 2, pad_h / 2, 25, 25, shift=(-(pad_w * 0.4), 0), dur=0.5)); settle(app)
+                (px, py), = app.cmd({"cmd": "toPad", "points": [[x, y]]})["points"]
+            strokes = hand.word(w, px, py); fr, cid[0] = hand.frames(strokes, cid[0])
+            n = app.state()["strokes"]
+            app.touch(fr + [[0.008, []]] * int(wait / 0.008), settle=0.2)
+            for _ in range(60):
+                if not app.state().get("pendingMove"): break
+                time.sleep(0.05)
+            settle(app); s_ = app.state()
+            return s_, max(b[2] for b in s_["pageBounds"][n:]) if s_["pageBounds"][n:] else x
+        words = ("the quick brown fox jumps over the lazy dog and keeps on going " * 4).split()
+        old_h = hand.h
+
+        # (a) His sequence: 22%, 50%, 200%: write, undo the last word and rewrite it, pan right by hand, carry on a word
+        # gap (5% of the page, his was 4.9%) after the line's end.
+        for variant in ("pan after rewriting", "pan right after the undo"):
+            st = setup(0, "200%", 0.22); W = st["pageW"]; pad_w, pad_h = st["padMM"]
+            p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
+            upm = (p1[0] - p0[0]) / 10; hand.h = 6; sp = hand.h * 0.6 * upm
+            y = app.cmd({"cmd": "toPagePt", "point": [0, pad_h * 0.7]})["point"][1]
+            start = W * 0.22; nl0 = st["newLines"]; lims = []; right = start; i = 0
+            while right < W * 0.42 and i < 20:
+                s_, right = word_at(words[i], start if i == 0 else right + sp, y, pan=False); i += 1
+                if s_.get("lineLimitX") is not None: lims.append(s_["lineLimitX"])
+            n_before = app.state()["strokes"]
+            app.touch(double_tap(2, pad_w / 2, pad_h / 2)); settle(app)   # undo the last word's last stroke
+            r_ = max(b[2] for b in app.state()["pageBounds"][-6:])
+            if variant == "pan after rewriting":
+                s_, right = word_at("dog", r_ + sp, y, pan=False)
+            else:
+                right = r_
+            # His gap after the pan was 78 page units: 1.2x the old "somewhere new" gap for his line then (the rewritten
+            # word alone, 42 high: max(1.5 x height, 8% of the view) = 64). The same here for this hand's line, under 9.5%.
+            sb = app.state(); vw = sb["view"]["w"]
+            rew = [b for b in sb["pageBounds"][-8:] if abs((b[1] + b[3]) / 2 - y) < 60 and b[0] > r_ - W * 0.08]
+            lh = (max(b[3] for b in rew) - min(b[1] for b in rew)) if rew else 40
+            gap_ = min(1.25 * max(1.5 * lh, 0.08 * vw), 0.095 * W)
+            app.touch(two_finger(pad_w / 2, pad_h / 2, 25, 25, shift=(-(pad_w * 0.4), 0), dur=0.5)); settle(app)   # a hand pan right
+            x = right + gap_; j = 0; first_move = None
+            while j < 30 and app.state()["newLines"] == nl0:
+                s_, r2 = word_at(words[(i + j) % len(words)], x, y); j += 1
+                if s_.get("lineLimitX") is not None and s_["newLines"] == nl0: lims.append(s_["lineLimitX"])
+                if s_["newLines"] > nl0: first_move = right
+                right = r2; x = right + sp
+            s2 = app.state(); nl = s2.get("nextLine") or [None]
+            label = f"(a) 22%, 50%, 200%, {variant}"
+            want = start + 0.5 * W
+            rep.step(label, gapAfterPan=round(gap_ / W, 3), limits=sorted({round(l / W, 3) for l in lims}), inkAtMove=first_move and round(first_move / W, 3), nextLine=nl[0] and round(nl[0] / W, 3), newLines=s2["newLines"] - nl0, undone=n_before - app.state()["strokes"])
+            rep.check(lims and all(abs(l - want) < 0.01 * W for l in lims), f"{label}: the limit stays at the block's start + 50% ({want / W:.0%}) after the pan", f"limits {sorted({round(l / W, 3) for l in lims})}")
+            rep.check(s2["newLines"] > nl0 and first_move is not None and first_move < want + 0.12 * W, f"{label}: the next line comes once the ink crosses it (not at the page's edge)", f"ink at the move {first_move and first_move / W:.1%}, new lines {s2['newLines'] - nl0}")
+            rep.check(nl[0] is not None and abs(nl[0] - start) < 0.02 * W, f"{label}: the next line is back at the block's start", f"next line at {nl[0] and nl[0] / W:.1%}, block start 22%")
+            rep.shot(app, label)
+
+        # (b) Ink that stops at 93-95% of the page (or the move came earlier, at the width): a next-line move to the block's
+        # start, within 2.5 s of the lift. Zoom 100%.
+        for start in (0.20, 0.50, 0.60):
+            for wi, wname in ((0, "50%"), (1, "75%"), (2, "100%")):
+                st = setup(wi, "100%", start); W = st["pageW"]; pad_w, pad_h = st["padMM"]
+                p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
+                upm = (p1[0] - p0[0]) / 10; hand.h = 4.5; sp = hand.h * 0.6 * upm
+                y = app.cmd({"cmd": "toPagePt", "point": [0, pad_h * 0.7]})["point"][1]
+                x0 = W * start; nl0 = st["newLines"]; right = x0; i = 0; s_ = st; hi = W * 0.947
+                while i < 40 and s_["newLines"] == nl0 and right < W * 0.93:
+                    w_ = words[i % len(words)]
+                    if i > 0 and right + sp + hand.width(w_) * upm > hi:
+                        w_ = next((c for c in ("an", "a", "i") if right + sp + hand.width(c) * upm <= hi), None)
+                        if w_ is None: break
+                    s_, right = word_at(w_, x0 if i == 0 else right + sp, y, wait=0.6, pan=False); i += 1
+                for _ in range(30):   # the finger stays up
+                    if app.state()["newLines"] > nl0: break
+                    time.sleep(0.1)
+                s2 = app.state(); nl = s2.get("nextLine") or [None]
+                label = f"(b) {wname} from {start:.0%}"
+                rep.step(label, inkRight=round(right / W, 3), limit=s_.get("lineLimitX") and round(s_["lineLimitX"] / W, 3), newLines=s2["newLines"] - nl0, nextLine=nl[0] and round(nl[0] / W, 3))
+                rep.check(s2["newLines"] > nl0 and nl[0] is not None and abs(nl[0] - x0) < 0.02 * W,
+                          f"{label}: the line (ink to {right / W:.1%}) brings the next line at the block's start",
+                          f"ink to {right / W:.1%}, new lines {s2['newLines'] - nl0}, next line at {nl[0] and nl[0] / W:.1%}")
+        hand.h = old_h
+        ensure(app, "draw", False, "d")
+
     @scenario("half-line-hard-limit", "½-page lines at zoom 100% (Karthik's screenshot): ink never goes past 50% of the page; the word that would cross the mark goes to the next line.")
     def _():
         hard_limit(0.5, 0, "½-page")

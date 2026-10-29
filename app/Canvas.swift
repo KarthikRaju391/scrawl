@@ -1331,15 +1331,17 @@ final class CanvasView: MTKView {
                 lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; lineHeld = false; prevLine = nil
                 if !nextOfBlock { segmentStart = nil; runStart = nil }   // a new run here
             }
-            // A deliberate hand pan (10% of the view or more) and then writing somewhere new on the line (not right
-            // after its last word): the line starts here now, and ends ½ / ¾ of the page later. Carrying on where the
-            // line ended keeps its start.
+            // A deliberate hand pan (10% of the view or more) and then writing somewhere new on the line: the line
+            // starts here now, and ends ½ / ¾ of the page later. Carrying on where the line ended keeps its start: to
+            // its right, anything within 10% of the page is carrying on (Karthik, 29 Oct, page 18: with no sideways
+            // auto-pan, panning right by hand is how a zoomed-in line goes on; his next word after the pan came 4.9% of
+            // the page after the line's end, past the old 8%-of-the-view gap, and started a block there).
             let vw = camera.visible.width
             let movedByHand = continued ? 0 : max(handPanX, handRef.map { abs(camera.center.x - $0.x) } ?? 0)
             if movedByHand >= vw * WritingLayout.deliberatePan {
                 if let line = lineInk {
                     let gap = max(line.height * 1.5, vw * 0.08)
-                    if s.bounds.minX > line.maxX + gap || s.bounds.maxX < line.minX - gap {
+                    if s.bounds.minX > line.maxX + max(gap, camera.page.width * WritingLayout.newRunAway) || s.bounds.maxX < line.minX - gap {
                         runStart = s.bounds.minX; lineInk = nil; lineStrokes = []   // a new run where you moved to
                         act("lineMoved", ["x": s.bounds.minX])
                     }
@@ -1371,7 +1373,10 @@ final class CanvasView: MTKView {
             else {
                 // A line break waits for a word gap: the usual 400 ms after the lift (a touch before then cancels it),
                 // once the line's ink has crossed the limit (Karthik, 29 Oct, option A). Written ink never moves.
-                let wait = settings.pauseBeforeMoveMs
+                // Ink that stopped short of a limit capped at the page's edge (93-95% of the page) waits longer: it's
+                // the last word that fits, but a word there can still have one more after it (Karthik, 19:48).
+                let wait = line.maxX >= layout.lineEnd(lineLeft: start, pageWidth: camera.page.width) ? settings.pauseBeforeMoveMs
+                    : max(settings.pauseBeforeMoveMs, WritingLayout.nearEdgeWaitMs)
                 pendingMove = (move, now(), wait)
                 act("movePending", ["kind": move.kind, "right": line.maxX, "limit": layout.lineEnd(lineLeft: start, pageWidth: camera.page.width),
                                     "runStart": runStart ?? -1, "segStart": segmentStart ?? -1, "width": layout.lineWidth])
@@ -1550,7 +1555,14 @@ final class CanvasView: MTKView {
         logger.event(["what": "undo", "strokesBefore": doc.strokes.count])   // the "that landed wrong" signal
         act("undo", ["strokes": doc.strokes.count])
         let before = doc.strokes
+        let line = lineStrokes
         doc.undo(); endWritingLine(keepRun: true); updateScreensFilled(); markDirty(); needsRender = true
+        // The line stays open with what's left of it (rewriting its last word, or panning on after the undo, carries the
+        // line on; with it closed, the next stroke after a pan looked like a new block).
+        let left = line.filter { r in doc.strokes.contains { $0.bounds == r } }
+        if writingMode, let first = left.first {
+            lineStrokes = left; lineInk = left.dropFirst().reduce(first) { $0.union($1) }
+        }
         fadeOut(before.filter { s in !doc.strokes.contains { $0 === s } })
     }
     /// Strokes that just went (undo, scratch-out) fade out over 120 ms, so you see what was taken away.

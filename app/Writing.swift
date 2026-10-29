@@ -38,6 +38,11 @@ struct WritingLayout {
     /// while he still had a word or two to write, and the move came mid-phrase. A word that starts before it still
     /// finishes past it, up to the page's edge.
     static let rightCap = 0.95
+    /// When the limit is at the page's edge (past 93% of the page, up to `rightCap`), ink that stops at 93% of the page
+    /// or more is a full line too: the next line comes after a longer pause (`nearEdgeWaitMs`). Ink at 93-95% got no move at all
+    /// (74c61cf); a 93% limit would break lines mid-phrase (Karthik wrote on after a word ending at 92.99%, 0.97 s later).
+    static let nearEdge = 0.93
+    static let nearEdgeWaitMs = 1500.0
     /// A hand pan counts as deliberate when the view moved sideways by at least this much of its width.
     static let deliberatePan = 0.10
     /// After a hand move, the next line starts a new block only this far (fraction of the page width) from the current
@@ -65,6 +70,8 @@ struct WritingLayout {
             // The line's ink crossed the limit: the next line at the next word gap. A word that started before the
             // limit and ran past it stays on its line (written ink never moves).
             return .newLine(next)
+        } else if lineEnd > pageWidth * Self.nearEdge, right >= pageWidth * Self.nearEdge {
+            return .newLine(next)   // the page's edge is near: the app waits longer for this one (Canvas)
         }
         // (No look-ahead any more: breaking before a word that "wouldn't fit" moved the page before Karthik reached the
         // end of the line, 29 Oct. The line goes to the next once its ink crosses the limit.)
