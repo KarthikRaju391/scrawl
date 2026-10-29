@@ -1436,7 +1436,7 @@ def run_scenarios(app, rep, only, hand):
             time.sleep(1.4)
             return app.state()
         cid = [29000]
-        def word_at(w, x, y, wait=1.0, pan=True):
+        def word_at(w, x, y, wait=1.0, pan=True, poll=True):
             st = app.state(); pad_w, pad_h = st["padMM"]
             (px, py), = app.cmd({"cmd": "toPad", "points": [[x, y]]})["points"]
             if pan and px + hand.width(w) > pad_w * 0.9:   # out of pad: pan by hand first, as a person does
@@ -1445,11 +1445,14 @@ def run_scenarios(app, rep, only, hand):
             strokes = hand.word(w, px, py); fr, cid[0] = hand.frames(strokes, cid[0])
             n = app.state()["strokes"]
             app.touch(fr + [[0.008, []]] * int(wait / 0.008), settle=0.2)
-            for _ in range(60):
+            lifted[0] = time.time() - wait - 0.2
+            for _ in range(60 if poll else 0):
                 if not app.state().get("pendingMove"): break
                 time.sleep(0.05)
-            settle(app); s_ = app.state()
+            if poll: settle(app)
+            s_ = app.state()
             return s_, max(b[2] for b in s_["pageBounds"][n:]) if s_["pageBounds"][n:] else x
+        lifted = [0.0]
         words = ("the quick brown fox jumps over the lazy dog and keeps on going " * 4).split()
         old_h = hand.h
 
@@ -1507,16 +1510,17 @@ def run_scenarios(app, rep, only, hand):
                     if i > 0 and right + sp + hand.width(w_) * upm > hi:
                         w_ = next((c for c in ("an", "a", "i") if right + sp + hand.width(c) * upm <= hi), None)
                         if w_ is None: break
-                    s_, right = word_at(w_, x0 if i == 0 else right + sp, y, wait=0.6, pan=False); i += 1
-                for _ in range(30):   # the finger stays up
-                    if app.state()["newLines"] > nl0: break
-                    time.sleep(0.1)
-                s2 = app.state(); nl = s2.get("nextLine") or [None]
+                    s_, right = word_at(w_, x0 if i == 0 else right + sp, y, wait=0.6, pan=False, poll=False); i += 1
+                # Karthik (b03bac2): the same 400 ms word-gap pause as at the width marker, not 1.5 s. The finger has been
+                # up 0.6 s+ here; look by 0.9 s after the lift.
+                while time.time() - lifted[0] < 0.9 and app.state()["newLines"] == nl0: time.sleep(0.03)
+                s2 = app.state(); dt = time.time() - lifted[0]; nl = s2.get("nextLine") or [None]
+                time.sleep(max(0, 2.0 - dt)); s3 = app.state()   # (and whether it came later)
                 label = f"(b) {wname} from {start:.0%}"
-                rep.step(label, inkRight=round(right / W, 3), limit=s_.get("lineLimitX") and round(s_["lineLimitX"] / W, 3), newLines=s2["newLines"] - nl0, nextLine=nl[0] and round(nl[0] / W, 3))
+                rep.step(label, inkRight=round(right / W, 3), limit=s_.get("lineLimitX") and round(s_["lineLimitX"] / W, 3), newLinesBy900ms=s2["newLines"] - nl0, newLinesBy2s=s3["newLines"] - nl0, nextLine=nl[0] and round(nl[0] / W, 3))
                 rep.check(s2["newLines"] > nl0 and nl[0] is not None and abs(nl[0] - x0) < 0.02 * W,
-                          f"{label}: the line (ink to {right / W:.1%}) brings the next line at the block's start",
-                          f"ink to {right / W:.1%}, new lines {s2['newLines'] - nl0}, next line at {nl[0] and nl[0] / W:.1%}")
+                          f"{label}: the line (ink to {right / W:.1%}) brings the next line at the block's start at the 400 ms word gap (by 0.9 s after the lift)",
+                          f"ink to {right / W:.1%}, new lines by {dt:.2f} s: {s2['newLines'] - nl0}, by 2 s: {s3['newLines'] - nl0}, next line at {nl[0] and nl[0] / W:.1%}")
         hand.h = old_h
         ensure(app, "draw", False, "d")
 

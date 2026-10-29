@@ -1372,11 +1372,10 @@ final class CanvasView: MTKView {
             else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
             else {
                 // A line break waits for a word gap: the usual 400 ms after the lift (a touch before then cancels it),
-                // once the line's ink has crossed the limit (Karthik, 29 Oct, option A). Written ink never moves.
-                // Ink that stopped short of a limit capped at the page's edge (93-95% of the page) waits longer: it's
-                // the last word that fits, but a word there can still have one more after it (Karthik, 19:48).
-                let wait = line.maxX >= layout.lineEnd(lineLeft: start, pageWidth: camera.page.width) ? settings.pauseBeforeMoveMs
-                    : max(settings.pauseBeforeMoveMs, WritingLayout.nearEdgeWaitMs)
+                // once the line's ink has crossed the limit (Karthik, 29 Oct, option A), or reached 93% of the page with
+                // the limit near the page's edge: the same 400 ms (Karthik on b03bac2: "don't wait for 1.5s, users won't
+                // know that"). Written ink never moves.
+                let wait = settings.pauseBeforeMoveMs
                 pendingMove = (move, now(), wait)
                 act("movePending", ["kind": move.kind, "right": line.maxX, "limit": layout.lineEnd(lineLeft: start, pageWidth: camera.page.width),
                                     "runStart": runStart ?? -1, "segStart": segmentStart ?? -1, "width": layout.lineWidth])
