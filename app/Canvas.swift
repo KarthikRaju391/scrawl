@@ -547,6 +547,9 @@ final class CanvasView: MTKView {
         guard clickDrawOn else { return clickDrawOff() }
         if builder == nil && CACurrentMediaTime() - clickDrawLastLift > Self.clickDrawTimeout { clickDrawOff() }
     }
+    /// Session replay (TestSession): a recorded click / click-to-draw-off, without the live press check.
+    func replayClick() { CanvasView.clickToDraw = true; clickDrawOn = true; clickDrawLastLift = now(); if builder == nil && !gestures.beginNow() { clickAt = CACurrentMediaTime() } }
+    func replayClickDrawOff() { clickDrawOff() }
     private func clickDrawOff() {
         clickDrawTimer?.invalidate(); clickDrawTimer = nil
         guard clickDrawOn else { return }
@@ -714,7 +717,7 @@ final class CanvasView: MTKView {
     private func endWritingLine(keepRun: Bool = false) {
         lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil; handPanX = 0
         if !keepRun { runStart = nil }
-        segmentStart = runStart
+        segmentStart = runStart; prevLine = nil; lineHeld = false
     }
     /// Where the current line started (WritingLayout.segmentStart): the writing run's start.
     private var segmentStart: Double?
@@ -771,6 +774,10 @@ final class CanvasView: MTKView {
     /// (two-finger pan in or out of draw mode, a pinch, scrolling, arrows, the page map) counts toward starting a new
     /// block: Karthik scrolled to the middle of the page outside draw mode, and the old block (on the left) stayed.
     private var handRef: CGPoint?
+    /// The line a next-line move just left, and whether the current line is one you went back to finish (no automatic
+    /// move for it then: you're finishing it by hand).
+    private var prevLine: (ink: CGRect, strokes: [CGRect])?
+    private var lineHeld = false
 
     /// Return in writing mode: next line now (one line down, back to the line start).
     func newLineByHand() {
@@ -1306,15 +1313,29 @@ final class CanvasView: MTKView {
         // Writing mode, now that the finger is up (see Writing.swift).
         if writingMode {
             let vh = camera.visible.height
-            // A stroke well above or below the current line (you moved there yourself): new line here.
+            var continued = false
+            // Back on the line a next-line move just left, at or after its end: you're finishing it. It goes on (the block
+            // stays), with no automatic move for it (Karthik: a new block started there and every next line went off the
+            // page's edge).
+            if lineInk == nil, let p = prevLine, abs(s.bounds.midY - p.ink.midY) < max(p.ink.height * 0.6, vh * 0.05),
+               s.bounds.minX >= p.ink.maxX - max(p.ink.height, camera.visible.width * 0.03) {
+                lineInk = p.ink; lineStrokes = p.strokes; lineHeld = true; continued = true
+                act("lineContinued", ["x": s.bounds.minX])
+            }
+            if lineInk == nil { prevLine = nil }
+            // A stroke well above or below the current line (you moved there yourself): a new line there. Just below it
+            // and near the block's start, it's the block's next line; anywhere else, a new block.
             if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
-                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; segmentStart = nil; runStart = nil   // a new run here
+                let nextOfBlock = s.bounds.midY < line.midY && line.midY - s.bounds.midY < max(line.height, vh * 0.12) * 3.5 &&
+                    runStart.map { abs(s.bounds.minX - $0) < camera.page.width * WritingLayout.newRunAway } == true
+                lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; lineHeld = false; prevLine = nil
+                if !nextOfBlock { segmentStart = nil; runStart = nil }   // a new run here
             }
             // A deliberate hand pan (10% of the view or more) and then writing somewhere new on the line (not right
             // after its last word): the line starts here now, and ends ½ / ¾ of the page later. Carrying on where the
             // line ended keeps its start.
             let vw = camera.visible.width
-            let movedByHand = max(handPanX, handRef.map { abs(camera.center.x - $0.x) } ?? 0)
+            let movedByHand = continued ? 0 : max(handPanX, handRef.map { abs(camera.center.x - $0.x) } ?? 0)
             if movedByHand >= vw * WritingLayout.deliberatePan {
                 if let line = lineInk {
                     let gap = max(line.height * 1.5, vw * 0.08)
@@ -1322,8 +1343,10 @@ final class CanvasView: MTKView {
                         runStart = s.bounds.minX; lineInk = nil; lineStrokes = []   // a new run where you moved to
                         act("lineMoved", ["x": s.bounds.minX])
                     }
-                } else {
-                    // No line open (a new line just came, or nothing written yet): a new run where you moved to.
+                } else if runStart.map({ abs(s.bounds.minX - $0) > camera.page.width * WritingLayout.newRunAway }) ?? true {
+                    // No line open (a new line just came, or nothing written yet), and you write well away from the
+                    // block's start: a new run there. Near it (a pinch or nudge, then the next line a little off its
+                    // start), the block stays (it drifted to 56% of the page with each line before).
                     runStart = s.bounds.minX
                     act("lineMoved", ["x": s.bounds.minX])
                 }
@@ -1343,14 +1366,15 @@ final class CanvasView: MTKView {
             let start = legacyWriting ? legacyLineLeft! : (runStart ?? layout.lineStart(pageWidth: camera.page.width))
             let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: start,
                                     visible: camera.visible, pageWidth: camera.page.width)
-            if move == .none { pendingMove = nil }
+            if move == .none || lineHeld { pendingMove = nil }
             else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
             else {
                 // A line break waits for a word gap: the usual 400 ms after the lift (a touch before then cancels it),
                 // once the line's ink has crossed the limit (Karthik, 29 Oct, option A). Written ink never moves.
                 let wait = settings.pauseBeforeMoveMs
                 pendingMove = (move, now(), wait)
-                act("movePending", ["kind": move.kind])
+                act("movePending", ["kind": move.kind, "right": line.maxX, "limit": layout.lineEnd(lineLeft: start, pageWidth: camera.page.width),
+                                    "runStart": runStart ?? -1, "segStart": segmentStart ?? -1, "width": layout.lineWidth])
             }
         }
     }
@@ -1387,7 +1411,12 @@ final class CanvasView: MTKView {
                 if ws.count >= 2, ws[ws.count / 2] <= line.width * WritingLayout.maxWordShare { typicalWordWidth = ws[ws.count / 2] }
             }
             if let line = lineInk { nextLineAt = CGPoint(x: runStart ?? WritingLayout().lineStart(pageWidth: camera.page.width), y: line.midY - max(line.height * 1.35, camera.visible.height * 0.12)) }
-            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1; lineInk = nil; lineStrokes = []; segmentStart = runStart; handPanX = 0; handRef = c   // the run goes on (the app's own move isn't yours)
+            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1
+            if let l = lineInk { prevLine = (l, lineStrokes) }
+            lineHeld = false; lineInk = nil; lineStrokes = []; segmentStart = runStart; handPanX = 0   // the run goes on
+            // The app's own move isn't yours: remember where the view will really be (the camera stops at the page's
+            // edge; the unclamped target looked like a hand move of 10%+ and started a new block at the page's edge).
+            var target = camera; target.center = c; target.clamp(); handRef = target.center
             slideCamera(to: c, src: "newLine")
         }
         needsRender = true

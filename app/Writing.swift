@@ -31,10 +31,18 @@ struct WritingLayout {
     var wordHint: Double?
     /// The limit for this line (page units).
     func lineEnd(lineLeft: Double, pageWidth: Double) -> Double {
-        min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageWidth * (1 - margin))
+        min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageWidth * Self.rightCap)
     }
+    /// The limit never goes past 95% of the page width (Karthik, 29 Oct): at 97% ink often stopped short of it (no next
+    /// line) and the guide line hugged the page's edge; at 92% his lines (he writes to 95-100% of the page) crossed it
+    /// while he still had a word or two to write, and the move came mid-phrase. A word that starts before it still
+    /// finishes past it, up to the page's edge.
+    static let rightCap = 0.95
     /// A hand pan counts as deliberate when the view moved sideways by at least this much of its width.
     static let deliberatePan = 0.10
+    /// After a hand move, the next line starts a new block only this far (fraction of the page width) from the current
+    /// block's start.
+    static let newRunAway = 0.10
     /// Where the line sits in the view after a new line, from the top: below the middle, so the lines
     /// you just wrote stay in view above it.
     static let lineFromTop = 0.575
@@ -42,7 +50,7 @@ struct WritingLayout {
     /// `line` = bounds of the current line's ink (incl. this stroke); `lineStrokes` = its strokes;
     /// `lineLeft` = where lines start (the app passes `lineStart`).
     func after(stroke s: CGRect, line: CGRect, lineStrokes: [CGRect], lineLeft: Double, visible v: CGRect, pageWidth: Double) -> Move {
-        let pageEnd = pageWidth * (1 - margin)
+        let pageEnd = pageWidth * Self.rightCap
         // A hard limit: 50 / 75 / 100% of the page width from where the writing run began (the app passes it as
         // `segmentStart`; without one, from the page's left edge), capped at the page's right margin.
         let lineEnd = min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageEnd)

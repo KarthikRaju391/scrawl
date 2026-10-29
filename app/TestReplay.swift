@@ -325,6 +325,7 @@ enum TestSession {
         // Start from the first recorded tool state and view.
         if let t0 = rows.first(where: { $0["a"] as? String == "tools" }) { apply(tools: t0, canvas) }
         var drawing = false
+        let allViews = CommandLine.arguments.contains("--replay-all-views")
         for r in rows {
             vclock = r["m"] as? Double ?? vclock
             canvas.advanceClock(); canvas.flushInputForTest()
@@ -336,7 +337,8 @@ enum TestSession {
                 canvas.handle(contacts, arrival: vclock, sensorT: r["t"] as? Double ?? 0)
             case "view":
                 let src = r["src"] as? String ?? ""
-                if ["scroll", "magnify", "test", "zoomToPage", "replay", "unknown"].contains(src) {
+                // --replay-all-views: also the recorded pinch / two-finger moves, so strokes land where they did.
+                if ["scroll", "magnify", "test", "zoomToPage", "replay", "unknown"].contains(src) || (allViews && src == "pinch") {
                     canvas.setVisibleForReplay(x: r["x"] as! Double, y: r["y"] as! Double, w: r["w"] as! Double, z: r["z"] as! Double)
                 }
             case "act":
@@ -349,6 +351,8 @@ enum TestSession {
                 case "clear": canvas.clearPage()
                 case "newPage": canvas.newPage()
                 case "goToPage": canvas.goToPage(r["page"] as? Int ?? 0)
+                case "click": canvas.replayClick()          // click to draw (Settings), as recorded
+                case "clickDrawOff": canvas.replayClickDrawOff()
                 default: break
                 }
             default: break
