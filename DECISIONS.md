@@ -169,3 +169,6 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Widths are 50% / 75% / 100% of the page width from the run's start (the panel says so now), capped at the page's right margin (97% of the page; 100% always ends there). A run starting at 55% with 50% wraps at 97%. From the margin (3.5%), 50% lines end at about 53.5% of the page (they ended at 50% before, measured from the page's edge).
 - Only writing mode moves to the next line (unchanged): with it off, the page never moves while you write.
 - The limit line sits at the run's start + the width (same value), fading in within 15% of it.
+
+## The next line at the next word gap once past the limit (Karthik, 29 Oct, option A)
+- Once the line's ink has crossed the width marker, the next line comes at the next normal word gap: 400 ms after the lift, like every other page move; a touch before then cancels it. The longer waits after crossing (650 ms, and 1.5 s for a word that looked unfinished) are gone. Before the marker (the look-ahead: the next word wouldn't fit), an unfinished-looking last word still waits 800 ms. Written ink never moves.
