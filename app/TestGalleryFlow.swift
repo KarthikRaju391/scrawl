@@ -3,6 +3,7 @@
 // transition's first and last frames are rendered and compared with what is really there: the tile as the overview
 // draws it, and the page with its toolbar. One press = one change; transitions never stack.
 import AppKit
+import CoreImage
 
 enum TestGalleryFlow {
     static func run(app: AppDelegate) {
@@ -33,7 +34,49 @@ enum TestGalleryFlow {
         func transitionImage() -> [UInt8] {
             guard let tv = app.transitionView, let l = tv.layer else { return [] }
             let b = tv.bounds
-            return gray({ ctx, sz in ctx.scaleBy(x: sz.width / b.width, y: sz.height / b.height); l.render(in: ctx) }, aspect: b.width / max(b.height, 1))
+            // What's on screen there: the overview underneath (where the moving page lets it through), then the page.
+            var under: CGImage? = nil
+            if app.galleryShown, let g = app.gallery {
+                let rg = g.convert(tv.frame, from: app.container)
+                if let rep = g.bitmapImageRepForCachingDisplay(in: rg) { g.cacheDisplay(in: rg, to: rep); under = rep.cgImage }
+            }
+            return gray({ ctx, sz in
+                if let u = under { ctx.draw(u, in: CGRect(origin: .zero, size: sz)) }
+                ctx.scaleBy(x: sz.width / b.width, y: sz.height / b.height)
+                // The moving page's layers drawn as the window server shows them (render(in:) can't draw an IOSurface).
+                ctx.addRect(b); ctx.clip()
+                if let bg = l.backgroundColor { ctx.setFillColor(bg); ctx.fill(b) }
+                for sub in [l] + (l.sublayers ?? []) {
+                    guard let img = image(of: sub.contents), sub.opacity > 0 else { continue }
+                    let f = sub === l ? b : sub.frame
+                    var r = f
+                    if sub.contentsGravity == .resizeAspectFill {
+                        let k = max(f.width / CGFloat(img.width), f.height / CGFloat(img.height))
+                        r = CGRect(x: f.midX - CGFloat(img.width) * k / 2, y: f.midY - CGFloat(img.height) * k / 2, width: CGFloat(img.width) * k, height: CGFloat(img.height) * k)
+                    }
+                    ctx.saveGState(); ctx.addRect(f); ctx.clip(); ctx.setAlpha(CGFloat(sub.opacity)); ctx.interpolationQuality = .high
+                    ctx.draw(img, in: r); ctx.restoreGState()
+                }
+            }, aspect: b.width / max(b.height, 1))
+        }
+        /// A layer's picture as a CGImage (it may be an IOSurface).
+        func image(of contents: Any?) -> CGImage? {
+            guard let c = contents else { return nil }
+            if CFGetTypeID(c as CFTypeRef) == CGImage.typeID { return (c as! CGImage) }
+            if CFGetTypeID(c as CFTypeRef) == IOSurfaceGetTypeID() {
+                let ci = CIImage(ioSurface: c as! IOSurfaceRef)
+                return CIContext().createCGImage(ci, from: ci.extent)
+            }
+            return nil
+        }
+        /// A screenshot of the window, taken by the check script (screencapture of this window), named `name`.
+        func shot(_ name: String, rect: CGRect) {
+            let w = app.container.convert(rect, to: nil), fh = app.window.frame.height
+            let info: [String: Any] = ["rect": [w.minX, fh - w.maxY, w.width, w.height], "scale": app.window.backingScaleFactor]
+            try? JSONSerialization.data(withJSONObject: info).write(to: URL(fileURLWithPath: dir + "/\(name).json"))
+            try? name.write(toFile: dir + "/\(name).req", atomically: true, encoding: .utf8)
+            let d = Date().addingTimeInterval(5)
+            while !FileManager.default.fileExists(atPath: dir + "/\(name).done") && Date() < d { spin(0.01) }
         }
         /// What tile i shows in the overview (drawn by the overview itself).
         func tileImage(_ i: Int) -> [UInt8] {
@@ -44,10 +87,39 @@ enum TestGalleryFlow {
             guard let cg = rep.cgImage else { return [] }
             return gray({ ctx, sz in ctx.draw(cg, in: CGRect(origin: .zero, size: sz)) }, aspect: rc.width / max(rc.height, 1))
         }
+        /// What the overview draws in a rect of the window (container coordinates).
+        func regionImage(_ rc: CGRect) -> [UInt8] {
+            guard let g = app.gallery else { return [] }
+            let rg = g.convert(rc, from: app.container)
+            guard let rep = g.bitmapImageRepForCachingDisplay(in: rg) else { return [] }
+            g.cacheDisplay(in: rg, to: rep)
+            guard let cg = rep.cgImage else { return [] }
+            return gray({ ctx, sz in ctx.draw(cg, in: CGRect(origin: .zero, size: sz)) }, aspect: rc.width / max(rc.height, 1))
+        }
         /// The page as the canvas shows it.
         func pageImage() -> [UInt8] {
             guard let cg = canvas.snapshot(scale: 1) else { return [] }
             return gray({ ctx, sz in ctx.draw(cg, in: CGRect(origin: .zero, size: sz)) }, aspect: canvas.bounds.width / max(canvas.bounds.height, 1))
+        }
+        /// How far any picture in the transition is drawn above its own resolution (1 = pixel for pixel).
+        func upscale() -> Double {
+            guard let root = app.transitionView?.layer else { return 0 }
+            let bs = Double(app.window.backingScaleFactor)
+            var worst = 0.0
+            func visit(_ l: CALayer) {
+                var size: (Int, Int)? = nil
+                if let c = l.contents {
+                    if CFGetTypeID(c as CFTypeRef) == CGImage.typeID { let img = c as! CGImage; size = (img.width, img.height) }
+                    else if CFGetTypeID(c as CFTypeRef) == IOSurfaceGetTypeID() { let sf = c as! IOSurfaceRef; size = (IOSurfaceGetWidth(sf), IOSurfaceGetHeight(sf)) }
+                }
+                if let (w, h) = size, w > 0, h > 0, l.opacity > 0.01 {
+                    // Aspect-fill draws at the larger of the two axis scales; resize at each axis's own.
+                    worst = max(worst, Double(l.bounds.width) * bs / Double(w), Double(l.bounds.height) * bs / Double(h))
+                }
+                l.sublayers?.forEach(visit)
+            }
+            visit(root)
+            return worst
         }
         func diff(_ a: [UInt8], _ b: [UInt8]) -> Double {
             guard !a.isEmpty, a.count == b.count else { return 255 }
@@ -92,6 +164,9 @@ enum TestGalleryFlow {
         // Page 5 (index 4) is saved at 370%, on its ink.
         canvas.goToPage(4)
         canvas.setVisibleForReplay(x: 300, y: 700, w: canvas.camera.page.width / 3.7, z: 3.7)
+        // Page 7 (index 6) at 300%: never opened again this session before the loop opens it.
+        canvas.goToPage(6)
+        canvas.setVisibleForReplay(x: 500, y: 620, w: canvas.camera.page.width / 3, z: 3)
         canvas.goToPage(0)
         spin(0.5)
 
@@ -112,15 +187,26 @@ enum TestGalleryFlow {
             // The first frame, right as the press is handled.
             if app.transitionView != nil {
                 let first = transitionImage()
-                if opening { rec["firstVsTile"] = diff(first, tileImage(app.gallery?.selected ?? 0)) }
+                // Against the overview's own drawing of that same area: what was on screen there before the press.
+                if opening, let tv = app.transitionView { rec["firstVsTile"] = diff(first, regionImage(tv.frame)) }
                 rec["toolbarOnTopFirst"] = toolbarOnTop()
             }
-            var last: [UInt8] = [], lastToolbar = true
+            var last: [UInt8] = [], lastToolbar = true, maxUp = 0.0, midShot: String? = nil
             let t0 = Date()
             while Date().timeIntervalSince(t0) < nextIn {
                 maxViews = max(maxViews, transitionViews())
-                if app.transitionView != nil { last = transitionImage(); lastToolbar = toolbarOnTop() }
+                if let tv = app.transitionView {
+                    last = transitionImage(); lastToolbar = toolbarOnTop(); maxUp = max(maxUp, upscale())
+                    // Mid-way through a slow opening (the moving page 40-60% of the window's width): a real screenshot.
+                    let f = tv.frame.width / max(canvas.frame.width, 1)
+                    if slow, opening, midShot == nil, f > 0.4, f < 0.6 { midShot = "mid-\(out.count)"; shot(midShot!, rect: tv.frame) }
+                }
                 spin(0.004)
+            }
+            rec["maxUpscale"] = maxUp
+            if let m = midShot, app.transitionView == nil {
+                spin(0.3)   // the page drawn by the canvas itself
+                shot("end-\(out.count)", rect: canvas.frame); rec["midShot"] = m; rec["endShot"] = "end-\(out.count)"
             }
             rec["toolbarOnTopLast"] = lastToolbar
             let after = app.galleryShown, aim = target()
@@ -133,7 +219,7 @@ enum TestGalleryFlow {
             out.append(rec)
         }
         // Calm loop: 0.25 s and 0.6 s between presses, through pages 2, 5 (370%), 3, 5, 7, 1.
-        for (t, gap) in [(1, 0.6), (4, 0.6), (2, 0.25), (4, 0.25), (6, 0.25), (0, 0.6), (4, 0.6)] {
+        for (t, gap) in [(1, 0.6), (4, 0.6), (2, 0.25), (6, 0.25), (3, 0.25), (4, 0.6), (0, 0.6)] {
             let g = slow ? AppDelegate.transitionSeconds + 0.4 : gap
             press(tile: nil, nextIn: g)            // G: back to the overview
             press(tile: t, nextIn: g)              // pointer on a tile, G: open it

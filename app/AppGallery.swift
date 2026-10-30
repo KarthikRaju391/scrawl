@@ -32,10 +32,7 @@ extension AppDelegate {
         guard !galleryShown, transitionView == nil else { return }
         var ms: [String: Double] = [:]; var tl = CACurrentMediaTime()
         func lap(_ k: String) { let n = CACurrentMediaTime(); ms[k] = (n - tl) * 1000; tl = n }
-        // The tile it lands on shows this page's thumbnail as it is now (rendered here if the page changed), so the
-        // transition ends on exactly the image the tile keeps.
-        _ = ThumbnailCache.shared.image(for: canvas.doc, page: canvas.camera.page); lap("thumbnail")
-        let shown = canvas.renderRect, img = canvasSnapshot(); lap("snapshot")
+        let img = canvasSnapshot(); lap("snapshot")
         canvas.renderingPaused = true   // covered by the overview from now on
         galleryReturnsToDraw = canvas.drawMode
         exitDrawMode("gallery"); lap("exitDraw")
@@ -61,7 +58,7 @@ extension AppDelegate {
         let to = g.cellRect(canvas.pageIndex, in: container); lap("cellRect")
         g.display(); lap("display")
         CATransaction.flush(); lap("flush")   // draw and commit the grid now, before the first frame, not during the animation
-        transition(kind: "close", page: canvas.pageIndex, snapshot: img, shows: shown, cell: to) {}
+        transition(kind: "close", page: canvas.pageIndex, snapshot: img, cell: to) {}
         lastTransition["stepsMs"] = ms
     }
 
@@ -94,7 +91,7 @@ extension AppDelegate {
     }
 
     private func finishOpening(page i: Int, from: CGRect) {
-        transition(kind: "open", page: i, snapshot: canvasSnapshot(), shows: canvas.renderRect, cell: from) { [weak self] in
+        transition(kind: "open", page: i, snapshot: canvasSnapshot(), cell: from) { [weak self] in
             guard let self else { return }
             self.canvas.renderingPaused = false   // renders the opened page under the transition's last frame
             self.gallery?.isHidden = true
@@ -108,9 +105,10 @@ extension AppDelegate {
     /// really are (Karthik presses G as fast as every 0.25 s; transitions never stack).
     func finishTransitionNow() { transitionFinish?() }
 
-    /// What the canvas shows now (the page being opened has already been switched to): a GPU snapshot.
-    /// At point resolution: it's on screen for 0.22 s, then the canvas itself takes over.
-    func canvasSnapshot() -> CGImage? { canvas.snapshot(scale: 1) }
+    /// What the canvas shows now (the page being opened has already been switched to): a GPU snapshot at the screen's
+    /// resolution, so the transition's last frame is the page exactly as the canvas then draws it (at point resolution
+    /// it was soft, then snapped sharp).
+    func canvasSnapshot() -> Any? { canvas.snapshotSurface() ?? canvas.snapshot() }
 
     /// What the canvas shows for page i (its saved view), rendered on the CPU (slow; kept for comparison).
     func viewImage(of i: Int) -> NSImage? {
@@ -125,52 +123,37 @@ extension AppDelegate {
     /// Short, and easing out: it moves most right after the press, so it feels immediate.
     static var transitionSeconds: Double { ProcessInfo.processInfo.environment["TRACKPAD_DRAW_SLOW_TRANSITION"] != nil ? 2.0 : 0.24 }
 
-    /// The page zooms between its tile and the full window as one continuous move (Karthik, 30 Oct: the content
-    /// jumped, the tile flashed a different image, and the toolbar went missing for a frame).
-    /// One mapping takes the page from "the part the tile shows, filling the tile" to "the part the page's view
-    /// shows, filling the window"; the tile's own thumbnail and a snapshot of the view ride on it and crossfade,
-    /// so the first frame is exactly the tile and the last exactly the page (and the reverse when closing).
+    /// The page grows from its tile to the full window (or shrinks back) as one continuous move, and no picture is
+    /// ever shown larger than it was rendered (Karthik, 30 Oct: a different page opened through a blurry, upscaled
+    /// image that then snapped sharp). The page's view is rendered at the screen's resolution and only ever shrinks
+    /// from full size; it fades in over the first quarter of opening, over the overview's own tile (which is what the
+    /// first frame shows), and fades out over the last quarter of closing, uncovering that tile (the last frame).
     /// The toolbar and header stay above it and fade in (open) or out (close).
-    private func transition(kind: String, page: Int, snapshot: CGImage?, shows view: CGRect, cell: CGRect, then: @escaping () -> Void) {
+    private func transition(kind: String, page: Int, snapshot: Any?, cell: CGRect, then: @escaping () -> Void) {
         let opening = kind == "open", full = canvas.frame
-        let doc = canvas.pages.indices.contains(page) ? canvas.pages[page] : canvas.doc
-        let thumb = ThumbnailCache.shared.cachedWithRegion(doc)
-        let region = thumb?.region ?? ThumbnailCache.region([], page: canvas.camera.page)
         let from = opening ? cell : full, to = opening ? full : cell
-        // The page's view and the tile's region have the window's and the tile's shapes; the mapping keeps one scale.
-        let k0 = cell.width / max(region.width, 1e-6), k1 = full.width / max(view.width, 1e-6)
-        func mapping(_ p: Double) -> (scale: Double, anchorPage: CGPoint, anchorView: CGPoint, clip: CGRect) {
-            func mix(_ a: Double, _ b: Double) -> Double { a + (b - a) * p }
-            let k = exp(mix(log(k0), log(k1)))
-            let ap = CGPoint(x: mix(region.midX, view.midX), y: mix(region.midY, view.midY))
-            let av = CGPoint(x: mix(cell.midX, full.midX), y: mix(cell.midY, full.midY))
-            let clip = CGRect(x: mix(cell.minX, full.minX), y: mix(cell.minY, full.minY), width: mix(cell.width, full.width), height: mix(cell.height, full.height))
-            return (k, ap, av, clip)
-        }
         let tv = NSView(frame: from)
         tv.wantsLayer = true
         let root = tv.layer!
-        root.backgroundColor = NSColor.white.cgColor; root.masksToBounds = true; root.zPosition = 50
-        let thumbLayer = CALayer(), snapLayer = CALayer()
-        for l in [thumbLayer, snapLayer] { l.contentsGravity = .resize; l.anchorPoint = .zero; root.addSublayer(l) }
-        thumbLayer.contents = thumb?.image; snapLayer.contents = snapshot
+        root.masksToBounds = true; root.zPosition = 50
+        let snapLayer = CALayer()
+        snapLayer.contents = snapshot; snapLayer.contentsGravity = .resizeAspectFill; snapLayer.masksToBounds = true
+        snapLayer.contentsScale = window.backingScaleFactor
+        root.addSublayer(snapLayer)
         container.addSubview(tv)
         transitionView = tv
         // The toolbar and header: above the moving page, fading with it (never a frame without them).
         let chrome: [NSView] = [container.toolbar, container.hint, container.capsule, container.zoomBadge, container.pageMap].filter { !$0.isHidden }
         for c in chrome { c.wantsLayer = true; c.layer?.zPosition = 60 }
         func smooth(_ x: Double, _ a: Double, _ b: Double) -> Double { let t = min(max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t) }
-        func apply(_ p: Double) {
-            let m = mapping(p)
+        func apply(_ p: Double) {   // p: 0 = the tile, 1 = the full page
+            func mix(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * CGFloat(p) }
+            let clip = CGRect(x: mix(cell.minX, full.minX), y: mix(cell.minY, full.minY), width: mix(cell.width, full.width), height: mix(cell.height, full.height))
             CATransaction.begin(); CATransaction.setDisableActions(true)
-            tv.frame = m.clip
-            root.cornerRadius = 6 * (1 - p)
-            for (l, q) in [(thumbLayer, region), (snapLayer, view)] {
-                let x = m.anchorView.x + (q.minX - m.anchorPage.x) * m.scale - m.clip.minX
-                let y = m.anchorView.y + (q.minY - m.anchorPage.y) * m.scale - m.clip.minY
-                l.frame = CGRect(x: x, y: y, width: q.width * m.scale, height: q.height * m.scale)
-            }
-            snapLayer.opacity = Float(smooth(p, 0.35, 0.9))
+            tv.frame = clip
+            root.cornerRadius = 6 * (1 - CGFloat(p))
+            snapLayer.frame = CGRect(origin: .zero, size: clip.size)
+            snapLayer.opacity = Float(smooth(p, 0, 0.25))   // opaque from a quarter of the way: no overview seen through the page
             CATransaction.commit()
             let a = CGFloat(smooth(p, 0.5, 1))
             for c in chrome { c.alphaValue = a }

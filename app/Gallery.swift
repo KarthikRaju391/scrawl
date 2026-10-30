@@ -72,8 +72,6 @@ enum PageImage {
 /// when it's ready, so opening the overview never waits for a render.
 final class ThumbnailCache {
     private var cache: [ObjectIdentifier: (version: Int, image: CGImage)] = [:]
-    /// The part of the page each cached thumbnail shows (page units): the page transitions zoom from it.
-    private var regions: [ObjectIdentifier: CGRect] = [:]
     private var pending = Set<ObjectIdentifier>()
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "scrawl.thumbnails", qos: .userInitiated, attributes: .concurrent)   // pages render in parallel
@@ -90,7 +88,7 @@ final class ThumbnailCache {
         let rect = Self.region(strokes, page: page)
         guard let img = PageImage.render(strokes, rect: rect, pageWidth: page.width, pageTop: page.height,
                                          px: CGSize(width: Self.pixelWidth, height: Self.pixelWidth * page.height / page.width), fast: true) else { return nil }
-        lock.lock(); renderCount += 1; if (cache[key]?.version ?? -1) <= version { cache[key] = (version, img); regions[key] = rect }; lock.unlock()
+        lock.lock(); renderCount += 1; if (cache[key]?.version ?? -1) <= version { cache[key] = (version, img) }; lock.unlock()
         return img
     }
     /// The part of the page a thumbnail shows: the ink with a margin, in the tile's shape (at least a third of
@@ -114,13 +112,6 @@ final class ThumbnailCache {
         lock.lock(); defer { lock.unlock() }
         let c = cache[ObjectIdentifier(doc)]
         return (c?.image, c?.version == doc.version)
-    }
-    /// The cached image and the part of the page it shows, as the overview's tile draws it (no rendering).
-    func cachedWithRegion(_ doc: Document) -> (image: CGImage, region: CGRect)? {
-        lock.lock(); defer { lock.unlock() }
-        let key = ObjectIdentifier(doc)
-        guard let c = cache[key], let r = regions[key] else { return nil }
-        return (c.image, r)
     }
     /// Up to date, rendering now if needed (tests).
     func image(for doc: Document, page: CGSize) -> CGImage? {
@@ -391,10 +382,9 @@ final class GalleryView: NSView {
 extension CanvasView {
     /// The current page as the canvas shows it (its view, paper pattern, ink), rendered offscreen on the
     /// GPU with the canvas's own renderer: a few milliseconds, versus hundreds for the CPU stroke outlines.
-    func snapshot(scale requested: Double? = nil) -> CGImage? {
-        let scale = requested ?? Double(window?.backingScaleFactor ?? 2)
-        let w = Int(bounds.width * scale), h = Int(bounds.height * scale)
-        guard w > 0, h > 0 else { return nil }
+    /// The canvas's view rendered offscreen into `out` (w x h pixels at `scale`), waiting until it's done.
+    private func renderSnapshot(into out: MTLTexture, scale: Double) -> Bool {
+        let w = out.width, h = out.height
         let dev = renderer.device, vis = renderRect
         let pxPerUnit = ptPerUnit * camera.zoom * scale
         let items: [Renderer.DrawItem] = doc.strokes.compactMap { s in
@@ -403,14 +393,11 @@ extension CanvasView {
             let c = s.color
             return .init(mesh: s.mesh, verts: nil, color: SIMD4(c.x * c.w, c.y * c.w, c.z * c.w, c.w))
         }
-        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
-        d.usage = .renderTarget; d.storageMode = .shared
         let md = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
         md.usage = .renderTarget; md.storageMode = .private; md.textureType = .type2DMultisample; md.sampleCount = Renderer.sampleCount
         let sd = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .stencil8, width: w, height: h, mipmapped: false)
         sd.usage = .renderTarget; sd.storageMode = .private; sd.textureType = .type2DMultisample; sd.sampleCount = Renderer.sampleCount
-        guard let out = dev.makeTexture(descriptor: d), let ms = dev.makeTexture(descriptor: md), let st = dev.makeTexture(descriptor: sd),
-              let cb = renderer.queue.makeCommandBuffer() else { return nil }
+        guard let ms = dev.makeTexture(descriptor: md), let st = dev.makeTexture(descriptor: sd), let cb = renderer.queue.makeCommandBuffer() else { return false }
         let p = MTLRenderPassDescriptor()
         p.colorAttachments[0].texture = ms; p.colorAttachments[0].resolveTexture = out
         p.colorAttachments[0].loadAction = .clear; p.colorAttachments[0].storeAction = .multisampleResolve
@@ -418,6 +405,29 @@ extension CanvasView {
         renderer.encode(cb, p, visible: vis, background: tools.background, spacing: 48, pxPerUnit: pxPerUnit,
                         page: CGRect(x: 0, y: -1e9, width: camera.page.width, height: camera.page.height + 1e9), items: items)
         cb.commit(); cb.waitUntilCompleted()
+        return true
+    }
+
+    /// The view at the screen's resolution in an IOSurface: a layer shows it as is (no read-back, no copy, no upload
+    /// of a 17 MB bitmap: the overview's transitions start without a stall).
+    func snapshotSurface() -> IOSurface? {
+        let scale = Double(window?.backingScaleFactor ?? 2)
+        let w = Int(bounds.width * scale), h = Int(bounds.height * scale)
+        guard w > 0, h > 0, let surface = IOSurface(properties: [.width: w, .height: h, .bytesPerElement: 4, .pixelFormat: 0x42475241 /* BGRA */]) else { return nil }
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        d.usage = .renderTarget; d.storageMode = renderer.device.hasUnifiedMemory ? .shared : .managed
+        guard let out = renderer.device.makeTexture(descriptor: d, iosurface: surface, plane: 0), renderSnapshot(into: out, scale: scale) else { return nil }
+        return surface
+    }
+
+    func snapshot(scale requested: Double? = nil) -> CGImage? {
+        let scale = requested ?? Double(window?.backingScaleFactor ?? 2)
+        let w = Int(bounds.width * scale), h = Int(bounds.height * scale)
+        guard w > 0, h > 0 else { return nil }
+        let dev = renderer.device
+        let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+        d.usage = .renderTarget; d.storageMode = .shared
+        guard let out = dev.makeTexture(descriptor: d), renderSnapshot(into: out, scale: scale) else { return nil }
         var px = [UInt8](repeating: 0, count: w * h * 4)
         out.getBytes(&px, bytesPerRow: w * 4, from: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0)
         guard let provider = CGDataProvider(data: Data(px) as CFData) else { return nil }
