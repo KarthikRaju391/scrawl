@@ -165,6 +165,11 @@ final class ToolbarView: NSView {
         if hasPanel(items[i]) && (e.modifierFlags.contains(.control) || chevronRect(of: i).insetBy(dx: -3, dy: -3).contains(p)) {
             openPanel(of: i); needsDisplay = true; return
         }
+        press(i)
+    }
+    /// What a click on button i does (also VoiceOver's press).
+    fileprivate func press(_ i: Int) {
+        guard isEnabled(items[i]) else { return }
         // The writing panel open: a click on its button only closes it (writing mode stays on; Karthik, 29 Oct).
         if case .writing = items[i], !panel.isHidden, panel.mode == .writing { hidePanel(); return }
         switch items[i] {
@@ -183,6 +188,57 @@ final class ToolbarView: NSView {
         }
         needsDisplay = true
     }
+
+    // MARK: accessibility: every button is a VoiceOver element (the toolbar is drawn as one view)
+
+    private lazy var axButtons: [ToolbarButtonElement] = items.indices.map { ToolbarButtonElement(toolbar: self, index: $0) }
+    override func isAccessibilityElement() -> Bool { false }
+    override func accessibilityRole() -> NSAccessibility.Role? { .toolbar }
+    override func accessibilityLabel() -> String? { "Toolbar" }
+    override func accessibilityChildren() -> [Any]? { isHidden ? [] : axButtons }
+    override func accessibilityHitTest(_ point: NSPoint) -> Any? {
+        guard let w = window else { return self }
+        let p = convert(w.convertPoint(fromScreen: point), from: nil)
+        return items.indices.first { rect(of: $0).contains(p) }.map { axButtons[$0] } ?? self
+    }
+    /// The spoken name of button i (the tooltip is its help text).
+    fileprivate func axName(_ i: Int) -> String {
+        switch items[i] {
+        case .draw: return "Draw"
+        case .tool(let k): return k.title
+        case .background: return "Paper"
+        case .writing: return "Writing mode"
+        case .zoomLock: return "Zoom lock"
+        case .zoom: return "Zoom \(zoomText)"
+        case .undo: return "Undo"
+        case .redo: return "Redo"
+        case .gallery: return "Pages overview"
+        case .prevPage: return "Previous page"
+        case .nextPage: return "Next page"
+        case .newPage: return "New page"
+        }
+    }
+    /// On / off for the buttons that toggle (nil for plain buttons).
+    fileprivate func axOn(_ i: Int) -> Bool? {
+        switch items[i] {
+        case .tool(let k): return state.tool == k
+        case .draw: return drawMode
+        case .writing: return writingMode
+        case .zoomLock: return state.zoomLocked
+        default: return nil
+        }
+    }
+    fileprivate func axFrame(_ i: Int) -> CGRect { NSAccessibility.screenRect(fromView: self, rect: rect(of: i)) }
+    fileprivate func axHasPanel(_ i: Int) -> Bool { hasPanel(items[i]) || items[i] == .background }
+    fileprivate func axShowPanel(_ i: Int) { if items[i] == .background { press(i) } else { openPanel(of: i); needsDisplay = true } }
+    fileprivate func axEnabled(_ i: Int) -> Bool { isEnabled(items[i]) }
+    fileprivate func axHelp(_ i: Int) -> String { tooltip(items[i]) }
+    /// Test hook: what VoiceOver gets for each button.
+    var accessibilityForTest: [[String: Any]] {
+        axButtons.map { b in ["label": b.accessibilityLabel() ?? "", "role": b.accessibilityRole()?.rawValue ?? "", "value": b.accessibilityValue() ?? NSNull(),
+                              "help": b.accessibilityHelp() ?? "", "enabled": b.isAccessibilityEnabled(), "frame": [b.accessibilityFrame().minX, b.accessibilityFrame().minY, b.accessibilityFrame().width, b.accessibilityFrame().height], "hasMenu": axHasPanel(axButtons.firstIndex { $0 === b } ?? 0)] }
+    }
+    func accessibilityPressForTest(_ i: Int) -> Bool { axButtons[i].accessibilityPerformPress() }
 
     override func rightMouseDown(with e: NSEvent) {
         let p = convert(e.locationInWindow, from: nil)
@@ -259,6 +315,34 @@ final class ToolbarView: NSView {
         guard let i = items.firstIndex(of: item) else { return nil }
         let r = rect(of: i)
         return convert(CGPoint(x: r.midX, y: r.midY), to: nil)
+    }
+}
+
+/// One toolbar button as VoiceOver sees it: a button (a checkbox for the ones that toggle), its name, its tooltip as
+/// help, dimmed when it can't be used; pressing it does what a click does, and Show Menu opens its panel.
+final class ToolbarButtonElement: NSAccessibilityElement {
+    private weak var toolbar: ToolbarView?
+    private let index: Int
+    init(toolbar: ToolbarView, index: Int) {
+        self.toolbar = toolbar; self.index = index
+        super.init()
+        setAccessibilityParent(toolbar)
+    }
+    override func accessibilityRole() -> NSAccessibility.Role? { toolbar?.axOn(index) != nil ? .checkBox : .button }
+    override func accessibilityLabel() -> String? { toolbar?.axName(index) }
+    override func accessibilityValue() -> Any? { toolbar?.axOn(index).map { NSNumber(value: $0 ? 1 : 0) } }
+    override func accessibilityHelp() -> String? { toolbar?.axHelp(index) }
+    override func accessibilityFrame() -> NSRect { toolbar?.axFrame(index) ?? .zero }
+    override func isAccessibilityEnabled() -> Bool { toolbar?.axEnabled(index) ?? false }
+    override func isAccessibilityFocused() -> Bool { false }
+    override func accessibilityParent() -> Any? { toolbar }
+    override func accessibilityPerformPress() -> Bool {
+        guard let t = toolbar, t.axEnabled(index) else { return false }
+        t.press(index); t.needsDisplay = true; return true
+    }
+    override func accessibilityPerformShowMenu() -> Bool {
+        guard let t = toolbar, t.axHasPanel(index) else { return false }
+        t.axShowPanel(index); return true
     }
 }
 
