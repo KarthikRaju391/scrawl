@@ -157,7 +157,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window = NSWindow(contentRect: CGRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2, width: size.width, height: size.height),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = AppInfo.name
-        window.minSize = CGSize(width: 360, height: 300)
+        // Narrow enough to sit beside another app, wide enough for the whole toolbar (below ~560 pt the Draw
+        // button and the page buttons were cut off at the window's edges).
+        window.minSize = CGSize(width: ToolbarView.minimumWindowWidth, height: 300)
         // Any window shape (e.g. tall beside another app) and full screen (green button, ⌃⌘F): the trackpad
         // maps without distortion to the largest pad-shaped rectangle in the window (CanvasView.padRect).
         window.collectionBehavior.insert(.fullScreenPrimary)

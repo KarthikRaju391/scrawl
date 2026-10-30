@@ -44,7 +44,13 @@ enum TestPage {
                 n += 1
             }
         }
-        try? JSONSerialization.data(withJSONObject: ["shots": shots], options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-page.json"))
+        // The smallest window allowed: the whole toolbar is inside it.
+        app.window.setFrame(CGRect(origin: app.window.frame.origin, size: app.window.minSize), display: true)
+        container.needsLayout = true; container.layoutSubtreeIfNeeded()
+        let tb = container.toolbar, pill = tb.convert(tb.pillRectForTest, to: container)
+        let smallest: [String: Any] = ["window": [app.window.frame.width, app.window.frame.height], "view": [container.bounds.width, container.bounds.height],
+                                       "pill": [pill.minX, pill.maxX]]
+        try? JSONSerialization.data(withJSONObject: ["shots": shots, "smallest": smallest], options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-page.json"))
         try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
     }
 }

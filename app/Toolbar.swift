@@ -39,6 +39,13 @@ final class ToolbarView: NSView {
         return min(44, max(28, (bounds.width - fixed) / CGFloat(items.count + 2)))
     }
     private func width(_ item: Item) -> CGFloat { item == .draw || item == .zoom ? cell * (item == .draw ? 2 : 1.6) : cell }
+    /// The narrowest window the whole toolbar fits in (at the smallest buttons, 28 pt, with 8 pt to spare each side).
+    static var minimumWindowWidth: CGFloat { let v = ToolbarView(frame: .zero); return ceil(v.pillWidth(cell: 28)) + 16 }
+    private func pillWidth(cell c: CGFloat) -> CGFloat {
+        items.reduce(0) { $0 + ($1 == .draw ? 2 * c : $1 == .zoom ? 1.6 * c : c) } + 2 * 14 + CGFloat(separatorsAfter.count) * 12
+    }
+    /// Test hook: the toolbar's pill in the view's coordinates.
+    var pillRectForTest: CGRect { pillRect }
     static let height: CGFloat = 56
 
     override init(frame: NSRect) {

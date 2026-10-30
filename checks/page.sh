@@ -50,6 +50,8 @@ for s in r["shots"]:
     edges = [e for e, x in (("left", s["pageLeft"]), ("right", s["pageRight"])) if 0 < x < vw]
     chk(not issues, f"{s['name']} ({vw:.0f}x{vh:.0f}): page edges on screen: {', '.join(edges) or 'none (page fills the width)'}; "
         + ("off-page plain grey with a shadowed edge, page top at the window top" if not issues else "; ".join(issues)) + f"  [shot-{s['n']}.png]")
+sm = r["smallest"]
+chk(sm["pill"][0] >= 0 and sm["pill"][1] <= sm["view"][0], f"at the smallest window ({sm['view'][0]:.0f} x {sm['view'][1]:.0f} pt) the whole toolbar is inside it (pill x {sm['pill'][0]:.0f}-{sm['pill'][1]:.0f})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 print("screenshots:", d)
 PY
