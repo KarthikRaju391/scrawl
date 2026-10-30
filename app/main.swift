@@ -118,13 +118,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Welcome (first run) or Help. Never shown by tests (they'd take focus); --test-welcome reads it instead.
     func showInfo(firstRun: Bool) {
-        let w = InfoWindow(status: inputStatus, firstRun: firstRun)
-        w.onClose = { [weak self] in self?.infoWindow = nil }
-        w.onPractice = { [weak self] in self?.startPractice() }
+        let w = makeInfoWindow(firstRun: firstRun)
         infoWindow = w
         if firstRun { UserDefaults.standard.set(true, forKey: "welcomed") }
         guard !Launch.background else { return }
         w.showWindow(nil); NSApp.activate(ignoringOtherApps: true)
+    }
+    func makeInfoWindow(firstRun: Bool) -> InfoWindow {
+        let w = InfoWindow(status: inputStatus, firstRun: firstRun)
+        w.onClose = { [weak self] in self?.infoWindow = nil }
+        w.onPractice = { [weak self] in self?.startPractice() }
+        if firstRun { w.onStart = { [weak self] in guard let self, !self.canvas.drawMode else { return }; self.apply(.draw, from: "welcome") } }
+        return w
     }
     @objc func showHelp() { exitDrawMode("help"); showInfo(firstRun: false) }
 

@@ -46,10 +46,10 @@ enum HelpText {
         ("Scratch out", "A quick zig-zag over a word erases it (pen or marker; one undo brings it back)"),
         ("M  H  E", "Marker, highlighter, eraser; press again for the pen"),
         ("P", "Pen; on the pen, back to the last other tool"),
-        ("1 – 5", "Pen size"),
+        ("1 – 5", "Size of the current tool"),
         ("Toolbar", "The same: a click turns a tool or mode on, a second click turns it off. The ⌃ chevron (or a right-click) opens sizes, colours and writing settings"),
         ("W", "Writing mode on / off (the next line when a line reaches its width; a faint line shows it as you get close)"),
-        ("Return", "Writing mode: next line, back at the left margin"),
+        ("Return", "Writing mode: next line, back where the block began"),
         ("L", "Lock / unlock zoom"),
         ("N", "New page (K keeps writing on this one)"),
         ("G", "Pages overview: arrows or the pointer choose, Return / Space / G opens, Esc goes back"),
@@ -60,6 +60,15 @@ enum HelpText {
         ("⌃⌘F", "Full screen"),
         ("⌘E  ⇧⌘E", "Export all pages as PDF / this page as PNG"),
     ]
+    /// The first run shows only these (the window has to fit a 13" screen); Help lists every shortcut.
+    static let basics: [(String, String)] = [
+        ("⌃⌥D  or  D", "Draw mode on / off: the pointer freezes and hides, the trackpad is the page"),
+        ("Esc", "Leave draw mode (the pointer comes back)"),
+        ("One finger", "Draw. Two fingers pan; pinch to zoom"),
+        ("2-finger double tap", "Undo (in draw mode); ⌘Z works too"),
+        ("G", "All your pages; Return opens one"),
+        ("⌘E", "Export every page as a PDF"),
+    ]
     static var privacy: String {
         let logs = AppPaths.logsDir.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         let counts = Analytics.shared.hasRemote
@@ -67,7 +76,7 @@ enum HelpText {
             : "Anonymous usage counts (which features you use; never your ink, pages or text) stay in \(logs)/events.jsonl on this Mac. "
         return """
         Your pages are saved automatically on this Mac, in \(AppPaths.dataDir.replacingOccurrences(of: NSHomeDirectory(), with: "~")), and never uploaded. \
-        Crash notes and the optional touch diagnostics (Help › Diagnostic Logs) stay in \(logs). \(counts)\
+        Crash notes and the optional touch diagnostics (Help › Record Touch Diagnostics) stay in \(logs). \(counts)\
         Otherwise the only network request is Check for Updates, which you start yourself.
         """
     }
@@ -77,6 +86,8 @@ enum HelpText {
 final class InfoWindow: NSWindowController {
     var onClose: (() -> Void)?
     var onPractice: (() -> Void)?
+    /// First run: "Start Drawing" closes the window and turns draw mode on.
+    var onStart: (() -> Void)?
 
     convenience init(status: InputStatus, firstRun: Bool) {
         let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 600), styleMask: [.titled, .closable], backing: .buffered, defer: false)
@@ -99,14 +110,17 @@ final class InfoWindow: NSWindowController {
             let b = NSButton(title: "Open Input Monitoring Settings", target: nil, action: #selector(InfoWindow.openInputMonitoring))
             b.target = self; stack.addArrangedSubview(b)
         }
-        stack.addArrangedSubview(label("Shortcuts", .systemFont(ofSize: 13, weight: .semibold)))
-        let grid = NSGridView(views: HelpText.shortcuts.map { k, v in
-            let d = label(v, .systemFont(ofSize: 12)); d.preferredMaxLayoutWidth = 380
-            return [label(k, .systemFont(ofSize: 12, weight: .semibold)), d]
+        stack.addArrangedSubview(label(firstRun ? "The basics" : "Shortcuts", .systemFont(ofSize: 13, weight: .semibold)))
+        // Each label wraps at its column's width (wrapping at the window's width clipped the long keys to one line).
+        let grid = NSGridView(views: (firstRun ? HelpText.basics : HelpText.shortcuts).map { k, v in
+            let key = label(k, .systemFont(ofSize: 12, weight: .semibold)); key.preferredMaxLayoutWidth = 150
+            let d = label(v, .systemFont(ofSize: 12)); d.preferredMaxLayoutWidth = 344
+            return [key, d]
         })
         grid.columnSpacing = 14; grid.rowSpacing = 4
-        grid.column(at: 0).width = 110; grid.column(at: 1).width = 380
-        stack.addArrangedSubview(grid)
+        grid.column(at: 0).width = 150; grid.column(at: 1).width = 344
+        if firstRun { stack.addArrangedSubview(grid); stack.addArrangedSubview(label("Help › \(AppInfo.name) Help (⌘?) lists every shortcut.", .systemFont(ofSize: 12), .secondaryLabelColor)) }
+        if !firstRun { stack.addArrangedSubview(grid) }
         stack.addArrangedSubview(label("Privacy", .systemFont(ofSize: 13, weight: .semibold)))
         stack.addArrangedSubview(label(HelpText.privacy, .systemFont(ofSize: 12), .secondaryLabelColor))
         if firstRun {
@@ -114,16 +128,28 @@ final class InfoWindow: NSWindowController {
             share.target = self; share.state = Analytics.shared.enabled ? .on : .off
             stack.addArrangedSubview(share)
         }
-        let ok = NSButton(title: firstRun ? "Start Drawing" : "Close", target: nil, action: #selector(InfoWindow.closeWindow))
+        let ok = NSButton(title: firstRun ? "Start Drawing" : "Close", target: nil, action: firstRun ? #selector(InfoWindow.start) : #selector(InfoWindow.closeWindow))
         ok.target = self; ok.keyEquivalent = "\r"
         let practice = NSButton(title: "Try a 30-second practice", target: nil, action: #selector(InfoWindow.startPractice))
         practice.target = self
         let row = NSStackView(views: [ok, practice]); row.spacing = 10
         stack.addArrangedSubview(row)
-        w.contentView = stack
-        w.setContentSize(stack.fittingSize)
+        // Never taller than the screen: the buttons stay reachable (the help list scrolls instead).
+        let fit = stack.fittingSize, maxH = ((NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 800) - 60
+        if fit.height <= maxH {
+            w.contentView = stack
+            w.setContentSize(fit)
+        } else {
+            let doc = FlippedView(frame: CGRect(origin: .zero, size: fit)); stack.frame = doc.bounds; doc.addSubview(stack)
+            let scroll = NSScrollView(frame: CGRect(x: 0, y: 0, width: fit.width, height: maxH))
+            scroll.hasVerticalScroller = true; scroll.drawsBackground = false; scroll.documentView = doc
+            w.contentView = scroll
+            w.setContentSize(scroll.frame.size)
+        }
         w.center()
     }
+    private final class FlippedView: NSView { override var isFlipped: Bool { true } }
+    @objc func start() { window?.close(); onClose?(); onStart?() }
 
     @objc func closeWindow() { window?.close(); onClose?() }
     @objc func toggleUsage(_ b: NSButton) { Analytics.shared.enabled = b.state == .on }

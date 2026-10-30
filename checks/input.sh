@@ -35,6 +35,10 @@ chk("Welcome to Scrawl" in full and "Trackpad Draw" not in full and "⌃⌥D" in
 chk("never uploaded" in full and "never your ink" in full and "Check for Updates" in full and "events.jsonl" in full,
     "welcome: privacy note (pages never uploaded, usage counts never include ink, where they live, Check for Updates)")
 chk("No trackpad found" in " ".join(w["none"]) and "Basic touch input" in " ".join(w["basic"]), "no-trackpad and basic-input messages")
+ws, hs = w["size-welcome"], w["size-help"]
+chk(ws[1] <= 860, f"the welcome window fits a 13-inch screen with its buttons ({ws[0]:.0f} x {ws[1]:.0f} pt; at most 860 high)")
+chk(hs[1] <= w["screenH"], f"the help window is never taller than the screen ({w['screenH']:.0f} pt); its list scrolls ({hs[0]:.0f} x {hs[1]:.0f} pt)")
+chk(w["drawAfterStart"], "Start Drawing turns draw mode on")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 PY
 echo "snapshots: $W/welcome-full.png $W/welcome-stalled.png"

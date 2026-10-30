@@ -59,6 +59,13 @@ enum TestInput {
                 }
             }
             r["shownOnFirstRun"] = UserDefaults.standard.bool(forKey: "welcomed")
+            // Window sizes (they must fit a 13" screen: ~900 pt high), and Start Drawing turns draw mode on.
+            r["screenH"] = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame.height ?? 0
+            for (name, first) in [("welcome", true), ("help", false)] {
+                let w = app.makeInfoWindow(firstRun: first)
+                r["size-" + name] = [w.window?.frame.width ?? 0, w.window?.frame.height ?? 0]
+                if first { w.start(); r["drawAfterStart"] = app.canvas.drawMode; app.exitDrawMode("test") }
+            }
             save()
         }
     }
