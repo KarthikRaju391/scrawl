@@ -358,6 +358,7 @@ final class Robot {
         s["clickDrawRange"] = app.settingsWindow.clickDrawRangeForTest   // robot:needs var clickDrawRangeForTest
         s["settingsSwitches"] = app.settingsWindow.switchesForTest.map { [$0.0, $0.1] as [Any] }   // robot:needs class SettingsWindow
         s["gallery"] = app.galleryShown ? (app.gallery?.selected ?? -1) : -2   // robot:needs var galleryShown
+        s["galleryOrder"] = app.galleryShown ? (app.gallery?.order ?? []) : []   // robot:needs private(set) var order: [Int]
         s["canUndo"] = canvas.doc.canUndo   // robot:needs var canUndo
         s["pageMap"] = (app.container.pageMap.isHidden || app.container.pageMap.alphaValue < 0.05) ? [:] : ["w": app.container.pageMap.frame.width, "h": app.container.pageMap.frame.height, "alpha": app.container.pageMap.alphaValue]   // robot:needs class PageMapView
         return s

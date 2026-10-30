@@ -1786,12 +1786,15 @@ def run_scenarios(app, rep, only, hand):
         rep.step("G opens the overview", ms=round(ms or -1))
         rep.check(s["gallery"] == s4["page"], "G: overview open, selection on the current page", f"selected {s['gallery']}, {ms and round(ms)} ms")
         time.sleep(0.6); rep.shot(app, "pages overview")
-        app.press("left"); app.press("left"); s = app.state()
-        rep.check(s["gallery"] == s4["page"] - 2, "← ← moves the selection two pages back", f"selected {s['gallery']}")
+        order = s.get("galleryOrder") or []   # tiles after "+ New page" (first): the most recently changed page first
+        rep.check(order[:1] == [s4["page"]], "the page just made is the first page tile, right after New page", f"order {order[:5]}")
+        want = order[order.index(s["gallery"]) + 2] if s["gallery"] in order and order.index(s["gallery"]) + 2 < len(order) else None
+        app.press("right"); app.press("right"); s = app.state()
+        rep.check(want is not None and s["gallery"] == want, "→ → moves the selection two tiles along", f"selected {s['gallery']} (want {want})")
         s, ms = app.press("return", until=lambda s: s["gallery"] == -2, wait=3)
         time.sleep(0.5)
         s = app.state()
-        rep.check(s["page"] == s4["page"] - 2, "Return opens the selected page", f"page {s['page'] + 1}, {ms and round(ms)} ms")
+        rep.check(s["page"] == want, "Return opens the selected page", f"page {s['page'] + 1}, {ms and round(ms)} ms")
         rep.step("Return opens a page", ms=round(ms or -1))
 
     @scenario("window-shapes", "Portrait, wide and small windows: write a word in each and check the ink shows inside the window.")
@@ -1919,13 +1922,18 @@ def run_scenarios(app, rep, only, hand):
         s0 = app.state(); n = s0["pages"]; spp = s0["strokesPerPage"]
         two = n - 2   # the page with "two"
         app.press("g", until=lambda s: s["gallery"] >= 0, wait=3)
-        while app.state()["gallery"] > two: app.press("left")
+        for _ in range(n + 2):   # → through the tiles as shown (most recent first) until 'two' is highlighted
+            if app.state()["gallery"] == two: break
+            app.press("right")
+        order = app.state()["galleryOrder"]
+        after = order[order.index(two) + 1] if order.index(two) + 1 < len(order) else order[order.index(two) - 1]
+        after -= 1 if after > two else 0   # page indices after the delete
         time.sleep(0.3)
         rep.shot(app, "before: 'two' highlighted")
         app.key("delete"); time.sleep(0.6)
         s1 = app.state()
         rep.check(s1["pages"] == n - 1 and s1["strokesPerPage"] == spp[:two] + spp[two + 1:], "Delete on the highlighted tile deletes that page", f"{n} -> {s1['pages']} pages")
-        rep.check(s1["gallery"] == min(two, s1["pages"] - 1), "the highlight moves to the next page", f"selected {s1['gallery']}")
+        rep.check(s1["gallery"] == after, "the highlight moves to the tile that took its place", f"selected {s1['gallery']} (want {after})")
         rep.check("Undo" in s1.get("toast", "") or "⌘Z" in s1.get("toast", ""), "a note says how to undo (no confirm dialog)", s1.get("toast", ""))
         rep.shot(app, "after Delete: page gone, undo note")
         app.cmd({"cmd": "menu", "action": "undo"}); time.sleep(0.5)
