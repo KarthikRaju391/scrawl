@@ -1,5 +1,5 @@
-// Page overview: every page of the notebook as a thumbnail in a scrolling grid, with a "+ New page"
-// tile last. Clicking a page grows it from its grid cell to the full canvas; G (or the toolbar's grid
+// Page overview: every page of the notebook as a thumbnail in a scrolling grid: a "+ New page" tile
+// first, then the pages, the most recently changed first (Karthik, 31 Oct). Clicking a page grows it from its grid cell to the full canvas; G (or the toolbar's grid
 // button) from a page shrinks the canvas back into its cell. Thumbnails show the top screen of each
 // page and are cached per page until its contents change (Document.version), so reopening is instant.
 import AppKit
@@ -146,7 +146,7 @@ final class GalleryView: NSView {
     let scroll = NSScrollView()
     private let grid = GridView()
     private let title = NSTextField(labelWithString: "Pages")
-    private let hintLabel = NSTextField(labelWithString: "Arrows or the pointer choose  ·  Return, Space or G opens  ·  Esc goes back  ·  • = the page you came from")
+    private let hintLabel = NSTextField(labelWithString: "Last changed first  ·  Arrows or the pointer choose  ·  Return, Space or G opens  ·  Esc goes back  ·  • = the page you came from")
     var onOpen: ((Int) -> Void)?
     var onNewPage: (() -> Void)?
     let thumbnails = ThumbnailCache.shared
@@ -199,9 +199,34 @@ final class GalleryView: NSView {
     /// The tile the arrow keys have selected (Return / Space opens it).
     var selected = -1
 
+    /// Tile order: the "New page" tile, then page indices, the most recently changed page first. Fixed while the
+    /// overview is open (it's worked out when it opens, or when a page is deleted or restored there), so tiles never
+    /// move under the pointer. Page numbers ("Page 9"), ⌘[ / ⌘] and "Page 9 of 18" keep the notebook's order.
+    private(set) var order: [Int] = []
+    private var positionOfPage: [Int: Int] = [:]
+    /// Most recent first. "Changed" is `Document.edited`: ink added, erased, scratched out, undone, redone or cleared
+    /// (not opening a page or moving its view). Pages from notebooks without that date use their created date; pages
+    /// with neither go last, and ties go to the later page (pages are only ever added at the end).
+    static func recencyOrder(_ pages: [Document]) -> [Int] {
+        let when = pages.map { $0.edited ?? $0.created }
+        return pages.indices.sorted { a, b in
+            switch (when[a], when[b]) {
+            case let (x?, y?) where x != y: return x > y
+            case (_?, nil): return true
+            case (nil, _?): return false
+            default: return a > b
+            }
+        }
+    }
+    /// Where item i is shown: items are page indices, and `pages.count` is the "New page" tile (always first).
+    func position(of item: Int) -> Int { item >= pages.count ? 0 : (positionOfPage[item] ?? item) + 1 }
+    func item(at position: Int) -> Int { position <= 0 || position > order.count ? pages.count : order[position - 1] }
+
     func reload(pages: [Document], pageSize: CGSize, current: Int) {
         self.pages = pages; self.pageSize = pageSize; self.current = current
-        selected = current   // the selection starts on the current page
+        order = Self.recencyOrder(pages)
+        positionOfPage = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($0.element, $0.offset) })
+        selected = current   // the selection starts on the page you came from
         thumbnails.keep(pages)
         needsLayout = true; layoutSubtreeIfNeeded()
         grid.needsDisplay = true
@@ -215,8 +240,8 @@ final class GalleryView: NSView {
         query = search.stringValue
         if let e = NSApp.currentEvent, e.type == .keyDown, e.keyCode == 36 || e.keyCode == 76 { onSearchReturn?() }   // Return opens the match
     }
-    /// Pages that match the search (all of them when it's empty).
-    var matching: [Int] { pages.indices.filter { titles.matches(pages[$0], query) } }
+    /// Pages that match the search (all of them when it's empty), in tile order: Return opens the most recent match.
+    var matching: [Int] { order.filter { titles.matches(pages[$0], query) } }
     private func applyQuery(moveSelection: Bool = true) {
         if moveSelection, !query.isEmpty, let first = matching.first { selected = first; grid.scrollToVisible(cellRectInGrid(first).insetBy(dx: 0, dy: -Self.gap)) }
         grid.needsDisplay = true
@@ -231,6 +256,8 @@ final class GalleryView: NSView {
         hintLabel.frame.origin = CGPoint(x: title.frame.maxX + 16, y: bounds.height - Self.header + 18)
         scroll.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.header)
         search.frame = CGRect(x: bounds.width - 268, y: bounds.height - Self.header + 14, width: 240, height: 24)
+        // A narrow window: the hint gives way rather than running under the search field.
+        hintLabel.isHidden = hintLabel.frame.maxX > search.frame.minX - 12
         grid.frame = CGRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(gridHeight, scroll.contentSize.height))
     }
 
@@ -238,17 +265,18 @@ final class GalleryView: NSView {
 
     var columns: Int { max(1, Int((scroll.contentSize.width - Self.gap) / (Self.cellWidth + Self.gap))) }
     var thumbHeight: CGFloat { Self.cellWidth * pageSize.height / pageSize.width }
-    var cellCount: Int { pages.count + 1 }   // + the "New page" tile, last
+    var cellCount: Int { pages.count + 1 }   // + the "New page" tile, first
     private var gridHeight: CGFloat {
         let rows = (cellCount + columns - 1) / columns
         return Self.gap + CGFloat(rows) * (thumbHeight + Self.label + Self.gap)
     }
-    /// Thumbnail rect of cell i in grid coordinates (the grid is centred horizontally).
+    /// Thumbnail rect of item i (a page, or `pages.count` for the New page tile) in grid coordinates (the grid is
+    /// centred horizontally).
     func cellRectInGrid(_ i: Int) -> CGRect {
         let cols = columns
         let used = CGFloat(cols) * Self.cellWidth + CGFloat(cols - 1) * Self.gap
         let x0 = max((grid.bounds.width - used) / 2, Self.gap)
-        let r = i / cols, c = i % cols
+        let pos = position(of: i), r = pos / cols, c = pos % cols
         return CGRect(x: x0 + CGFloat(c) * (Self.cellWidth + Self.gap), y: Self.gap + CGFloat(r) * (thumbHeight + Self.label + Self.gap),
                       width: Self.cellWidth, height: thumbHeight)
     }
@@ -260,25 +288,36 @@ final class GalleryView: NSView {
     }
     /// Cell i's thumbnail rect in `view`'s coordinates, as it is on screen now (no scrolling).
     func cellRectAsShown(_ i: Int, in view: NSView) -> CGRect { grid.convert(cellRectInGrid(i), to: view) }
+    /// The item (page index, or `pages.count` for New page) under a point of the grid.
     func cellIndex(at gridPoint: CGPoint) -> Int? { (0..<cellCount).first { cellRectInGrid($0).insetBy(dx: -4, dy: -4).contains(gridPoint) } }
 
-    /// The text under tile i: "Page 3  ·  Oct 25, 2026" (created date), "New page" for the last tile.
-    func tileLabel(_ i: Int) -> String { i < pages.count ? "Page \(i + 1)  ·  \(PageDate.short(pages[i].created))" : "New page" }
+    /// The text under tile i: "Page 3  ·  edited Oct 25, 2026" (the date the tiles are sorted by; today and yesterday
+    /// with the time), "New page" for the first tile.
+    func tileLabel(_ i: Int) -> String {
+        guard i < pages.count else { return "New page" }
+        let d = pages[i]
+        if let e = d.edited ?? d.created { return "Page \(i + 1)  ·  \(d.edited != nil ? "edited" : "created") \(PageDate.recent(e))" }
+        return "Page \(i + 1)  ·  date unknown"
+    }
 
-    /// Arrow keys: ← → previous / next tile (continuing across rows), ↑ ↓ a row; no wrap-around. ↓ into a
-    /// shorter last row from a column past its end goes to the last tile. The selection scrolls into view.
+    /// Arrow keys move through the tiles as shown: ← → previous / next tile (continuing across rows), ↑ ↓ a row;
+    /// no wrap-around. ↓ into a shorter last row from a column past its end goes to the last tile. The selection
+    /// scrolls into view.
     func moveSelection(dx: Int, dy: Int) {
         let cols = columns, last = cellCount - 1
-        var i = min(max(selected, 0), last)
+        var i = min(max(position(of: selected < 0 ? current : selected), 0), last)
         if dx != 0 { i = min(max(i + dx, 0), last) }
         if dy < 0, i - cols >= 0 { i -= cols }
         if dy > 0 {
             if i + cols <= last { i += cols } else if i / cols < last / cols { i = last }
         }
-        selected = i
-        grid.scrollToVisible(cellRectInGrid(i).insetBy(dx: 0, dy: -Self.gap))
+        selected = item(at: i)
+        grid.scrollToVisible(cellRectInGrid(selected).insetBy(dx: 0, dy: -Self.gap))
         grid.needsDisplay = true
     }
+    /// Test hooks: the selection as a tile position (0 = New page), and selecting by position.
+    var selectedPosition: Int { position(of: selected) }
+    func select(position p: Int) { selected = item(at: p) }
 
     fileprivate func clicked(_ i: Int) { selected = i; grid.needsDisplay = true; if i < pages.count { onOpen?(i) } else { onNewPage?() } }
     /// Test hook: draw the grid now.
@@ -329,7 +368,7 @@ final class GalleryView: NSView {
                 p.setLineDash([6, 5], count: 2, phase: 0); p.stroke()
                 let plus = NSAttributedString(string: "+", attributes: [.font: NSFont.systemFont(ofSize: 40, weight: .light), .foregroundColor: NSColor(white: 0.45, alpha: 1)])
                 plus.draw(at: CGPoint(x: r.midX - plus.size().width / 2, y: r.midY - plus.size().height / 2))
-                labelText = "New page"
+                labelText = tileLabel(i)
             }
             // One highlight: the blue ring, moved by the arrow keys and the pointer (it starts on the current page).
             if i == selected {

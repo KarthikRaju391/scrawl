@@ -116,6 +116,12 @@ struct NotebookFile: Codable {
 enum PageDate {
     static let formatter: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .none; return f }()
     static func short(_ d: Date?) -> String { d.map { formatter.string(from: $0) } ?? "date unknown" }
+    /// "Today at 14:02", "Yesterday at 09:10", else "Oct 25, 2026" (the overview's tiles).
+    static let relative: DateFormatter = { let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short; f.doesRelativeDateFormatting = true; return f }()
+    static func recent(_ d: Date) -> String {
+        let cal = Calendar.current
+        return cal.isDateInToday(d) || cal.isDateInYesterday(d) ? relative.string(from: d) : formatter.string(from: d)
+    }
 }
 
 extension Document {

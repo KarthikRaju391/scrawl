@@ -519,6 +519,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if a.contains("--test-jitter") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestJitter.run(app: self) } }
         if a.contains("--test-gallerykeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryKeys.run(app: self) } }
         if a.contains("--test-galleryflow") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryFlow.run(app: self) } }
+        if a.contains("--test-gallery-order") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryOrder.run(app: self) } }
         if a.contains("--test-gallery-replay") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryReplay.run(app: self) } }
         if a.contains("--test-toast") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestToast.run(app: self) } }
         if a.contains("--test-arrowkeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestArrowKeys.run(app: self) } }

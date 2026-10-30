@@ -123,7 +123,9 @@ final class Document {
     nonisolated(unsafe) static var clock: () -> Date = { Date() }
 
     static let maxUndo = 100
-    func snapshot() { version += 1; undoStack.append(strokes); if undoStack.count > Self.maxUndo { undoStack.removeFirst() }; redoStack.removeAll() }
+    func snapshot() { editedBeforeSnapshot = edited; version += 1; undoStack.append(strokes); if undoStack.count > Self.maxUndo { undoStack.removeFirst() }; redoStack.removeAll() }
+    /// An eraser gesture snapshots at its start; if it erased nothing, the page wasn't changed (the overview sorts by it).
+    private var editedBeforeSnapshot: Date?
     var undoStackForSave: [[Stroke]] { undoStack }
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
@@ -145,8 +147,8 @@ final class Document {
     func undo() { guard let s = undoStack.popLast() else { return }; version += 1; redoStack.append(strokes); strokes = s }
     func redo() { guard let s = redoStack.popLast() else { return }; version += 1; undoStack.append(strokes); strokes = s }
     /// Put back the state saved by the last snapshot and forget that step (a cancelled eraser gesture).
-    func rollbackLastSnapshot() { guard let s = undoStack.popLast() else { return }; if s.count != strokes.count || !zip(s, strokes).allSatisfy({ $0 === $1 }) { version += 1 }; strokes = s }
-    func dropEmptyUndo() { if let last = undoStack.last, last.count == strokes.count, zip(last, strokes).allSatisfy({ $0 === $1 }) { undoStack.removeLast() } }
+    func rollbackLastSnapshot() { guard let s = undoStack.popLast() else { return }; if s.count != strokes.count || !zip(s, strokes).allSatisfy({ $0 === $1 }) { version += 1 } else { edited = editedBeforeSnapshot }; strokes = s }
+    func dropEmptyUndo() { if let last = undoStack.last, last.count == strokes.count, zip(last, strokes).allSatisfy({ $0 === $1 }) { undoStack.removeLast(); edited = editedBeforeSnapshot } }
 }
 
 struct Camera {

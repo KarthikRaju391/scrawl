@@ -82,7 +82,7 @@ extension AppDelegate {
         finishOpening(page: i, from: from)
     }
 
-    /// The "New page" tile: a page is added after the last one and grows from that tile.
+    /// The "New page" tile (first in the overview): a page is added after the last one and grows from that tile.
     func openNewPage() {
         finishTransitionNow()
         guard let g = gallery, galleryShown, transitionView == nil else { return }
@@ -217,10 +217,11 @@ extension AppDelegate {
     // MARK: deleting pages (no confirm dialog: ⌘Z brings a page back)
 
     func deletePage(_ i: Int) {
+        let shownAt = galleryShown ? gallery?.position(of: i) : nil   // the tile that takes its place gets the highlight
         guard let d = canvas.deletePage(i) else { return }
         deletedPages.append(d)
         usage.record("delete_page", ["pages": canvas.pages.count])
-        afterPagesChanged(select: min(i, canvas.pages.count - 1))
+        afterPagesChanged(select: min(i, canvas.pages.count - 1), position: shownAt)
         showToast(d.blank != nil ? "Page deleted (a blank page stays) · ⌘Z to undo" : "Page \(i + 1) deleted · ⌘Z to undo", seconds: 3)
     }
     /// ⌘Z or the toolbar's undo right after deleting a page: put it back. False if there's nothing to restore.
@@ -232,12 +233,15 @@ extension AppDelegate {
         showToast("Page \(min(d.index, canvas.pages.count - 1) + 1) restored")
         return true
     }
-    private func afterPagesChanged(select: Int) {
+    /// `select`: a page to highlight in the overview, or `position`: the tile position to highlight (after a delete,
+    /// the page that moved into the deleted tile's place; never the New page tile while there are pages).
+    private func afterPagesChanged(select: Int, position: Int? = nil) {
         updateBanner(); updateUndoState()
         container.pageMap.refresh(); container.needsLayout = true
         if galleryShown, let g = gallery {
             g.reload(pages: canvas.pages, pageSize: canvas.camera.page, current: canvas.pageIndex)
-            g.selected = select; g.moveSelection(dx: 0, dy: 0)
+            if let p = position { g.select(position: min(max(p, 1), g.cellCount - 1)) } else { g.selected = select }
+            g.moveSelection(dx: 0, dy: 0)
         }
     }
     @objc func deletePageAction() { deletePage(actionPageIndex) }
