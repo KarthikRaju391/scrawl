@@ -42,6 +42,17 @@ struct WritingLayout {
     /// or more is a full line too: the next line at the usual 400 ms word gap, like a crossing (Karthik on b03bac2: not
     /// 1.5 s). Ink at 93-95% got no move at all (74c61cf).
     static let nearEdge = 0.93
+    /// Ink ending this close before the marker (fraction of the line width: 24 page units at 50% of a 1600-wide page,
+    /// 36 at 75%, 48 at 100%) is a full line too (Karthik on 0.1.1: "when I am just inside the guide line, the next
+    /// line pan isn't triggering"; his "it" ended 4 units short). In his sessions the only words ending within 4% of
+    /// the marker were followed by a long pause (1.6 s, 6.3 s: waiting for the move); at 4.8-5% he wrote another word
+    /// on the line 0.6-2.4 s later, so the zone stays well under that.
+    static let nearMarker = 0.03
+    /// Where the "full line" zone starts: `nearMarker` of the line width before the marker; with the marker near the
+    /// page's edge (past 93%), at 93% of the page (never before: he once wrote a word more after one ending at 92.99%).
+    func nearMarkerStart(lineEnd: Double, pageWidth: Double) -> Double {
+        lineEnd > pageWidth * Self.nearEdge ? pageWidth * Self.nearEdge : lineEnd - Self.nearMarker * lineWidth * pageWidth
+    }
     /// A hand pan counts as deliberate when the view moved sideways by at least this much of its width.
     static let deliberatePan = 0.10
     /// After a hand move, the next line starts a new block only this far (fraction of the page width) from the current
@@ -69,8 +80,10 @@ struct WritingLayout {
             // The line's ink crossed the limit: the next line at the next word gap. A word that started before the
             // limit and ran past it stays on its line (written ink never moves).
             return .newLine(next)
-        } else if lineEnd > pageWidth * Self.nearEdge, right >= pageWidth * Self.nearEdge {
-            return .newLine(next)   // the page's edge is near: a full line too (the usual 400 ms word gap)
+        } else if right >= nearMarkerStart(lineEnd: lineEnd, pageWidth: pageWidth) {
+            // Just short of the marker (no room for another word), or at 93%+ of the page with the marker at its
+            // edge: a full line too, at the usual 400 ms word gap.
+            return .newLine(next)
         }
         // (No look-ahead any more: breaking before a word that "wouldn't fit" moved the page before Karthik reached the
         // end of the line, 29 Oct. The line goes to the next once its ink crosses the limit.)
