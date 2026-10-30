@@ -231,3 +231,12 @@ Calls made while building, one line each with the reason. Newest at the bottom o
   4. Opening a tile that was only partly visible scrolled the grid at the moment of opening; now the tile's current position is used (no scroll).
 - Kept: the page growing from its tile (the right page at the right place); a crossfade with a slight scale would be calmer but loses where the page comes from. Still open: right after launch the overview can open before every thumbnail is rendered; those tiles are blank and their thumbnails appear a moment later (a fade-in tried here didn't take effect on the grid and was left out).
 - Recordings (before, after, side by side at real and quarter speed) are in the thread's storage, gallery-recordings/. --test-gallery-replay replays the sequence; the recorder is a local harness.
+
+## The overview's order (Karthik, 31 Oct: New page first, then by last update)
+- Tiles: "+ New page" first, then pages by `Document.edited`, most recent first. Edited moves on any content change: ink, the eraser, scratch-out, undo, redo, Clear Page. Opening a page, its view, OCR titles and K don't. An eraser swipe that erases nothing no longer moves it (it snapshotted first). A page with only a created date sorts by that; one with neither (before 0.1.0) goes last; ties go to the later page.
+- The order is worked out when the overview opens (and after a delete or restore in it) and stays put while it's open, so tiles never move under the pointer.
+- Page numbers stay the notebook's order: "Page 9 of 18", the tile labels' "Page 9", ⌘[ / ⌘] and the toolbar's ‹ ›. Recency would renumber pages as you write, and "next page" would change under you.
+- The highlight still starts on the page you came from, so G, G is the same page (the loop signed off on 30 Oct). Arrows follow the tiles as shown; ← from the first page tile reaches New page. Delete highlights the tile that moves into the deleted one's place; ⌘Z puts the page back in its sorted place. Search results come in tile order (Return opens the most recent match).
+- Transitions grow from and shrink into the tile's current position, wherever the order puts it. With Reduce Motion on, they fade at full size instead.
+- Tiles show the date they sort by ("edited Today at 14:02", older ones by date); the open page's label keeps its created date.
+- checks/galleryorder.sh: fails 11 of 17 on 9594d74.

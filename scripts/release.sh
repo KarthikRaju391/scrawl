@@ -37,9 +37,10 @@ Install: drag $APP_NAME into Applications.
 
 This build isn't notarized by Apple, so macOS asks before opening it the first time:
   macOS 14: Control-click (or right-click) $APP_NAME in Applications, choose Open, then Open again.
-  macOS 15 and later: open it once (macOS blocks it), then go to System Settings > Privacy & Security,
-  scroll to "$APP_NAME was blocked", click Open Anyway and confirm.
-After that it opens normally.
+  macOS 15 and later: open it once. macOS says it can't check it for malware: click Done (not Move to
+  Trash). Then go to System Settings > Privacy & Security, scroll to "$APP_NAME was blocked", click
+  Open Anyway and confirm.
+After that it opens normally. Press Control-Option-D (or D) to draw with the trackpad, Esc to stop.
 
 Your pages are saved on this Mac only. See Help > $APP_NAME Help in the app.
 TXT

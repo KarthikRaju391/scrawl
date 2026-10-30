@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Pages overview: the "+ New page" tile comes first, then your pages, the one you changed most recently first
+  (writing, erasing, scratching out, undoing; just looking at a page doesn't count). Tiles show when each page
+  last changed. Page numbers and ⌘[ / ⌘] keep the notebook's order.
+- The welcome window fits a 13-inch screen (its Start Drawing button used to be below the screen), and Start
+  Drawing starts drawing. Help scrolls when it's taller than the screen.
+- VoiceOver reaches every toolbar button, with its name, whether it's on, and its shortcut.
+- A held key does one thing: holding N no longer adds a page per key repeat, and D, W, L and the tool keys
+  no longer flicker their mode.
+- The window can't get narrower than the toolbar (the Draw button used to be cut off).
+- With Reduce Motion on, opening and closing the pages overview fades instead of zooming.
+
 ## 0.1.2 (2026-10-30, build 5)
 
 - Writing mode: a word that ends just inside the guide line (no room for another) brings the next line at the

@@ -1,8 +1,8 @@
 # Scrawl
 
 Write and sketch with a finger on your Mac's trackpad. The tools follow Google Keep's drawing screen:
-pen, marker, highlighter, eraser, backgrounds. Pages scroll down forever, and a writing mode pans
-along your line as you write.
+pen, marker, highlighter, eraser, backgrounds. Pages scroll down forever, and a writing mode takes
+you to the next line when a line is full.
 
 ![Scrawl](examples/porsche-window.png)
 
@@ -21,9 +21,10 @@ along your line as you write.
 3. Open it. The app isn't notarized by Apple yet, so macOS stops it the first time:
    - **macOS 14:** Control-click (or right-click) Scrawl in Applications, choose **Open**, then
      **Open** again.
-   - **macOS 15 and later:** open it once and macOS blocks it. Then go to **System Settings ›
-     Privacy & Security**, scroll down to "Scrawl was blocked", click **Open Anyway** and
-     confirm with your password.
+   - **macOS 15 and later:** open it once. macOS says it can't check Scrawl for malware: click
+     **Done** (not Move to Trash). Then go to **System Settings › Privacy & Security**, scroll down
+     to "Scrawl was blocked", click **Open Anyway** and confirm with your password. (The button
+     only shows for a while after the blocked try; if it's gone, open Scrawl once more.)
 
    After that it opens normally. If you prefer Terminal:
    `xattr -dr com.apple.quarantine "/Applications/Scrawl.app"`.
@@ -32,7 +33,7 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 
 ## Using it
 
-- **⌃⌥D** (or **D** when the app is in front) starts drawing, and pressing it again stops. Drawing
+- **⌃⌥D** (or **D** when the app is in front, or the welcome window's Start Drawing) starts drawing, and pressing it again stops. Drawing
   starts where you last wrote on the page, at the zoom you wrote at (a quick glide there), unless you've
   zoomed in somewhere else yourself.
   The paper fills the window, whatever its shape, and full screen works too (green button or ⌃⌘F). The
@@ -63,16 +64,16 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   switches for scratch-out and the page map.
 - **Toolbar:** Draw first, then the tools and paper, writing and zoom lock, undo and redo, and pages.
   Hover over any button for what it does and its shortcut.
-- **Writing mode (W):** the page stays put while you write along a line (pan by hand with two fingers if
-  you need room), and goes to the next line when the line reaches its width: 50%, 75% or 100% of the page,
-  counted from where the block you're writing began (capped at the page's right margin). The next line
-  starts back where that block's first line began, so a block started mid-page stays mid-page (Return does
-  it by hand). Moving somewhere new by hand, a page change or switching writing mode on starts a new block. As a line nears its width a faint
-  vertical line fades in where that happens, and it fades out after the new line. The page waits until your finger has been up for 0.4 s, so it never moves in the middle of a
-  word; a new line sits a little below the middle, so the lines you just wrote stay in sight. If you pan by hand (a real move, not a nudge) and write somewhere
-  new, the line starts there and still ends ½ or ¾ of a page later; small nudges and pinches don't change it. Choose the line width (½, ¾, full) and how it pans in the panel. A ½ line ends about the middle of the
-  page: when the next word wouldn't fit, the line breaks at the word gap, before you start it. A word you've
-  started is always finished on its line (it may run a little past), and nothing you've written ever moves.
+- **Writing mode (W):** the page stays put while you write along a line (pan with two fingers if you need
+  room). When the line reaches its width, 50%, 75% or 100% of the page counted from where the block you're
+  writing began (capped near the page's right edge), the page moves to the next line once your finger has
+  been up for 0.4 s, so it never moves in the middle of a word; touching again sooner cancels it. A word
+  that ends just short of the width counts too. The next line starts back where the block's first line
+  began, so a block started mid-page stays mid-page, and it sits a little below the middle so the lines you
+  just wrote stay in sight (Return does it by hand). Moving somewhere new by hand, a page change or
+  switching writing mode on starts a new block. As a line nears its width a faint vertical guide line fades
+  in where the next line comes. Nothing you've written ever moves. Pick the width with the small ⌃ chevron
+  on the writing button.
 - **Page map:** zoomed in past 1.5×, a small map of the page appears in the top-right corner while you
   move the page yourself (two fingers, pinch, arrow keys, scrolling) and fades out a second after you stop;
   writing never shows it. Point at it to keep it, then click or drag to move there (outside draw mode).
@@ -95,20 +96,22 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   In the pages overview the arrows move the blue selection ring. ⌘[ and ⌘] still change pages.
 - **Pages:** N or ⌘N adds a page, ⌘[ and ⌘] move between them. Each page keeps its own view. The arrows dim
   (and ⌘[ / ⌘] do nothing) when there's no page that way; Next never adds a page, + does.
-- **Pages overview (G, or the grid button):** every page as a thumbnail. The blue ring is your selection:
-  it starts on the page you came from (marked with a small dot), and the arrow keys or the pointer move it.
-  Return, Space, G or a click opens it: the page grows from its spot to fill the window. Esc goes back to
-  the page you came from. The "+ New page" tile is last. Opening the overview leaves draw mode, and opening a
-  page puts you back in it.
+- **Pages overview (G, or the grid button):** every page as a thumbnail. The "+ New page" tile comes
+  first, then your pages, the one you changed most recently first (writing, erasing, scratching out or
+  undoing counts; just looking at a page doesn't). Page numbers and ⌘[ / ⌘] keep the notebook's order.
+  The blue ring is your selection: it starts on the page you came from (marked with a small dot), and the
+  arrow keys or the pointer move it. Return, Space, G or a click opens it: the page grows from its spot to
+  fill the window (with Reduce Motion on, it fades in). Esc goes back to the page you came from. Opening
+  the overview leaves draw mode, and opening a page puts you back in it.
 - **Find and share:** tiles show each page's ink, titled with its first handwritten line (read on this
   Mac, never uploaded). **⌘F** searches your handwriting across pages; Return opens the match. **⌘C**
   copies the page as an image, and **File › Share Page…** sends it to Messages, Notes, Mail and the rest.
 - **Delete a page:** Delete on the highlighted tile in the overview, right-click a tile › Delete Page, or
   Edit › Delete Page (⌥⌘⌫) for the open page. There's no confirm dialog: ⌘Z brings it back. Deleting the
   last page leaves a blank one.
-- **Page dates:** every page remembers when it was created (shown under its tile in the overview and in
-  the small label at the top of the open page) and when it was last edited. Pages from before this
-  version show "date unknown".
+- **Page dates:** every page remembers when it was created (shown in the small label at the top of the
+  open page) and when it was last changed (shown under its tile in the overview). Pages from before
+  0.1.0 show "date unknown" and come last in the overview.
 - **Export:** ⌘E saves every page as one PDF (vector, sharp at any size), and ⇧⌘E saves the current
   page as a PNG.
 - **Help › Scrawl Help** (⌘?) lists every shortcut, and **Help › Practice Page** walks you through the
