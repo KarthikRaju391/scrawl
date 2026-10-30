@@ -72,6 +72,8 @@ enum PageImage {
 /// when it's ready, so opening the overview never waits for a render.
 final class ThumbnailCache {
     private var cache: [ObjectIdentifier: (version: Int, image: CGImage)] = [:]
+    /// The part of the page each cached thumbnail shows (page units): the page transitions zoom from it.
+    private var regions: [ObjectIdentifier: CGRect] = [:]
     private var pending = Set<ObjectIdentifier>()
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "scrawl.thumbnails", qos: .userInitiated, attributes: .concurrent)   // pages render in parallel
@@ -88,7 +90,7 @@ final class ThumbnailCache {
         let rect = Self.region(strokes, page: page)
         guard let img = PageImage.render(strokes, rect: rect, pageWidth: page.width, pageTop: page.height,
                                          px: CGSize(width: Self.pixelWidth, height: Self.pixelWidth * page.height / page.width), fast: true) else { return nil }
-        lock.lock(); renderCount += 1; if (cache[key]?.version ?? -1) <= version { cache[key] = (version, img) }; lock.unlock()
+        lock.lock(); renderCount += 1; if (cache[key]?.version ?? -1) <= version { cache[key] = (version, img); regions[key] = rect }; lock.unlock()
         return img
     }
     /// The part of the page a thumbnail shows: the ink with a margin, in the tile's shape (at least a third of
@@ -112,6 +114,13 @@ final class ThumbnailCache {
         lock.lock(); defer { lock.unlock() }
         let c = cache[ObjectIdentifier(doc)]
         return (c?.image, c?.version == doc.version)
+    }
+    /// The cached image and the part of the page it shows, as the overview's tile draws it (no rendering).
+    func cachedWithRegion(_ doc: Document) -> (image: CGImage, region: CGRect)? {
+        lock.lock(); defer { lock.unlock() }
+        let key = ObjectIdentifier(doc)
+        guard let c = cache[key], let r = regions[key] else { return nil }
+        return (c.image, r)
     }
     /// Up to date, rendering now if needed (tests).
     func image(for doc: Document, page: CGSize) -> CGImage? {

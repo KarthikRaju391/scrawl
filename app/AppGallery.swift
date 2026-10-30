@@ -5,7 +5,7 @@ import AppKit
 extension AppDelegate {
     var galleryShown: Bool { gallery.map { !$0.isHidden } ?? false }
 
-    func toggleGallery() { galleryShown ? openPage(canvas.pageIndex) : showGallery() }
+    func toggleGallery() { finishTransitionNow(); galleryShown ? openPage(canvas.pageIndex) : showGallery() }
 
     /// The session log: what made the overview show or a page open (the input event, if any, and who called).
     func logGallery(_ what: String, _ extra: [String: Any] = [:]) {
@@ -21,17 +21,21 @@ extension AppDelegate {
             }
             d["eventAge"] = Int((ProcessInfo.processInfo.systemUptime - e.timestamp) * 1000)
         }
-        d["by"] = Thread.callStackSymbols.dropFirst(2).prefix(4).map { $0.split(separator: " ").dropFirst(3).prefix(1).joined() }
         canvas.act(what, d)
     }
 
     /// The canvas shrinks into the current page's cell; the grid shows every page.
     func showGallery() {
+        finishTransitionNow()
         logGallery("galleryShow")
         tips.openedOverview(); practiceTick(.overview); usage.record("overview", ["pages": canvas.pages.count])
         guard !galleryShown, transitionView == nil else { return }
         var ms: [String: Double] = [:]; var tl = CACurrentMediaTime()
         func lap(_ k: String) { let n = CACurrentMediaTime(); ms[k] = (n - tl) * 1000; tl = n }
+        // The tile it lands on shows this page's thumbnail as it is now (rendered here if the page changed), so the
+        // transition ends on exactly the image the tile keeps.
+        _ = ThumbnailCache.shared.image(for: canvas.doc, page: canvas.camera.page); lap("thumbnail")
+        let shown = canvas.renderRect, img = canvasSnapshot(); lap("snapshot")
         canvas.renderingPaused = true   // covered by the overview from now on
         galleryReturnsToDraw = canvas.drawMode
         exitDrawMode("gallery"); lap("exitDraw")
@@ -57,20 +61,20 @@ extension AppDelegate {
         let to = g.cellRect(canvas.pageIndex, in: container); lap("cellRect")
         g.display(); lap("display")
         CATransaction.flush(); lap("flush")   // draw and commit the grid now, before the first frame, not during the animation
-        let from = canvas.frame
-        let img = canvasSnapshot(); lap("snapshot")
-        transition(kind: "close", page: canvas.pageIndex, image: img, from: from, to: to) {}
+        transition(kind: "close", page: canvas.pageIndex, snapshot: img, shows: shown, cell: to) {}
         lastTransition["stepsMs"] = ms
     }
 
     /// Return / Space in the overview: open the selected tile (a page, or "+ New page").
     func openSelectedTile() {
+        finishTransitionNow()
         guard let g = gallery, galleryShown else { return }
         if g.selected >= 0 && g.selected < canvas.pages.count { openPage(g.selected) } else if g.selected == canvas.pages.count { openNewPage() }
     }
 
     /// Page i grows from its cell to the full canvas.
     func openPage(_ i: Int) {
+        finishTransitionNow()
         logGallery("galleryOpenPage", ["page": i])
         guard let g = gallery, galleryShown, transitionView == nil, canvas.pages.indices.contains(i) else { return }
         let from = g.cellRect(i, in: container)
@@ -81,6 +85,7 @@ extension AppDelegate {
 
     /// The "New page" tile: a page is added after the last one and grows from that tile.
     func openNewPage() {
+        finishTransitionNow()
         guard let g = gallery, galleryShown, transitionView == nil else { return }
         let from = g.cellRect(canvas.pages.count, in: container)
         canvas.newPage()
@@ -89,7 +94,7 @@ extension AppDelegate {
     }
 
     private func finishOpening(page i: Int, from: CGRect) {
-        transition(kind: "open", page: i, image: canvasSnapshot(), from: from, to: canvas.frame) { [weak self] in
+        transition(kind: "open", page: i, snapshot: canvasSnapshot(), shows: canvas.renderRect, cell: from) { [weak self] in
             guard let self else { return }
             self.canvas.renderingPaused = false   // renders the opened page under the transition's last frame
             self.gallery?.isHidden = true
@@ -98,6 +103,10 @@ extension AppDelegate {
             if self.galleryReturnsToDraw { self.enterDrawMode(lock: !self.canvas.testMode) }
         }
     }
+
+    /// A G (or a click) while a transition still runs: that one ends now, then the new one starts from where things
+    /// really are (Karthik presses G as fast as every 0.25 s; transitions never stack).
+    func finishTransitionNow() { transitionFinish?() }
 
     /// What the canvas shows now (the page being opened has already been switched to): a GPU snapshot.
     /// At point resolution: it's on screen for 0.22 s, then the canvas itself takes over.
@@ -113,21 +122,62 @@ extension AppDelegate {
         return NSImage(cgImage: cg, size: canvas.bounds.size)
     }
 
-    /// Short, and easing out: it moves most right after the click, so it feels immediate.
-    static var transitionSeconds: Double { ProcessInfo.processInfo.environment["TRACKPAD_DRAW_SLOW_TRANSITION"] != nil ? 2.0 : 0.22 }
+    /// Short, and easing out: it moves most right after the press, so it feels immediate.
+    static var transitionSeconds: Double { ProcessInfo.processInfo.environment["TRACKPAD_DRAW_SLOW_TRANSITION"] != nil ? 2.0 : 0.24 }
 
-    /// An image of the page animates between the two rects (container coordinates), then goes away.
-    private func transition(kind: String, page: Int, image: CGImage?, from: CGRect, to: CGRect, then: @escaping () -> Void) {
-        // A plain layer with the image as its contents: no NSImage conversion or redraw on the main thread.
+    /// The page zooms between its tile and the full window as one continuous move (Karthik, 30 Oct: the content
+    /// jumped, the tile flashed a different image, and the toolbar went missing for a frame).
+    /// One mapping takes the page from "the part the tile shows, filling the tile" to "the part the page's view
+    /// shows, filling the window"; the tile's own thumbnail and a snapshot of the view ride on it and crossfade,
+    /// so the first frame is exactly the tile and the last exactly the page (and the reverse when closing).
+    /// The toolbar and header stay above it and fade in (open) or out (close).
+    private func transition(kind: String, page: Int, snapshot: CGImage?, shows view: CGRect, cell: CGRect, then: @escaping () -> Void) {
+        let opening = kind == "open", full = canvas.frame
+        let doc = canvas.pages.indices.contains(page) ? canvas.pages[page] : canvas.doc
+        let thumb = ThumbnailCache.shared.cachedWithRegion(doc)
+        let region = thumb?.region ?? ThumbnailCache.region([], page: canvas.camera.page)
+        let from = opening ? cell : full, to = opening ? full : cell
+        // The page's view and the tile's region have the window's and the tile's shapes; the mapping keeps one scale.
+        let k0 = cell.width / max(region.width, 1e-6), k1 = full.width / max(view.width, 1e-6)
+        func mapping(_ p: Double) -> (scale: Double, anchorPage: CGPoint, anchorView: CGPoint, clip: CGRect) {
+            func mix(_ a: Double, _ b: Double) -> Double { a + (b - a) * p }
+            let k = exp(mix(log(k0), log(k1)))
+            let ap = CGPoint(x: mix(region.midX, view.midX), y: mix(region.midY, view.midY))
+            let av = CGPoint(x: mix(cell.midX, full.midX), y: mix(cell.midY, full.midY))
+            let clip = CGRect(x: mix(cell.minX, full.minX), y: mix(cell.minY, full.minY), width: mix(cell.width, full.width), height: mix(cell.height, full.height))
+            return (k, ap, av, clip)
+        }
         let tv = NSView(frame: from)
         tv.wantsLayer = true
-        tv.layer?.contents = image; tv.layer?.contentsGravity = .resize
-        tv.layer?.cornerRadius = 6; tv.layer?.masksToBounds = true
+        let root = tv.layer!
+        root.backgroundColor = NSColor.white.cgColor; root.masksToBounds = true; root.zPosition = 50
+        let thumbLayer = CALayer(), snapLayer = CALayer()
+        for l in [thumbLayer, snapLayer] { l.contentsGravity = .resize; l.anchorPoint = .zero; root.addSublayer(l) }
+        thumbLayer.contents = thumb?.image; snapLayer.contents = snapshot
         container.addSubview(tv)
         transitionView = tv
+        // The toolbar and header: above the moving page, fading with it (never a frame without them).
+        let chrome: [NSView] = [container.toolbar, container.hint, container.capsule, container.zoomBadge, container.pageMap].filter { !$0.isHidden }
+        for c in chrome { c.wantsLayer = true; c.layer?.zPosition = 60 }
+        func smooth(_ x: Double, _ a: Double, _ b: Double) -> Double { let t = min(max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t) }
+        func apply(_ p: Double) {
+            let m = mapping(p)
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            tv.frame = m.clip
+            root.cornerRadius = 6 * (1 - p)
+            for (l, q) in [(thumbLayer, region), (snapLayer, view)] {
+                let x = m.anchorView.x + (q.minX - m.anchorPage.x) * m.scale - m.clip.minX
+                let y = m.anchorView.y + (q.minY - m.anchorPage.y) * m.scale - m.clip.minY
+                l.frame = CGRect(x: x, y: y, width: q.width * m.scale, height: q.height * m.scale)
+            }
+            snapLayer.opacity = Float(smooth(p, 0.35, 0.9))
+            CATransaction.commit()
+            let a = CGFloat(smooth(p, 0.5, 1))
+            for c in chrome { c.alphaValue = a }
+        }
         lastTransition = ["kind": kind, "page": page, "from": [from.minX, from.minY, from.width, from.height], "to": [to.minX, to.minY, to.width, to.height],
                           "startFrame": [tv.frame.minX, tv.frame.minY, tv.frame.width, tv.frame.height]]
-        // Driven by a run-loop timer (common modes), not Core Animation: it runs the same in a hidden or
+        // Driven by the display link (one step per screen refresh), not Core Animation: it runs the same in a hidden or
         // background window, and every intermediate frame is a plain, inspectable view frame.
         let start = CACurrentMediaTime(), dur = Self.transitionSeconds
         let inputAt = TransitionTiming.inputAt; TransitionTiming.inputAt = nil
@@ -137,31 +187,35 @@ extension AppDelegate {
         let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "page transition")
         // The clock starts one frame back so the first step is applied right now, not at the first timer tick.
         let t0 = start - 1.0 / 120
-        var first = true, lastFrame = CACurrentMediaTime(), maxGap = 0.0, gaps: [Double] = []
-        func step(_ unused: Timer?) {
+        var first = true, done = false, lastFrame = CACurrentMediaTime(), maxGap = 0.0, gaps: [Double] = []
+        func step(force: Bool) {
+            guard !done else { return }
             let now = CACurrentMediaTime(); maxGap = max(maxGap, now - lastFrame); gaps.append((now - lastFrame) * 1000); lastFrame = now
-            let u = min((CACurrentMediaTime() - t0) / dur, 1)
-            let e = 1 - pow(1 - u, 3)   // ease out (cubic): most of the movement right after the click
-            tv.frame = CGRect(x: from.minX + (to.minX - from.minX) * e, y: from.minY + (to.minY - from.minY) * e,
-                              width: from.width + (to.width - from.width) * e, height: from.height + (to.height - from.height) * e)
+            let u = force ? 1 : min((now - t0) / dur, 1)
+            let e = 1 - pow(1 - u, 3)   // ease out (cubic): most of the movement right after the press
+            apply(opening ? e : 1 - e)
             if first {
                 first = false
                 if let i = inputAt { lastTransition["inputToFirstFrameMs"] = (CACurrentMediaTime() - i) * 1000 }
                 lastTransition["firstFrameProgress"] = e   // how far the first frame moved (0...1)
             }
             guard u >= 1 else { return }
+            done = true
             TransitionDriver.stop()
             ProcessInfo.processInfo.endActivity(activity)
             lastTransition["endFrame"] = [tv.frame.minX, tv.frame.minY, tv.frame.width, tv.frame.height]
             lastTransition["totalMs"] = (now - start) * 1000; lastTransition["maxFrameGapMs"] = maxGap * 1000; lastTransition["gapsMs"] = gaps.map { ($0 * 10).rounded() / 10 }
+            lastTransition["finishedEarly"] = force
+            for c in chrome { c.layer?.zPosition = 0; c.alphaValue = 1 }
             tv.removeFromSuperview()
-            transitionView = nil
+            transitionView = nil; transitionFinish = nil
             then()
         }
-        step(nil)
+        transitionFinish = { step(force: true) }
+        step(force: false)
         // Paced by the window's display link (one step per screen refresh), not a timer: macOS throttles
         // timers of apps whose windows are behind others (measured: one step every ~40 ms).
-        TransitionDriver.start(on: container) { step(nil) }
+        TransitionDriver.start(on: container) { step(force: false) }
     }
 
     @objc func toggleGalleryAction() { toggleGallery() }

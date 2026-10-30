@@ -107,6 +107,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var lastSharePicker: NSSharingServicePicker?
     var galleryReturnsToDraw = false
     var transitionView: NSView?
+    /// Ends the running gallery transition at once (its last frame and completion); nil when none runs.
+    var transitionFinish: (() -> Void)?
     var lastTransition: [String: Any] = [:]
     private var lastBannerText = ""
     private var bannerFade: DispatchWorkItem?
@@ -384,6 +386,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Returns true if the key was handled.
     func key(_ e: NSEvent) -> Bool {
+        // A press while the overview's transition runs: it ends now, and the press acts on where things really are.
+        if transitionView != nil, !e.isARepeat { finishTransitionNow() }
         // Keys meant for a text field (a save panel's file name, the overview's search) are not shortcuts.
         // Esc in an empty search leaves the field, so the next Esc closes the overview.
         if galleryShown, e.keyCode == 53, let t = window.firstResponder as? NSText, t.string.isEmpty, let g = gallery { window.makeFirstResponder(g); return true }
@@ -514,6 +518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if a.contains("--test-modes") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestModes.run(app: self) } }
         if a.contains("--test-jitter") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestJitter.run(app: self) } }
         if a.contains("--test-gallerykeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryKeys.run(app: self) } }
+        if a.contains("--test-galleryflow") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryFlow.run(app: self) } }
         if a.contains("--test-toast") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestToast.run(app: self) } }
         if a.contains("--test-arrowkeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestArrowKeys.run(app: self) } }
         if a.contains("--test-taps") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestTaps.run(app: self) } }
