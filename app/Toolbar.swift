@@ -233,12 +233,12 @@ final class ToolbarView: NSView {
     fileprivate func axShowPanel(_ i: Int) { if items[i] == .background { press(i) } else { openPanel(of: i); needsDisplay = true } }
     fileprivate func axEnabled(_ i: Int) -> Bool { isEnabled(items[i]) }
     fileprivate func axHelp(_ i: Int) -> String { tooltip(items[i]) }
-    /// Test hook: what VoiceOver gets for each button.
+    /// Test hook: what VoiceOver gets for each button, read the way it reads them (the toolbar's children).
     var accessibilityForTest: [[String: Any]] {
-        axButtons.map { b in ["label": b.accessibilityLabel() ?? "", "role": b.accessibilityRole()?.rawValue ?? "", "value": b.accessibilityValue() ?? NSNull(),
+        (accessibilityChildren() as? [ToolbarButtonElement] ?? []).map { b in ["label": b.accessibilityLabel() ?? "", "role": b.accessibilityRole()?.rawValue ?? "", "value": b.accessibilityValue() ?? NSNull(),
                               "help": b.accessibilityHelp() ?? "", "enabled": b.isAccessibilityEnabled(), "frame": [b.accessibilityFrame().minX, b.accessibilityFrame().minY, b.accessibilityFrame().width, b.accessibilityFrame().height], "hasMenu": axHasPanel(axButtons.firstIndex { $0 === b } ?? 0)] }
     }
-    func accessibilityPressForTest(_ i: Int) -> Bool { axButtons[i].accessibilityPerformPress() }
+    func accessibilityPressForTest(_ i: Int) -> Bool { (accessibilityChildren() as? [ToolbarButtonElement]).flatMap { i >= 0 && i < $0.count ? $0[i] : nil }?.accessibilityPerformPress() ?? false }
 
     override func rightMouseDown(with e: NSEvent) {
         let p = convert(e.locationInWindow, from: nil)
