@@ -1561,42 +1561,49 @@ def run_scenarios(app, rep, only, hand):
         for zoom in ("100%", "300%"):
             for wi, wname, frac in ((0, "50%", 0.5), (1, "75%", 0.75), (2, "100%", 1.0)):
                 for kind in ("just inside", "mid-line"):
-                    st = setup(wi, zoom); W = st["pageW"]; pad_w, pad_h = st["padMM"]
-                    p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
-                    upm = (p1[0] - p0[0]) / 10; hand.h = 4.5 if zoom == "100%" else 7; sp = hand.h * 0.7 * upm
-                    y = app.cmd({"cmd": "toPagePt", "point": [0, pad_h * 0.7]})["point"][1]
-                    x0 = st["view"]["x"] + st["view"]["w"] * 0.06; lw = frac * W
-                    limit = min(x0 + lw, W * CAP)
-                    # Where the ink should stop: just inside the marker (0.3-2.5% of the line width before it; at the
-                    # page's edge, past 93% of the page), or mid-line (about 8% of the line width before it).
-                    lo, hi = (limit - 0.025 * lw, limit - 0.003 * lw) if kind == "just inside" else (limit - 0.10 * lw, limit - 0.06 * lw)
-                    if kind == "just inside" and limit >= W * CAP - 1: lo = max(lo, W * 0.932)
-                    nl0 = st["newLines"]; right = x0; i = 0; s_ = st; done = False
-                    while i < 60 and s_["newLines"] == nl0 and right < lo:
-                        w_ = words[i % len(words)]; gap = sp
-                        if i > 0 and right + sp + hand.width(w_) * upm > hi:
-                            # A short last word to land in the band, with a tight space if a normal one won't fit.
-                            w_, gap = next(((c, g) for g in (sp, sp * 0.4) for c in ("an", "a", "i") if right + g + hand.width(c) * upm <= hi), (None, 0))
-                            if w_ is None: break
-                        s_, right = word_at(w_, x0 if i == 0 else right + gap, y); i += 1
-                        time.sleep(0.05)
-                    lim_seen = s_.get("lineLimitX")
-                    if lim_seen is None: rep.step("no limit reported", writing=s_.get("writing"), draw=s_.get("draw"))
-                    lim_seen = lim_seen if lim_seen is not None else limit
-                    label = f"{wname} at {zoom}, ink {kind}"
-                    if kind == "just inside":
-                        while time.time() - lifted[0] < 0.9 and app.state()["newLines"] == nl0: time.sleep(0.03)
-                        s2 = app.state(); dt = time.time() - lifted[0]; nl = s2.get("nextLine") or [None]
-                        rep.step(label, inkRight=round(right / W, 4), limit=lim_seen and round(lim_seen / W, 4), shortOfMarker=lim_seen and round((lim_seen - right) / lw * 100, 2), newLines=s2["newLines"] - nl0, nextLine=nl[0] and round(nl[0] / W, 3))
-                        rep.check(lim_seen is not None and right < lim_seen and s2["newLines"] > nl0 and nl[0] is not None and abs(nl[0] - x0) < 0.02 * W,
-                                  f"{label}: a word ending just inside the marker brings the next line at the 400 ms gap (by 0.9 s), back at the block's start",
-                                  f"ink {right / W:.1%}, marker {lim_seen / W:.1%} ({(lim_seen - right) / lw * 100:.1f}% of the line short), new lines by {dt:.2f} s: {s2['newLines'] - nl0}, next line at {pct(nl[0], W)}")
-                    else:
-                        time.sleep(max(0, 1.5 - (time.time() - lifted[0]))); s2 = app.state()
-                        rep.step(label, inkRight=round(right / W, 4), limit=lim_seen and round(lim_seen / W, 4), shortOfMarker=lim_seen and round((lim_seen - right) / lw * 100, 2), newLines=s2["newLines"] - nl0)
-                        rep.check(lim_seen is not None and (lim_seen - right) > 0.04 * lw and s2["newLines"] == nl0,
-                                  f"{label}: ink stopping well before the marker (mid-line) doesn't bring the next line (1.5 s later)",
-                                  f"ink {right / W:.1%}, marker {lim_seen / W:.1%} ({(lim_seen - right) / lw * 100:.1f}% of the line short), new lines {s2['newLines'] - nl0}")
+                  for attempt in range(3):   # the robot's ink must land in the band; if it doesn't, a fresh page and again
+                      st = setup(wi, zoom); W = st["pageW"]; pad_w, pad_h = st["padMM"]
+                      p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
+                      upm = (p1[0] - p0[0]) / 10; hand.h = 4.5 if zoom == "100%" else 7; sp = hand.h * 0.7 * upm
+                      y = app.cmd({"cmd": "toPagePt", "point": [0, pad_h * 0.7]})["point"][1]
+                      x0 = st["view"]["x"] + st["view"]["w"] * 0.06; lw = frac * W
+                      limit = min(x0 + lw, W * CAP)
+                      # Where the ink should stop: just inside the marker (0.3-2.5% of the line width before it; at the
+                      # page's edge, past 93% of the page), or mid-line (about 8% of the line width before it).
+                      lo, hi = (limit - 0.025 * lw, limit - 0.003 * lw) if kind == "just inside" else (limit - 0.10 * lw, limit - 0.06 * lw)
+                      if kind == "just inside" and limit >= W * CAP - 1: lo = max(lo, W * 0.932)
+                      nl0 = st["newLines"]; right = x0; i = 0; s_ = st; done = False
+                      while i < 60 and s_["newLines"] == nl0 and right < lo:
+                          w_ = words[i % len(words)]; gap = sp
+                          if i > 0 and right + sp + hand.width(w_) * upm > hi:
+                              # A short last word to land in the band, with a tight space if a normal one won't fit.
+                              w_, gap = next(((c, g) for g in (sp, sp * 0.4, sp * 0.15) for c in ("an", "a", "i") if right + g + hand.width(c) * upm <= hi), (None, 0))
+                              if w_ is None: break
+                          s_, right = word_at(w_, x0 if i == 0 else right + gap, y); i += 1
+                          time.sleep(0.05)
+                      lim_seen = s_.get("lineLimitX")
+                      if lim_seen is None: rep.step("no limit reported", writing=s_.get("writing"), draw=s_.get("draw"))
+                      lim_seen = lim_seen if lim_seen is not None else limit
+                      landed = (0 < lim_seen - right < 0.03 * lw) if kind == "just inside" else (lim_seen - right > 0.04 * lw)
+                      if landed and kind == "just inside" and lim_seen >= W * CAP - 1: landed = right >= W * 0.93
+                      if not landed and attempt < 2 and s_["newLines"] == nl0:
+                          rep.step(f"{wname} at {zoom}, ink {kind}: the robot's ink missed the band, again", inkRight=round(right / W, 4), limit=round(lim_seen / W, 4))
+                          continue
+                      label = f"{wname} at {zoom}, ink {kind}"
+                      if kind == "just inside":
+                          while time.time() - lifted[0] < 0.9 and app.state()["newLines"] == nl0: time.sleep(0.03)
+                          s2 = app.state(); dt = time.time() - lifted[0]; nl = s2.get("nextLine") or [None]
+                          rep.step(label, inkRight=round(right / W, 4), limit=lim_seen and round(lim_seen / W, 4), shortOfMarker=lim_seen and round((lim_seen - right) / lw * 100, 2), newLines=s2["newLines"] - nl0, nextLine=nl[0] and round(nl[0] / W, 3))
+                          rep.check(lim_seen is not None and right < lim_seen and s2["newLines"] > nl0 and nl[0] is not None and abs(nl[0] - x0) < 0.02 * W,
+                                    f"{label}: a word ending just inside the marker brings the next line at the 400 ms gap (by 0.9 s), back at the block's start",
+                                    f"ink {right / W:.1%}, marker {lim_seen / W:.1%} ({(lim_seen - right) / lw * 100:.1f}% of the line short), new lines by {dt:.2f} s: {s2['newLines'] - nl0}, next line at {pct(nl[0], W)}")
+                      else:
+                          time.sleep(max(0, 1.5 - (time.time() - lifted[0]))); s2 = app.state()
+                          rep.step(label, inkRight=round(right / W, 4), limit=lim_seen and round(lim_seen / W, 4), shortOfMarker=lim_seen and round((lim_seen - right) / lw * 100, 2), newLines=s2["newLines"] - nl0)
+                          rep.check(lim_seen is not None and (lim_seen - right) > 0.04 * lw and s2["newLines"] == nl0,
+                                    f"{label}: ink stopping well before the marker (mid-line) doesn't bring the next line (1.5 s later)",
+                                    f"ink {right / W:.1%}, marker {lim_seen / W:.1%} ({(lim_seen - right) / lw * 100:.1f}% of the line short), new lines {s2['newLines'] - nl0}")
+                      break
         hand.h = old_h
         ensure(app, "draw", False, "d")
 
