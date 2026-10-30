@@ -82,7 +82,8 @@ final class ContainerView: NSView {
         zoomBadge.frame = CGRect(x: bounds.width - max(bw, 56) - 12 - (PageMapView.width - max(bw, 56)) / 2, y: (pageMap.isHidden ? bounds.height - 12 : pageMap.frame.minY - 6) - 24,
                                  width: max(bw, 56), height: 24)
         let ps = practice.fittingSize
-        practice.frame = CGRect(x: 16, y: bounds.height - ps.height - 16, width: ps.width, height: ps.height)
+        // Below the page label at the top (it covered "Page 1 of 1 · created ..." in narrow windows).
+        practice.frame = CGRect(x: 16, y: bounds.height - ps.height - 36, width: ps.width, height: ps.height)
         // Pan: at the right edge; next line: low on the left, where the line will start.
         pendingMove.frame = pendingMove.kind == .newLine ? CGRect(x: 14, y: bounds.height * 0.3, width: 40, height: 40)
                                                          : CGRect(x: bounds.width - 46, y: bounds.midY - 20, width: 40, height: 40)

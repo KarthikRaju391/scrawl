@@ -146,7 +146,7 @@ final class GalleryView: NSView {
     let scroll = NSScrollView()
     private let grid = GridView()
     private let title = NSTextField(labelWithString: "Pages")
-    private let hintLabel = NSTextField(labelWithString: "Last changed first  ·  Arrows or the pointer choose  ·  Return, Space or G opens  ·  Esc goes back  ·  • = the page you came from")
+    private let hintLabel = NSTextField(labelWithString: "Last changed first  ·  Arrows choose  ·  Return opens  ·  Esc goes back  ·  • the page you came from")
     var onOpen: ((Int) -> Void)?
     var onNewPage: (() -> Void)?
     let thumbnails = ThumbnailCache.shared
