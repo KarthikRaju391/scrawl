@@ -80,19 +80,26 @@ enum TestPan {
                 for k in 0..<6 { letter(x: vv.minX + vv.width * (0.3 + Double(k) * 0.05), y: y, w: lw); wait(0.12) }
                 wait(0.7)
                 s["writeAfterPanRight"] = ["afterPan": afterPan, "afterWritingAndPause": canvas.camera.visible.minX, "newLines": canvas.newLineCount - lines0]
-                // Writing along the line never pans sideways (Karthik, 28 Oct); a full line returns to the margin.
+                // Writing along the line never pans sideways (Karthik, 28 Oct). Zoomed in, the line goes on by panning
+                // right by hand (the ½-page guide line is past the view's right edge here); once the ink crosses it,
+                // the next line comes and the view goes back to the block's start (30 Oct rules: no look-ahead).
                 canvas.clearPage()
                 canvas.setVisibleForReplay(x: 0, y: canvas.camera.page.height - canvas.camera.page.height / 2, w: pw / 2, z: 2)
                 canvas.flushInputForTest()
                 let nl0 = canvas.newLineCount, x0 = canvas.camera.visible.minX
-                var maxX = 0.0, x = canvas.camera.visible.minX + canvas.camera.visible.width * 0.1, n = 0
+                var x = canvas.camera.visible.minX + canvas.camera.visible.width * 0.1, n = 0, handPans = 0, autoMoves: [Double] = []
                 while canvas.newLineCount == nl0 && n < 200 {
+                    let v0 = canvas.camera.visible.minX
                     letter(x: x, y: y, w: lw); n += 1; x += lw * 1.25
                     if n % 4 == 0 { x += lw * 1.5; wait(0.7) } else { wait(0.12) }
-                    maxX = max(maxX, canvas.camera.visible.minX)
+                    let moved = canvas.camera.visible.minX - v0
+                    if canvas.newLineCount == nl0 && abs(moved) > 0.5 { autoMoves.append(moved) }   // a move nobody asked for
+                    if canvas.newLineCount == nl0 && x + lw * 3 > canvas.camera.visible.maxX - canvas.camera.visible.width * 0.08 {
+                        twoFingerPan(-30); handPans += 1   // near the view's edge: pan right by hand
+                    }
                 }
                 wait(0.7)
-                s["alongLine"] = ["startX": x0, "furthestViewX": maxX, "newLines": canvas.newLineCount - nl0,
+                s["alongLine"] = ["startX": x0, "handPans": handPans, "autoMoves": autoMoves, "newLines": canvas.newLineCount - nl0,
                                 "viewXAfterNewLine": canvas.camera.visible.minX, "wantAfterNewLine": max((canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - canvas.camera.visible.width * 0.05, 0)]   // back to the block's start
                 out.append(s)
             }

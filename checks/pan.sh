@@ -1,5 +1,5 @@
 #!/bin/bash
-# Horizontal page moves in every window shape (background): pans both ways, writing after a pan right, and no sideways pan while writing along a line.
+# Horizontal page moves in every window shape (background): pans both ways, writing after a pan right, and no sideways pan while writing along a line (a zoomed-in line goes on by panning by hand; the next line comes once the ink crosses the guide line).
 cd "$(dirname "$0")/.."
 D=$(mktemp -d /tmp/td-pan.XXXX)
 TRACKPAD_DRAW_DATA=$D "build/Scrawl.app/Contents/MacOS/TrackpadDraw" --test-pan "$@" >/dev/null 2>&1 &
@@ -18,7 +18,7 @@ for c in r["cases"]:
         f"{tag}: two-finger pan both ways in draw mode (x {t['start']:.0f} -> {t['afterFingersLeft']:.0f} -> {t['afterFingersRight']:.0f}, want ±{t['want']:.0f})")
     chk(w["newLines"] == 0 and abs(w["afterWritingAndPause"] - w["afterPan"]) < 1, f"{tag}: writing after panning right by hand stays there "
         f"(x {w['afterPan']:.0f} -> {w['afterWritingAndPause']:.0f}, new lines {w['newLines']})")
-    chk(a["furthestViewX"] <= max(a["startX"], a["wantAfterNewLine"]) + 1 and a["newLines"] == 1 and abs(a["viewXAfterNewLine"] - a["wantAfterNewLine"]) < 1,
-        f"{tag}: writing along the line never pans sideways (view x stays {a['startX']:.0f}, furthest {a['furthestViewX']:.0f}), then the new line returns to the block's start (x {a['viewXAfterNewLine']:.0f}, want {a['wantAfterNewLine']:.0f})")
+    chk(not a["autoMoves"] and a["handPans"] >= 1 and a["newLines"] == 1 and abs(a["viewXAfterNewLine"] - a["wantAfterNewLine"]) < 1,
+        f"{tag}: writing along a zoomed-in line, the view moves sideways only when panned by hand ({a['handPans']} pans; other moves {a['autoMoves'][:3]}); once the ink crosses the guide line one new line comes, back at the block's start (x {a['viewXAfterNewLine']:.0f}, want {a['wantAfterNewLine']:.0f}, new lines {a['newLines']})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 PY

@@ -209,9 +209,12 @@ class App:
 def ocr(png, expected):
     """Character accuracy of Vision's reading of `png` against `expected` (0..1), and the text read."""
     tool = os.path.join(ROOT, "build/robot-ocr")
-    r = subprocess.run([tool, png, expected], capture_output=True, text=True)
-    try: return json.loads(r.stdout)
-    except ValueError: return {"accuracy": 0.0, "text": r.stdout.strip()[:200]}
+    # The tool always prints JSON when it ran; no JSON means it failed (it did once with no output at all): once more.
+    for attempt in range(2):
+        r = subprocess.run([tool, png, expected], capture_output=True, text=True)
+        try: return json.loads(r.stdout)
+        except ValueError: pass
+    return {"accuracy": 0.0, "text": r.stdout.strip()[:200], "error": f"OCR tool failed twice (exit {r.returncode}): {r.stderr.strip()[:200]}"}
 
 
 def ink_pixels(png):
@@ -236,6 +239,12 @@ class Report:
     def check(self, ok, what, detail=""):
         self.cur["checks"].append({"ok": bool(ok), "what": what, "detail": detail})
         print(("  PASS " if ok else "  FAIL ") + what + (f"  ({detail})" if detail else ""), flush=True)
+
+    def skip(self, what, why):
+        """A check that can't run here: listed as SKIPPED with the reason, never counted as passed."""
+        self.cur.setdefault("skipped", []).append({"what": what, "why": why})
+        self.step("SKIPPED: " + what, why=why)
+        print("  SKIP " + what + f"  ({why})", flush=True)
 
     def shot(self, app, label):
         name = f"{self.cur['name']}-{len(self.cur['shots']) + 1}.png"
@@ -913,6 +922,7 @@ def run_scenarios(app, rep, only, hand):
         upm = (p1[0] - p0[0]) / 10   # page units per pad mm
         base = list(start_page); lines0 = st["newLines"]; written = 0
         write_rows.off_pad = 0
+        write_rows.words = []   # (line, start x, end x) of each word in page units, for line_rule
         for w in words:
             (px, py), = app.cmd({"cmd": "toPad", "points": [base]})["points"]
             if px + hand.width(w, font) > pad_w * 0.92:   # no room left on the pad: pan by hand with two fingers, as a person does
@@ -933,6 +943,7 @@ def run_scenarios(app, rep, only, hand):
             mine = app.state()["lastStrokes"][-len(strokes):]
             app.touch([[0.008, []]] * int(pause / 0.008), settle=0.3); settle(app)
             s2 = app.state(); now = s2["lastStrokes"][-len(strokes):]
+            if now: write_rows.words.append((before_word["newLines"], min(b[0] for b in now), max(b[2] for b in now), w))
             if on_word: on_word(w, s2, before_word, after_word)
             gap = hand.h * space * upm
             if s2["newLines"] > lines0:
@@ -946,6 +957,37 @@ def run_scenarios(app, rep, only, hand):
             else:
                 base = [max(b[2] for b in now) + gap, base[1]]
         return cid, written
+
+    def line_rule(words, frac, W, label):
+        """The next-line rule as it is (Karthik, 29-30 Oct): a line breaks 400 ms after a lift once its ink crosses the
+        guide line (the block's start + the width, capped at 95% of the page), or ends within 3% of the line width
+        before it (from 93% of the page when the limit is at the cap). No look-ahead: a word that starts before the
+        guide line finishes on its line, however far past it, and a word after ink that stopped short of the zone
+        goes on the same line. So: (A) once a line's ink has reached the guide line or its last 3%, no further word is
+        written on it; (B) every full line ends past it or inside that last 3%."""
+        lines = {}
+        for ln, x0, x1, w in words: lines.setdefault(ln, []).append((x0, x1, w))
+        keys = sorted(lines)
+        if not keys: rep.check(False, f"{label}: words written", "none"); return
+        start = min(x0 for x0, _, _ in lines[keys[0]])
+        lim = min(start + frac * W, W * CAP); lw = frac * W
+        zone = W * 0.93 if lim > W * 0.93 else lim - 0.03 * lw
+        tol = 0.005 * W
+        # A word written on a line after that line's ink had already reached the guide line or its last 3% (the
+        # line should have broken at the word gap). A word may start past the guide line when the ink before it
+        # stopped short of that zone: no look-ahead, so the line goes on.
+        past = []
+        for k in keys:
+            right = None
+            for x0, x1, w in sorted(lines[k]):
+                if right is not None and right >= zone + tol: past.append((k, w, round(x0 / W, 3), round(right / W, 3)))
+                right = x1 if right is None else max(right, x1)
+        short = [(k, round(max(x1 for _, x1, _ in lines[k]) / W, 3)) for k in keys[:-1] if max(x1 for _, x1, _ in lines[k]) < zone - tol]
+        ends = [round(max(x1 for _, x1, _ in lines[k]) / W, 3) for k in keys]
+        rep.step(f"{label}: lines", start=round(start / W, 3), guide=round(lim / W, 3), zoneFrom=round(zone / W, 3), ends=ends)
+        rep.check(not past and len(keys) >= 2, f"{label}: once a line's ink reaches the guide line or its last 3%, the next word goes to the next line (a word started before it finishes there)",
+                  f"guide line {lim / W:.1%}, zone from {zone / W:.1%}; words written on an already full line: {past}, {len(keys)} lines")
+        rep.check(not short, f"{label}: every full line reaches the guide line or its last 3% (no early break)", f"line ends {ends}, the zone starts at {zone / W:.1%}; short: {short}")
 
     def hard_limit(frac, idx, name):
         ensure(app, "draw", False, "d"); app.press("n")
@@ -963,13 +1005,12 @@ def run_scenarios(app, rep, only, hand):
         s = app.state()
         ink = s["inkBounds"]
         rep.step("ink", maxX=round(ink[2] / W, 4), newLines=s["newLines"], strokesWritten=written, strokesOnPage=s["strokes"] - n0)
-        start = ink[0]   # the block's start: the width counts from there (28 Oct)
-        rep.check(ink[2] <= start + (frac + 0.06) * W, f"{name} lines end at about {frac:.0%} of the page after the block's start (a word may run slightly past it)", f"ink from {start / W:.1%} to {ink[2] / W:.1%} of the page (limit {(start / W + frac):.1%})")
+        line_rule(write_rows.words, frac, W, f"{name} lines at 100%")
         rep.check(s["strokes"] - n0 == written, "every stroke stays where it was written", f"{written} written, {s['strokes'] - n0} on the page")
         rep.shot(app, f"{name} lines at 100%")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
-    @scenario("edge-word-stays", "Karthik's repro (19:33): a fast writer reaches the ½-page mark and starts 'the' right after 'dog', pausing 0.7 s inside the word. The word finishes on its line, nothing already written ever moves, and the line breaks only after the word; the next words keep to the ½-page mark.")
+    @scenario("edge-word-stays", "Karthik's repro (19:33), with the rule as it is (30 Oct): a fast writer reaches the ½-page mark and writes 'the' across it, with a short pause (0.25 s, under the 400 ms word gap) inside the word. No line break inside the word, the word finishes on its line, nothing already written moves, and the line breaks after the word's 400 ms gap; the next words follow the rule (none starts past the mark, every full line reaches it).")
     def _():
         ensure(app, "draw", False, "d"); app.press("n")
         ensure(app, "writing", True, "w")
@@ -990,17 +1031,19 @@ def run_scenarios(app, rep, only, hand):
             strokes = hand.word(w, x, y)
             f, cid = hand.frames(strokes, cid); fr += f + [[0.008, []]] * 25
             x += hand.width(w) + hand.h * 0.9
-            if (app.cmd({"cmd": "toPagePt", "point": [x, y]})["point"][0]) > W * 0.42: break
+            if (app.cmd({"cmd": "toPagePt", "point": [x, y]})["point"][0]) > W * 0.49: break   # 'the' then crosses the mark (53.5%)
         app.touch(fr, settle=0.05)
         before = app.state()["pageBounds"]
-        # 'th', a 0.7 s pause inside the word, then 'e'; then the word gap.
+        # 'th', a 0.25 s pause inside the word (under the 400 ms word gap), then 'e'; then the word gap.
         th = hand.word("th", x, y); e_x = x + hand.width("th")
         f1, cid = hand.frames(th, cid)
         f2, cid = hand.frames(hand.word("e", e_x, y), cid)
-        r = app.touch(f1 + [[0.008, []]] * int(0.7 / 0.008) + f2, settle=0.05)
+        r = app.touch(f1 + [[0.008, []]] * int(0.25 / 0.008) + f2, settle=0.05)
         mid = app.state()
         word_bounds = mid["pageBounds"][len(before):]
-        rep.check(mid["newLines"] == lines0, "no line break inside the word (not at the 0.7 s pause between 'th' and 'e')", f"new lines during the word: {mid['newLines'] - lines0}")
+        mark0 = min(b[0] for b in before) + W * 0.5
+        rep.step("'the'", end=round(max(b[2] for b in word_bounds) / W, 3), mark=round(mark0 / W, 3))
+        rep.check(mid["newLines"] == lines0, "no line break inside the word (not at the 0.25 s pause between 'th' and 'e')", f"new lines during the word: {mid['newLines'] - lines0}")
         app.touch([[0.008, []]] * int(1.4 / 0.008), settle=0.3); settle(app)
         after = app.state()
         moved = [i for i, (a, b) in enumerate(zip(before + word_bounds, after["pageBounds"])) if any(abs(u - v) > 1e-6 for u, v in zip(a, b))]
@@ -1008,17 +1051,15 @@ def run_scenarios(app, rep, only, hand):
         ys = [(b[1] + b[3]) / 2 for b in word_bounds]; line_y = [(b[1] + b[3]) / 2 for b in before]
         same_line = word_bounds and max(abs(v - (sum(line_y) / len(line_y))) for v in ys) < hand.h * 1.2 * upm
         rep.check(same_line, "'the' is finished on the line it started on (no break inside the word)", f"word ends at {max(b[2] for b in word_bounds) / W:.0%} of the page")
-        rep.check(after["newLines"] > lines0, "after the word, the line breaks", f"new lines {after['newLines'] - lines0}")
+        crossed = max(b[2] for b in word_bounds) >= mark0
+        rep.check(crossed and after["newLines"] > lines0, "the word crosses the mark, and after its 400 ms gap the line breaks", f"crossed: {crossed}, new lines {after['newLines'] - lines0}")
         rep.shot(app, "'the' finished on its line past the mark; the next line comes after it")
         # The next words follow the app's breaks and keep to the ½-page mark (each starts before it).
         n0 = len(after["pageBounds"])
         cid, written = write_rows(cid, "quick brown fox jumps over the lazy dog again and again".split(), [after["nextLine"][0], after["nextLine"][1] - hand.h * 0.35 * upm])
-        fin = app.state()
-        rest = fin["pageBounds"][n0:]
-        mark = min(b[0] for b in after["pageBounds"][:n0]) + W * 0.5   # ½ a page after the block's start (28 Oct)
-        starts_ok = all(b[0] <= mark for b in rest)
-        over = max(b[2] for b in rest) / W
-        rep.check(starts_ok and over <= mark / W + 0.06, "the next words start before the ½-page mark (from the block's start); a word may only run slightly past it", f"ink to {over:.1%} of the page, mark {mark / W:.1%}")
+        # The block's start is the first line's: its words (from before) start the record the rule reads.
+        blk = min(b[0] for b in after["pageBounds"][:n0])
+        line_rule([(-1, blk, max(b[2] for b in after["pageBounds"][:n0]), "(first line)")] + write_rows.words, 0.5, W, "the next words")
         hand.h = old_h
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
@@ -1115,16 +1156,7 @@ def run_scenarios(app, rep, only, hand):
         mine = s2["pageBounds"][n0:]
         p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
         upm = (p1[0] - p0[0]) / 10
-        lines = []
-        for b in mine:
-            y = (b[1] + b[3]) / 2
-            for L in lines:
-                if abs(L[0] - y) < 9 * 1.1 * upm: L[1] = max(L[1], b[2]); break
-            else: lines.append([y, b[2]])
-        lines.sort(key=lambda L: -L[0])
-        ends = [L[1] / W for L in lines]
-        full_lines = ends[:-1]
-        rep.check(full_lines and all(0.42 <= e <= 0.58 for e in full_lines), "(b) it comes near the ½-page limit (lines end at 42-58% of the page)", f"{[f'{e:.0%}' for e in ends]}")
+        line_rule(write_rows.words, 0.5, W, "(b) ½-page lines at 400%")
         # (c) the limit line (Karthik, 28 Oct evening: only when approaching the width point): hidden at the start of a
         # line, fading in within 15% of the line width from the limit, gone after the next-line move.
         lx = s2.get("lineLimitX")
@@ -1136,21 +1168,30 @@ def run_scenarios(app, rep, only, hand):
         near = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d <= 0.15]
         rep.step("limit line", samples=[(w, round(d, 2), round(a, 3)) for w, d, a, _, _, _ in samples], afterNewLine=[round(a, 3) for a in after_nl])
         rep.check(far and all(a <= 0.01 for _, _, a in far), "(c) hidden while the line's ink is far from the limit (more than 30% of the line width)", f"{far[:6]}")
-        # Strength 22% x (1 - distance / 15% of the line width): e.g. 0.015 at 14%, 0.044 at 12%, 0.22 at the limit.
-        rep.check(near and all(abs(a - 0.22 * max(0.0, 1 - d / 0.15)) < 0.03 for _, d, a in near) and max(a for _, _, a in near) > 0.005,
+        # Strength 22% x (1 - distance / 15% of the line width): e.g. 0.015 at 14%, 0.044 at 12%, 0.22 at the limit and
+        # past it (a word that started before the limit can end past it now: full strength there, not more).
+        rep.check(near and all(abs(a - 0.22 * min(1.0, max(0.0, 1 - d / 0.15))) < 0.03 for _, d, a in near) and max(a for _, _, a in near) > 0.005,
                   "(c) fades in as the ink comes within 15% of the line width of the limit (in proportion)", f"{near}")
         shown_in_view = [(d, l) for _, _, a, d, l, iv in samples if a > 0.002 and iv]
         rep.check(all(d and abs(d[0] - l) < 1e-6 for d, l in shown_in_view), "(c) when shown (and the limit is in view), it's drawn at the limit's page x (the 100% screenshot below checks it too)", f"{len(shown_in_view)} shown in view: drawn at {[d and round(d[0]) for d, _ in shown_in_view]}")
         # The last line has only a few words (far from the limit): at 100%, with the limit in view, no line to be seen.
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app, limit=3); time.sleep(0.6)
         st0 = app.state(); start_shot.append((rep.shot(app, "a line just started (100%): no limit line"), st0))
-        # Then a word on that line that ends just short of the limit: the line fades in (screenshot before the pause ends).
-        last = s2["pageBounds"][-1]; lim0 = st0["lineLimitX"]
+        # Then a line whose word ends just short of the limit: the line fades in (screenshot before the pause ends).
+        # Since 4988285 the zoom change above plus writing far from the line's end starts a new block there; so the
+        # line starts fresh at 100% ("a" at the left, a few lines below), and "near" ends 2% of the page short of
+        # that line's own limit (4% of the line width: outside the 3% next-line zone, so no move).
+        last = s2["pageBounds"][-1]
         q0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; q1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
         upm1 = (q1[0] - q0[0]) / 10
         old_h = hand.h; hand.h = 4.5   # handwriting size at 100%
+        y_new = (last[1] + last[3]) / 2 - 3 * hand.h * 1.6 * upm1
+        (ax, ay), = app.cmd({"cmd": "toPad", "points": [[W * 0.05, y_new]]})["points"]
+        fa, _ = hand.frames(hand.word("a", ax, ay), 21400)
+        app.touch(fa + [[0.008, []]] * int(0.6 / 0.008), settle=0.2); settle(app)
+        lim0 = app.state()["lineLimitX"]
         start = lim0 - W * 0.02 - hand.width("near") * upm1   # ends about 2% of the page short of the limit
-        (nx, ny), = app.cmd({"cmd": "toPad", "points": [[start, (last[1] + last[3]) / 2]]})["points"]
+        (nx, ny), = app.cmd({"cmd": "toPad", "points": [[start, y_new]]})["points"]
         strokes_ = hand.word("near", nx, ny); hand.h = old_h
         f_, _ = hand.frames(strokes_, 21500)
         # Hold the finger still at the word's end for 2 s (the stroke still live: no new line yet), and take the
@@ -1785,7 +1826,7 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
         ensure(app, "draw", True, "d")
         fr, info = session_frames(os.path.join(ROOT, "data"), 45)
-        if not fr: rep.check(False, "a recorded session to replay", "none found in data/"); return
+        if not fr: rep.check(False, "a recorded session to replay", "none committed to the repo in data/"); return
         rep.step("source", **info)
         a = app.state()
         app.cmd({"cmd": "touch", "frames": fr, "settle": 1.0, "norm": True})
@@ -1798,13 +1839,16 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "exportPNG", "path": ref})
         o_s, o_r = ocr(p, ""), ocr(ref, "")
         rep.step("OCR", screen=o_s.get("text", "")[:120], stored=o_r.get("text", "")[:120])
-        words_s, words_r = set(o_s.get("text", "").lower().split()), set(o_r.get("text", "").lower().split())
+        # Words: alphabetic, 3+ letters (OCR of maths or a drawing gives symbol strings that differ run to run).
+        def words(t): return {w.strip(".,;:!?()\"'").lower() for w in t.split()} - {""}
+        real = lambda ws: {w for w in ws if len(w) >= 3 and w.isalpha()}
+        words_s, words_r = real(words(o_s.get("text", ""))), real(words(o_r.get("text", "")))
         common = len(words_s & words_r)
         if len(words_r) >= 3:
             rep.check(common >= 0.6 * len(words_r), "the screen reads like the stored ink",
                       f"{common} of {len(words_r)} words OCR found in the export are also read off the screen")
         else:
-            rep.step("OCR not applicable", why=f"the replayed part is a drawing: OCR reads {len(words_r)} words in the stored ink")
+            rep.skip("the screen reads like the stored ink", f"the committed session's replayed part ({info.get('session', '?')}) isn't text OCR can read: {len(words_r)} words in the stored ink (it's maths or a drawing)")
 
     @scenario("usage-counts", "Usage counts: using the app writes events like session_start, draw_mode, tool, undo and overview to the local log at quit, with only small allow-listed props and never what was written. Turned off in Settings, that session records nothing more.")
     def _():
@@ -2308,7 +2352,7 @@ def judge_writing(app, rep, recs, st, text, ocr_check=True):
         if "error" in app.cmd({"cmd": "exportPNG", "path": exp}):
             rep.step("OCR skipped", why="this build has no export"); app.press("d", until=lambda s: not s["draw"]); return
         o = ocr(exp, text)
-        rep.check(o.get("accuracy", 0) >= 0.5, "the page reads back (OCR of the exported page)", f"{o.get('accuracy', 0):.0%}: {o.get('text', '')[:80]!r}")
+        rep.check(o.get("accuracy", 0) >= 0.5, "the page reads back (OCR of the exported page)", f"{o.get('accuracy', 0):.0%}: {o.get('text', '')[:80]!r}{' ' + o['error'] if 'error' in o else ''}")
     app.press("d", until=lambda s: not s["draw"])
 
 
@@ -2328,7 +2372,10 @@ def latest_latency(data):
 def session_frames(data, secs):
     """The busiest `secs` seconds of drawing in the longest recorded session: its raw touch frames (0...1
     pad positions, every contact including palms and thumbs), with the recorded timing."""
-    files = sorted(glob.glob(os.path.join(data, "session-2*.jsonl")), key=os.path.getsize)
+    # Only recordings committed to the repo (data/ also holds whatever was recorded locally since: results would
+    # change with it).
+    tracked = set(subprocess.run(["git", "-C", ROOT, "ls-files", "data"], capture_output=True, text=True).stdout.split())
+    files = sorted((f for f in glob.glob(os.path.join(data, "session-2*.jsonl")) if os.path.relpath(f, ROOT) in tracked), key=os.path.getsize)
     if not files: return [], {}
     rows = []
     for line in open(files[-1]):
@@ -2390,7 +2437,8 @@ def main():
     ok, n = rep.write({"label": a.label, "commit": commit, "when": time.strftime("%Y-%m-%d %H:%M"), "secs": round(time.time() - t0),
                        "note": "Touches go in through the trackpad callback, keys as CGEvents to the app, clicks through AppKit. Not covered: the sensor and driver, macOS gestures that take touches before the app, full screen (it would take over the screen), and how it feels."})
     errors = sum(1 for s in rep.scenarios if s["error"])
-    print(f"RESULT: {'PASS' if ok == n and not errors else 'FAIL'} {ok}/{n} checks, {errors} scenario errors  report: {os.path.join(out, 'report.html')}")
+    skipped = sum(len(s.get("skipped", [])) for s in rep.scenarios)
+    print(f"RESULT: {'PASS' if ok == n and not errors else 'FAIL'} {ok}/{n} checks, {errors} scenario errors, {skipped} skipped  report: {os.path.join(out, 'report.html')}")
     return 0 if ok == n and not errors else 1
 
 

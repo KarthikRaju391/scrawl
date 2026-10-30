@@ -36,13 +36,15 @@ suites=(
   "edge-replay|checks/edge_cf.sh"
 )
 [ "${1:-}" = --no-release ] || suites+=("release-dmg|checks/release.sh")
-bad=0
+bad=0; skipped=0
 for s in "${suites[@]}"; do
   name=${s%%|*}; cmd=${s#*|}
   t0=$(date +%s)
   bash -c "$cmd" >"$LOG/$name.log" 2>&1; code=$?
-  p=$(grep -c "^PASS" "$LOG/$name.log"); f=$(grep -c "^FAIL" "$LOG/$name.log")
+  p=$(grep -c "^PASS" "$LOG/$name.log"); f=$(grep -c "^FAIL" "$LOG/$name.log"); k=$(grep -c "^SKIP" "$LOG/$name.log")
+  skipped=$((skipped + k))
   verdict=PASS; { [ $f -gt 0 ] || [ $code -ne 0 ] || grep -q "RESULT: FAIL" "$LOG/$name.log"; } && { verdict=FAIL; bad=$((bad + 1)); }
-  printf "%-5s %-16s %3d pass %2d fail  %3ds  %s\n" $verdict "$name" "$p" "$f" $(( $(date +%s) - t0 )) "$LOG/$name.log"
+  printf "%-5s %-16s %3d pass %2d fail %2d skipped  %3ds  %s\n" $verdict "$name" "$p" "$f" "$k" $(( $(date +%s) - t0 )) "$LOG/$name.log"
+  grep "^SKIP" "$LOG/$name.log" | sed 's/^/        /'
 done
-echo "RESULT: $([ $bad = 0 ] && echo PASS || echo "FAIL ($bad suites)")  logs: $LOG"
+echo "RESULT: $([ $bad = 0 ] && echo PASS || echo "FAIL ($bad suites)")$([ $skipped -gt 0 ] && echo ", $skipped checks skipped (listed above)")  logs: $LOG"

@@ -6,7 +6,7 @@ import Foundation
 func scratchChecks(_ check: (Bool, String) -> Void) {
     // 1. Every recorded stroke, against the strokes before it in the same file (canvas coordinates; undos are
     //    ignored, so there's more ink than there was: a harder test).
-    let files = ((try? FileManager.default.contentsOfDirectory(atPath: "data")) ?? []).filter { $0.hasPrefix("strokes-") && $0.hasSuffix(".jsonl") }.sorted()
+    let files = CommittedData.names("strokes-")
     var real = 0, shape = 0, falseErase: [String] = []
     for f in files {
         guard let text = try? String(contentsOfFile: "data/" + f, encoding: .utf8) else { continue }
@@ -30,7 +30,8 @@ func scratchChecks(_ check: (Bool, String) -> Void) {
             prev.append(s); if prev.count > 400 { prev.removeFirst() }
         }
     }
-    check(real > 5000 && falseErase.isEmpty, "scratch-out: 0 of \(real) recorded strokes would erase anything (\(shape) zig-zag-shaped, all on blank paper, highlighter or circling)\(falseErase.isEmpty ? "" : ": \(falseErase.prefix(5))")")
+    // (4,919 strokes are committed.)
+    check(real > 4000 && falseErase.isEmpty, "scratch-out: 0 of \(real) recorded strokes would erase anything (\(shape) zig-zag-shaped, all on blank paper, highlighter or circling)\(falseErase.isEmpty ? "" : ": \(falseErase.prefix(5))")")
 
     // 2. Fast letters, Hershey script and roman, 3-12 mm tall, 40-160 mm/s: never a scratch.
     let fonts = ["robot/fonts/scripts.jhf", "robot/fonts/rowmans.jhf"].map { TestHand.font($0) }
@@ -125,7 +126,7 @@ func scratchChecks(_ check: (Bool, String) -> Void) {
 /// The page map shows only for moves made by hand: replay every view change in Karthik's recorded sessions
 /// through its rule. Auto-pans and new lines (writing) must show it 0 times; his pinches and pans do.
 func pageMapRevealChecks(_ check: (Bool, String) -> Void) {
-    let files = ((try? FileManager.default.contentsOfDirectory(atPath: "data")) ?? []).filter { $0.hasPrefix("session-2026") && $0.hasSuffix(".jsonl") }
+    let files = CommittedData.names("session-2026")
     var bySource: [String: Int] = [:]
     for f in files {
         guard let text = try? String(contentsOfFile: "data/" + f, encoding: .utf8) else { continue }
