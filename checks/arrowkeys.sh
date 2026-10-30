@@ -35,14 +35,14 @@ g = r["gallery"]; cols, cells = g["columns"], g["cells"]
 chk(cells == 42 and g["startSelected"] == 2, f"overview: selection starts on the current page (3); {cells} tiles in {cols} columns")
 chk(g["leftFromFirst"] == 0 and g["upFromFirstRow"] == 0, "← and ↑ on the first tile stay put (no wrap)")
 chk(g["rightFromFirst"] == 1 and g["downFromFirst"] == 1 + cols, f"→ moves to the next page, ↓ by a row ({cols})")
-chk(g["rightFromLast"] == cells - 1 and g["downFromLast"] == cells - 1, "→ and ↓ on the last tile (+ New page) stay put")
+chk(g["rightFromLast"] == cells - 1 and g["downFromLast"] == cells - 1, "→ and ↓ on the last tile stay put")
 chk(g["downIntoPartialRow"] == g["lastCell"], f"↓ into the partial last row from a column past its end goes to the last tile ({g['downIntoPartialRow']})")
 chk(g["rowEndRight"] == cols, "→ at the end of a row continues on the next row")
 chk(g["selectedVisible"], f"the selection scrolls into view (tile {g['selectedAfterDowns'] + 1} visible)")
 rt = g["return"]
 chk(rt["page"] == 9 and rt["galleryHidden"] and all(abs(a - b) < 0.5 for a, b in zip(rt["from"], rt["want"])) and len(rt["from"]) == 4,
     "Return opens the selected page (10), growing from its tile")
-chk(g["startSelectedSecondOpen"] == 9 and g["space"]["page"] == 11, "reopened: selection on the current page (10); → → then Space opens page 12")
+chk(g["startSelectedSecondOpen"] == 9 and g["space"]["page"] == g["twoRight"], f"reopened: selection on the current page (10); → → then Space opens the tile two along (page {g['twoRight'] + 1})")
 chk(g["newTileSelected"] and g["newPage"]["pages"] == g["pagesBeforeReturn"] + 1 and g["newPage"]["page"] == g["pagesBeforeReturn"],
     "\"+ New page\" can be selected; Return on it adds the page and opens it")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")

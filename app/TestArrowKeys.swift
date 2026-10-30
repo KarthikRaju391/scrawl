@@ -69,19 +69,20 @@ enum TestArrowKeys {
         key("g", 5); waitTransition()
         let g = app.gallery!
         var nav: [String: Any] = ["columns": g.columns, "cells": g.cellCount, "startSelected": g.selected]
-        func sel(_ moves: [String]) -> Int { for m in moves { press(m) }; return g.selected }
-        g.selected = 0; nav["leftFromFirst"] = sel(["left"]); nav["upFromFirstRow"] = sel(["up"])
-        g.selected = 0; nav["rightFromFirst"] = sel(["right"]); nav["downFromFirst"] = sel(["down"])
-        g.selected = g.cellCount - 1; nav["rightFromLast"] = sel(["right"]); nav["downFromLast"] = sel(["down"])
+        // Positions are tiles as shown (0 = "+ New page", first; then the pages, most recently changed first).
+        func sel(_ moves: [String]) -> Int { for m in moves { press(m) }; return g.selectedPosition }
+        g.select(position: 0); nav["leftFromFirst"] = sel(["left"]); nav["upFromFirstRow"] = sel(["up"])
+        g.select(position: 0); nav["rightFromFirst"] = sel(["right"]); nav["downFromFirst"] = sel(["down"])
+        g.select(position: g.cellCount - 1); nav["rightFromLast"] = sel(["right"]); nav["downFromLast"] = sel(["down"])
         // The last row is partial: from the row above it, a column past its end goes to the last tile.
         let cols = g.columns, lastRowStart = ((g.cellCount - 1) / cols) * cols
-        g.selected = lastRowStart - 1                                   // last column of the row above the last row
+        g.select(position: lastRowStart - 1)                                  // last column of the row above the last row
         nav["downIntoPartialRow"] = sel(["down"]); nav["lastCell"] = g.cellCount - 1
-        nav["rowEndRight"] = { g.selected = cols - 1; return sel(["right"]) }()   // end of the first row -> first of the next
+        nav["rowEndRight"] = { g.select(position: cols - 1); return sel(["right"]) }()   // end of the first row -> first of the next
         // Selection scrolls into view.
-        g.selected = 5; _ = sel(["down", "down", "down", "down", "down", "down", "down", "down"])
+        g.select(position: 5); _ = sel(["down", "down", "down", "down", "down", "down", "down", "down"])
         let clip = g.scroll.contentView
-        nav["selectedAfterDowns"] = g.selected
+        nav["selectedAfterDowns"] = g.selectedPosition
         nav["selectedVisible"] = clip.bounds.contains(g.cellRect(g.selected, in: clip))
         // Return opens the selected page with the grow transition from its cell.
         g.selected = 9
@@ -91,12 +92,13 @@ enum TestArrowKeys {
         // Space opens too; the selection starts on the current page when the overview opens.
         key("g", 5); waitTransition()
         nav["startSelectedSecondOpen"] = g.selected
+        nav["twoRight"] = g.item(at: g.selectedPosition + 2)
         press("right"); press("right")
         key(" ", 49); waitTransition()
         nav["space"] = ["page": canvas.pageIndex]
         // "+ New page": selectable, creates a page only on Return.
         key("g", 5); waitTransition()
-        g.selected = g.cellCount - 2; press("right")
+        g.select(position: 1); press("left")
         let pagesBefore = canvas.pages.count
         nav["newTileSelected"] = g.selected == g.cellCount - 1; nav["pagesBeforeReturn"] = pagesBefore
         key("\r", 36); waitTransition()

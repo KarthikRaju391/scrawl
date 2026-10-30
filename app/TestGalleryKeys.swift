@@ -17,6 +17,7 @@ enum TestGalleryKeys {
                                         context: nil, characters: s, charactersIgnoringModifiers: s, isARepeat: false, keyCode: code) { _ = app.key(e) }
         }
         func right() { arrow(124, 0xF703) }
+        func left() { arrow(123, 0xF702) }
         func mouse(_ type: NSEvent.EventType, cell i: Int) {
             guard let g = app.gallery else { return }
             let rc = g.cellRect(i, in: app.container)
@@ -43,9 +44,10 @@ enum TestGalleryKeys {
         key("g", 5); waitTransition()
         r["open"] = ["selected": app.gallery!.selected, "rings": rings()]
         shot(0)
-        // Arrows move that one ring.
+        // Arrows move that one ring (through the tiles as shown: New page first, then the most recently changed).
+        let twoAlong = app.gallery!.item(at: app.gallery!.selectedPosition + 2)
         right(); right()
-        r["afterRightRight"] = ["selected": app.gallery!.selected, "rings": rings(), "currentDot": app.gallery!.currentDotDrawn]
+        r["afterRightRight"] = ["selected": app.gallery!.selected, "want": twoAlong, "rings": rings(), "currentDot": app.gallery!.currentDotDrawn]
         shot(1)
         // G opens the highlighted page (5), not the one that was open (3).
         key("g", 5); waitTransition()
@@ -66,11 +68,13 @@ enum TestGalleryKeys {
         mouse(.leftMouseDown, cell: 9); mouse(.leftMouseUp, cell: 9); waitTransition()
         r["click"] = ["page": canvas.pageIndex]
         // Space opens too; '+ New page' with G creates a page.
-        key("g", 5); waitTransition(); right(); key(" ", 49); waitTransition()
-        r["space"] = ["page": canvas.pageIndex]
+        key("g", 5); waitTransition()
+        let oneAlong = app.gallery!.item(at: app.gallery!.selectedPosition + 1)
+        right(); key(" ", 49); waitTransition()
+        r["space"] = ["page": canvas.pageIndex, "want": oneAlong]
         key("g", 5); waitTransition()
         let pages0 = canvas.pages.count
-        app.gallery!.selected = app.gallery!.cellCount - 2; right()
+        app.gallery!.select(position: 1); left()
         key("g", 5); waitTransition()
         r["newPage"] = ["pagesBefore": pages0, "pages": canvas.pages.count, "page": canvas.pageIndex]
         // A held key (Karthik, 30 Oct: the overview and pages flashing back and forth while he held G): the key

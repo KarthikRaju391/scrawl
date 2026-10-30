@@ -102,10 +102,10 @@ enum TestGallery {
             key("g", 5); waitTransition()
             let clip = app.gallery!.scroll.contentView
             let y0 = clip.bounds.minY
-            let c39 = app.gallery!.cellRect(39, in: clip)
+            let c39 = app.gallery!.cellRect(app.gallery!.item(at: app.gallery!.cellCount - 1), in: clip)   // the last tile shown
             r["scroll"] = ["docHeight": app.gallery!.scroll.documentView!.frame.height, "visibleHeight": clip.bounds.height,
                            "scrolledBy": clip.bounds.minY - y0, "cell40Visible": clip.bounds.contains(c39)]
-            // 7. The New page tile (last): a 41st page, opened, growing from that tile.
+            // 7. The New page tile (first): a 41st page, opened, growing from that tile.
             let tile = app.gallery!.cellRect(40, in: app.container)
             click(cell: 40); waitTransition()
             r["newPage"] = ["pages": canvas.pages.count, "pageIndex": canvas.pageIndex, "from": ((app.lastTransition["from"] as? [CGFloat]) ?? []).map { Double($0) }, "want": rect(tile)]

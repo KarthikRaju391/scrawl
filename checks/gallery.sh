@@ -47,8 +47,8 @@ chk(t["kind"] == "open" and near(t["from"], o["want"]["from"]) and near(t["start
     f"opening transition: starts at page 5's cell {t['startFrame']}, ends at the canvas {t['endFrame']}")
 rt = w["roundTrip"]; chk(rt["pageIndex"] == 4 and rt["drawMode"] and rt["galleryHidden"], "G, G: back on the same page, in draw mode")
 sc = w["scroll"]; chk(sc["docHeight"] > sc["visibleHeight"] and sc["cell40Visible"] and sc["scrolledBy"] > 0,
-    f"40 pages scroll ({sc['docHeight']:.0f} pt of grid in {sc['visibleHeight']:.0f} pt; page 40 scrolled into view)")
-n = w["newPage"]; chk(n["pages"] == 41 and n["pageIndex"] == 40 and near(n["from"], n["want"]), "the New page tile (last in the grid) adds page 41, opens it, growing from the tile")
+    f"40 pages scroll ({sc['docHeight']:.0f} pt of grid in {sc['visibleHeight']:.0f} pt; the last tile scrolled into view)")
+n = w["newPage"]; chk(n["pages"] == 41 and n["pageIndex"] == 40 and near(n["from"], n["want"]), "the New page tile (first in the grid) adds page 41, opens it, growing from the tile")
 e = w["esc"]; chk(e["galleryHidden"] and e["pageIndex"] == 40, "Esc in the overview goes back to the current page")
 a = rd["afterRestart"]
 chk(a["pages"] == 41 and a["galleryShown"] and all(x["found"] == x["want"] and x["strayRows"] == 0 for x in a["thumbnails"]),

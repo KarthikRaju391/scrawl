@@ -16,12 +16,13 @@ r = json.load(open(sys.argv[1])); bad = 0
 def chk(ok, msg):
     global bad; bad += 0 if ok else 1; print("PASS" if ok else "FAIL", msg)
 o = r["open"]; chk(o["selected"] == 2 and o["rings"] == {"2": 1}, f"opening on page 3: the highlight is on page 3, and exactly one ring is drawn (rings: {o['rings']})")
-a = r["afterRightRight"]; chk(a["selected"] == 4 and a["rings"] == {"4": 1} and a["currentDot"], f"→ → moves that one ring to page 5 (rings: {a['rings']}); page 3 keeps its small dot as the page that's open")
-g = r["gOpens"]; chk(g["page"] == 4 and not g["galleryShown"] and g["kind"] == "open", f"G opens the highlighted page (page {g['page'] + 1}), not the one that was open (3), with the grow animation")
-e = r["esc"]; chk(e["startSelected"] == 4 and e["page"] == 4 and not e["galleryShown"], f"reopened: highlight on the current page (5); after moving it, Esc goes back to page 5 (page {e['page'] + 1})")
+a = r["afterRightRight"]; w = a["want"]
+chk(a["selected"] == w and w != 2 and a["rings"] == {str(w): 1} and a["currentDot"], f"→ → moves that one ring two tiles along, to page {w + 1} (rings: {a['rings']}); page 3 keeps its small dot as the page that's open")
+g = r["gOpens"]; chk(g["page"] == w and not g["galleryShown"] and g["kind"] == "open", f"G opens the highlighted page (page {g['page'] + 1}), not the one that was open (3), with the grow animation")
+e = r["esc"]; chk(e["startSelected"] == w and e["page"] == w and not e["galleryShown"], f"reopened: highlight on the current page ({w + 1}); after moving it, Esc goes back to it (page {e['page'] + 1})")
 h = r["hover"]; chk(h["selected"] == 7 and h["rings"] == {"7": 1} and h["pageAfterReturn"] == 7, f"hovering page 8 moves the one highlight there; Return opens it (page {h['pageAfterReturn'] + 1})")
 chk(r["click"]["page"] == 9, "clicking page 10 opens page 10")
-chk(r["space"]["page"] == 10, "Space opens the highlighted page (page 11, one to the right of page 10)")
+chk(r["space"]["page"] == r["space"]["want"] and r["space"]["want"] != 9, f"Space opens the highlighted page (page {r['space']['want'] + 1}, one tile on from page 10)")
 n = r["newPage"]; chk(n["pages"] == n["pagesBefore"] + 1 and n["page"] == n["pagesBefore"], "G on '+ New page' adds a page and opens it")
 for k, want_shown, label in (("holdGOnPage", True, "G held on a page"), ("holdGInOverview", False, "G held in the overview (page 7 highlighted)"), ("holdReturnInOverview", False, "Return held in the overview (page 9 highlighted)")):
     x = r[k]

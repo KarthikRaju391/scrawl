@@ -34,7 +34,7 @@ def fmt(t):   # the system's medium date in the local time zone, as Python's mac
 L, R = w["labels"], rd["labels"]
 chk(L == R, "after a restart: the overview tiles and the open page's label read the same")
 chk(all(f"Page {i + 1}  ·  " in t for i, t in enumerate(L["tiles"])) and L["tiles"][1].endswith(L["hints"][1].split("created ")[1].split("  ·")[0]),
-    f"tiles show the created date: {L['tiles']}")
+    f"tiles show the date they're sorted by (last edited; page 2 was never edited after it was made): {L['tiles']}")
 chk(all("created " in h for h in L["hints"]) and "date unknown" not in " ".join(L["hints"]), f"the open page's label shows its created date: \"{L['hints'][1]}\"")
 chk(old["load"].startswith("loaded 2") and [x["strokes"] for x in old["dates"]] == [2, 1] and all(x["created"] == -1 and x["edited"] == -1 for x in old["dates"])
     and all("date unknown" in t for t in old["labels"]["tiles"]) and all("created date unknown" in h for h in old["labels"]["hints"]),
