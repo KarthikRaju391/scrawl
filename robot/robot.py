@@ -209,7 +209,19 @@ class App:
 def ocr(png, expected):
     """Character accuracy of Vision's reading of `png` against `expected` (0..1), and the text read."""
     tool = os.path.join(ROOT, "build/robot-ocr")
-    # The tool always prints JSON when it ran; no JSON means it failed (it did once with no output at all): once more.
+    # Crop to the ink (plus a margin) first: on a mostly blank page export the writing was ~1% of the image's height and
+    # Vision read nothing at all, every time (write-zoom3, 31 Oct); cropped, the same image reads 100%.
+    try:
+        from PIL import Image, ImageOps
+        im = Image.open(png).convert("L")
+        box = ImageOps.invert(im).point(lambda v: 255 if v > 60 else 0).getbbox()
+        if box:
+            m = 40; x0, y0, x1, y1 = box
+            png2 = png[:-4] + "-ocr-crop.png"
+            im.crop((max(0, x0 - m), max(0, y0 - m), min(im.width, x1 + m), min(im.height, y1 + m))).save(png2)
+            png = png2
+    except Exception: pass
+    # The tool always prints JSON when it ran; no JSON means it failed: once more.
     for attempt in range(2):
         r = subprocess.run([tool, png, expected], capture_output=True, text=True)
         try: return json.loads(r.stdout)
