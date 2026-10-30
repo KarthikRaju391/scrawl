@@ -23,6 +23,10 @@ h = r["hover"]; chk(h["selected"] == 7 and h["rings"] == {"7": 1} and h["pageAft
 chk(r["click"]["page"] == 9, "clicking page 10 opens page 10")
 chk(r["space"]["page"] == 10, "Space opens the highlighted page (page 11, one to the right of page 10)")
 n = r["newPage"]; chk(n["pages"] == n["pagesBefore"] + 1 and n["page"] == n["pagesBefore"], "G on '+ New page' adds a page and opens it")
+for k, want_shown, label in (("holdGOnPage", True, "G held on a page"), ("holdGInOverview", False, "G held in the overview (page 7 highlighted)"), ("holdReturnInOverview", False, "Return held in the overview (page 9 highlighted)")):
+    x = r[k]
+    chk(x["transitions"] == 1 and x["switches"] == 1 and x["shownAfter"] == want_shown,
+        f"{label} for 1.5 s (auto-repeat): one change, no flashing between the overview and the page (transitions {x['transitions']}, switches {x['switches']}, overview shown after: {x['shownAfter']}, page {x['pageBefore'] + 1} -> {x['pageAfter'] + 1})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 print("screenshots:", sys.argv[1].rsplit("/", 1)[0])
 PY

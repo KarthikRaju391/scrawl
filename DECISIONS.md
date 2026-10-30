@@ -202,3 +202,8 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Why 3%: in his sessions (31 lines that broke) the only words ending within 4% of the marker were followed by long pauses (1.6 s, 6.3 s: waiting for a move that didn't come); at 4.8-5% he wrote another word on the line 0.6-2.4 s later, which a 5% zone would have broken early.
 - Robot near-marker: widths 50/75/100% at 100% and 300%, ink ending 0.3-2.5% of the line width inside the marker (moves by 0.9 s, back to the block's start) and about 8% inside (no move after 1.5 s).
 
+
+## The overview changes once per key press, not per auto-repeat (Karthik on 0.1.1, 30 Oct)
+- "This is not good UX... that flickering state shouldn't happen" (recording 12:18): the overview and pages 9-12 flashed back and forth about once a second, with half-drawn frames (a page shrinking over the grid). At 10 fps the pointer sits still over a tile while it happens, and the usage log shows an overview opening every ~1 s with nothing else in between. G toggles: on a page it opens the overview; in the overview it opens the highlighted tile (the one under the pointer). macOS auto-repeats a held key (press-and-hold is off on his Mac), and every repeat that landed outside a transition toggled again.
+- Now G, and Return / Space / Esc in the overview, act once per press: auto-repeats are ignored. Held arrows still repeat (moving the highlight).
+- checks/gallerykeys.sh: G held on a page, G held in the overview and Return held in the overview, 1.5 s each at macOS's default repeat timing: one transition each. On fd5c559, G held gave 7 transitions in 1.5 s.

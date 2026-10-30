@@ -73,6 +73,37 @@ enum TestGalleryKeys {
         app.gallery!.selected = app.gallery!.cellCount - 2; right()
         key("g", 5); waitTransition()
         r["newPage"] = ["pagesBefore": pages0, "pages": canvas.pages.count, "page": canvas.pageIndex]
+        // A held key (Karthik, 30 Oct: the overview and pages flashing back and forth while he held G): the key
+        // auto-repeats (macOS: first repeat after ~225 ms, then every ~33 ms). One press is one change, however long
+        // it's held: count the transitions and the overview <-> page switches while the repeats come in.
+        func hold(_ ch: String, _ code: UInt16, seconds: Double) -> [String: Any] {
+            var transitions = 0, switches = 0, lastTV: NSView? = nil, lastShown = app.galleryShown
+            func sample() {
+                if let tv = app.transitionView, tv !== lastTV { transitions += 1; lastTV = tv }
+                if app.galleryShown != lastShown { switches += 1; lastShown = app.galleryShown }
+            }
+            func send(_ rep: Bool) {
+                if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: app.window.windowNumber, context: nil,
+                                            characters: ch, charactersIgnoringModifiers: ch, isARepeat: rep, keyCode: code) { _ = app.key(e) }
+                sample()
+            }
+            let pageBefore = canvas.pageIndex, shownBefore = app.galleryShown
+            send(false)
+            let t0 = Date(); var next = 0.225
+            while Date().timeIntervalSince(t0) < seconds {
+                spin(0.005); sample()
+                if Date().timeIntervalSince(t0) >= next { send(true); next += 0.033 }
+            }
+            waitTransition(); sample()
+            return ["transitions": transitions, "switches": switches, "shownBefore": shownBefore, "shownAfter": app.galleryShown,
+                    "pageBefore": pageBefore, "pageAfter": canvas.pageIndex]
+        }
+        canvas.goToPage(3)
+        r["holdGOnPage"] = hold("g", 5, seconds: 1.5)            // a page open: G held -> the overview, once
+        mouse(.mouseMoved, cell: 6)
+        r["holdGInOverview"] = hold("g", 5, seconds: 1.5)        // the overview, page 7 highlighted: G held -> page 7, once
+        key("g", 5); waitTransition(); mouse(.mouseMoved, cell: 8)
+        r["holdReturnInOverview"] = hold("\r", 36, seconds: 1.5) // Return held -> page 9, once
         try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-gallerykeys.json"))
         try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
     }

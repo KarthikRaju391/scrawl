@@ -393,7 +393,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let arrow: (Int, Int)? = [123: (-1, 0), 124: (1, 0), 125: (0, 1), 126: (0, -1)][e.keyCode]
         let plainOrShift = e.modifierFlags.intersection([.command, .control, .option]).isEmpty
         if galleryShown, let a = arrow, plainOrShift { gallery?.moveSelection(dx: a.0, dy: a.1); return true }
-        if galleryShown, e.keyCode == 36 || e.keyCode == 76 || e.keyCode == 49 { openSelectedTile(); return true }   // Return, Enter, Space
+        // A held key auto-repeats: the overview and the pages change once per press, not per repeat (Karthik, 30 Oct:
+        // holding G flashed between the overview and the hovered page about 5 times a second).
+        if galleryShown, e.keyCode == 36 || e.keyCode == 76 || e.keyCode == 49 { if !e.isARepeat { openSelectedTile() }; return true }   // Return, Enter, Space
         if galleryShown, e.keyCode == 51 || e.keyCode == 117, plainOrShift, let g = gallery, g.selected >= 0, g.selected < canvas.pages.count {   // Delete, ⌦
             deletePage(g.selected); return true
         }
@@ -402,7 +404,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         if galleryShown {   // the page overview: G or Esc goes back to the current page; other keys do nothing
             // G (like Return / Space) opens the highlighted tile; Esc goes back to the page that was open.
-            if e.keyCode == 53 { TransitionTiming.inputAt = CACurrentMediaTime(); openPage(canvas.pageIndex) }
+            if e.isARepeat { }
+            else if e.keyCode == 53 { TransitionTiming.inputAt = CACurrentMediaTime(); openPage(canvas.pageIndex) }
             else if e.charactersIgnoringModifiers?.lowercased() == "g" { TransitionTiming.inputAt = CACurrentMediaTime(); openSelectedTile() }
             return e.modifierFlags.intersection([.command, .control, .option]).isEmpty
         }
@@ -416,7 +419,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let i = modeKeys[ch] { apply(i, from: "key"); return true }
         var s = canvas.tools
         switch ch {
-        case "g": TransitionTiming.inputAt = CACurrentMediaTime(); toggleGallery(); return true
+        case "g": if !e.isARepeat { TransitionTiming.inputAt = CACurrentMediaTime(); toggleGallery() }; return true   // once per press
         case "n": page(0); return true
         case "k" where canvas.showPageHint: canvas.dismissPageHint(); return true
         case "1", "2", "3", "4", "5": s.sizeIndex[s.tool] = Int(ch)! - 1
