@@ -16,6 +16,10 @@ extension AppDelegate {
             i.keyEquivalentModifierMask = mods; i.target = target ?? self
             return i
         }
+        func focused(_ title: String, _ action: Selector, _ key: String) -> NSMenuItem {   // goes to the first responder
+            let i = NSMenuItem(title: title, action: action, keyEquivalent: key); i.target = nil
+            return i
+        }
         let name = AppInfo.name
         menu(name, [
             item("About \(name)", #selector(showAbout)),
@@ -40,12 +44,20 @@ extension AppDelegate {
             item("Undo", #selector(undo), "z"),
             item("Redo", #selector(redoAction), "z", [.command, .shift]),
             .separator(),
+            // Text fields (the overview's search, the zoom field, a save panel's name) need these: without them ⌘V,
+            // ⌘X and ⌘A did nothing there. They go to whatever has focus, and are dimmed when nothing can take them.
+            focused("Cut", #selector(NSText.cut(_:)), "x"),
             item("Copy Page as Image", #selector(copyPageAction), "c"),
+            focused("Paste", #selector(NSText.paste(_:)), "v"),
+            focused("Select All", #selector(NSText.selectAll(_:)), "a"),
+            .separator(),
             item("Find in Pages…", #selector(findInPagesAction), "f"),
             .separator(),
             item("Clear Page", #selector(clearPage), "\u{8}"),
             item("Delete Page", #selector(deletePageAction), "\u{8}", [.command, .option]),
         ])
+        let fullScreen = item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.control, .command], target: window)
+        ownFullScreenItem = fullScreen
         let basic = item("Use Basic Touch Input (no pressure)", #selector(toggleBasicInput))
         basic.state = Settings().inputSource == "nstouch" ? .on : .off
         menu("View", [
@@ -54,7 +66,7 @@ extension AppDelegate {
             item("Zoom Lock  (L)", #selector(toggleZoomLockAction)),
             item("Page Map", #selector(togglePageMapAction)),
             .separator(),
-            item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.control, .command], target: window),
+            fullScreen,
             item("Pages Overview  (G)", #selector(toggleGalleryAction)),
             item("Zoom to Whole Page", #selector(resetZoom), "0"),
             item("Previous Page", #selector(prevPageAction), "["),
@@ -83,6 +95,11 @@ extension AppDelegate {
             item("Show Logs in Finder", #selector(showLogs)),
         ])
         NSApp.mainMenu = main
+        // macOS adds its own Enter Full Screen to a View menu, next to ours, and gives one of them its own shortcut
+        // (fn-F on macOS 26): one item is enough.
+        viewMenu = main.items.first { $0.submenu?.title == "View" }?.submenu
+        viewMenu?.delegate = self
+        DispatchQueue.main.async { [weak self] in self?.dropSystemFullScreenItem() }
         NSApp.windowsMenu = main.items.first { $0.submenu?.title == "Window" }?.submenu
         NSApp.helpMenu = main.items.last?.submenu
     }
@@ -129,6 +146,12 @@ extension AppDelegate {
         a.runModal()
     }
     @objc func toggleWritingAction() { apply(.writing, from: "menu") }
+    func dropSystemFullScreenItem() {
+        guard let m = viewMenu else { return }
+        for i in m.items where i.action == #selector(NSWindow.toggleFullScreen(_:)) && i !== ownFullScreenItem { m.removeItem(i) }
+    }
+    func menuNeedsUpdate(_ menu: NSMenu) { if menu === viewMenu { dropSystemFullScreenItem() } }
+    var textFocused: Bool { (NSApp.keyWindow ?? window)?.firstResponder is NSText }
 
     /// ⌘[ / ⌘] are disabled (so the shortcuts do nothing) when the page arrows are dimmed.
     @objc func validateMenuItem(_ item: NSMenuItem) -> Bool {
@@ -139,6 +162,8 @@ extension AppDelegate {
         if item.action == #selector(togglePageMapAction) { item.state = PageMapView.enabled ? .on : .off }
         let tools: [Selector: ToolKind] = [#selector(penAction): .pen, #selector(markerAction): .marker, #selector(highlighterAction): .highlighter, #selector(eraserAction): .eraser]
         if let a = item.action, let k = tools[a] { item.state = canvas.tools.tool == k ? .on : .off }
+        // ⌘C in a text field copies its text (the item says so); elsewhere it copies the page.
+        if item.action == #selector(copyPageAction) { item.title = textFocused ? "Copy" : "Copy Page as Image" }
         if item.action == #selector(prevPageAction) { return canvas.pageIndex > 0 && !galleryShown }
         if item.action == #selector(nextPageAction) { return canvas.pageIndex < canvas.pages.count - 1 && !galleryShown }
         return true

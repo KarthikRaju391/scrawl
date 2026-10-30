@@ -91,7 +91,9 @@ final class ContainerView: NSView {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
+    weak var viewMenu: NSMenu?
+    weak var ownFullScreenItem: NSMenuItem?
     static let padAspect = CanvasView.pageUnits.width / CanvasView.pageUnits.height
     /// First run under this bundle ID (the migration never copies "welcomed").
     static func shouldWelcome(_ d: UserDefaults) -> Bool { !d.bool(forKey: "welcomed") }
@@ -143,8 +145,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
-        if AppPaths.override == nil && !Launch.testing { migrationNotes = Migration.run() }
         UserDefaults.standard.set(false, forKey: "NSFullScreenMenuItemEverywhere")   // our View menu has it
+        if AppPaths.override == nil && !Launch.testing { migrationNotes = Migration.run() }
         AppPaths.ensure()
         previousCrash = CrashNote.checkAndMark()
         Watchdog.spawn()
@@ -529,6 +531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if a.contains("--test-jitter") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestJitter.run(app: self) } }
         if a.contains("--test-gallerykeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryKeys.run(app: self) } }
         if a.contains("--test-galleryflow") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryFlow.run(app: self) } }
+        if a.contains("--test-menus") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMenus.run(app: self) } }
         if a.contains("--test-a11y") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestAccessibility.run(app: self) } }
         if a.contains("--test-gallery-order") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryOrder.run(app: self) } }
         if a.contains("--test-gallery-replay") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryReplay.run(app: self) } }

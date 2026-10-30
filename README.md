@@ -36,7 +36,7 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 - **⌃⌥D** (or **D** when the app is in front, or the welcome window's Start Drawing) starts drawing, and pressing it again stops. Drawing
   starts where you last wrote on the page, at the zoom you wrote at (a quick glide there), unless you've
   zoomed in somewhere else yourself.
-  The paper fills the window, whatever its shape, and full screen works too (green button or ⌃⌘F). The
+  The paper fills the window, whatever its shape, and full screen works too (the green button, or View › Enter Full Screen). The
   trackpad (apart from a thin edge band, below) maps without distortion to the largest trackpad-shaped area
   in the window, centred. In draw mode a faint outline shows that area, and you pan to reach the rest. The pointer freezes and hides,
   a thin blue frame marks the window, and a small capsule at the bottom shows the tool, writing mode, the

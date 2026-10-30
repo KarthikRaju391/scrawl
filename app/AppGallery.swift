@@ -276,6 +276,7 @@ extension AppDelegate {
     /// Tests copy to their own pasteboard, never the one you're using.
     static let pasteboard = Launch.testing ? NSPasteboard(name: NSPasteboard.Name("scrawl.test")) : NSPasteboard.general
     @objc func copyPageAction() {
+        if textFocused { NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self); return }   // ⌘C in a text field: its text
         guard let url = pagePNG(actionPageIndex), let data = try? Data(contentsOf: url) else { return }
         let pb = Self.pasteboard
         pb.clearContents(); pb.setData(data, forType: .png)

@@ -57,7 +57,7 @@ enum HelpText {
         ("← → ↑ ↓", "Pan the page (Shift: a whole screen); in the pages overview, choose a page"),
         ("⌘Z  ⇧⌘Z", "Undo / redo"),
         ("⌘0", "Zoom to the whole page"),
-        ("⌃⌘F", "Full screen"),
+        ("Green button", "Full screen (or View › Enter Full Screen)"),
         ("⌘E  ⇧⌘E", "Export all pages as PDF / this page as PNG"),
     ]
     /// The first run shows only these (the window has to fit a 13" screen); Help lists every shortcut.

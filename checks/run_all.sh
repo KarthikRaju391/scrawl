@@ -22,6 +22,7 @@ suites=(
   "overview-highlight|checks/gallerykeys.sh"
   "overview-order|checks/galleryorder.sh"
   "voiceover-toolbar|checks/a11y.sh"
+  "menus|checks/menus.sh"
   "pill-labels|checks/toast.sh"
   "newline|checks/newline.sh"
   "page-edges|checks/page.sh"
