@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.1.2 (2026-10-30, build 5)
+
+- Writing mode: a word that ends just inside the guide line (no room for another) brings the next line at the
+  same 400 ms word gap as crossing it. Ink that stops well before the line still doesn't.
+- Pages overview: pressing G to open a page and G to go back, quickly and over and over, is one clean move each
+  time: no flash of the previous page at the end of an opening, no overview showing alone for a frame, no
+  blurry upscaled picture while a page grows from its tile, and no jump in the first frames. The toolbar stays
+  on screen and fades with the page.
+- A held G (or Return / Space / Esc in the overview) does one thing per press instead of repeating.
+
 ## 0.1.1 (2026-10-30, build 4)
 
 Build 3 (27 Oct) was held as a draft and never published; build 4 replaces it.
