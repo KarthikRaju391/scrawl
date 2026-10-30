@@ -7,8 +7,27 @@ extension AppDelegate {
 
     func toggleGallery() { galleryShown ? openPage(canvas.pageIndex) : showGallery() }
 
+    /// The session log: what made the overview show or a page open (the input event, if any, and who called).
+    func logGallery(_ what: String, _ extra: [String: Any] = [:]) {
+        var d = extra
+        d["shown"] = galleryShown; d["inTransition"] = transitionView != nil
+        if let e = NSApp.currentEvent {
+            d["event"] = "\(e.type.rawValue)"
+            switch e.type {
+            case .keyDown, .keyUp: d["key"] = e.charactersIgnoringModifiers ?? ""; d["repeat"] = e.isARepeat
+            case .leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown: d["clicks"] = e.clickCount; d["pressure"] = Double(e.pressure)
+                let p = container.convert(e.locationInWindow, from: nil); d["at"] = [Int(p.x), Int(p.y)]
+            default: break
+            }
+            d["eventAge"] = Int((ProcessInfo.processInfo.systemUptime - e.timestamp) * 1000)
+        }
+        d["by"] = Thread.callStackSymbols.dropFirst(2).prefix(4).map { $0.split(separator: " ").dropFirst(3).prefix(1).joined() }
+        canvas.act(what, d)
+    }
+
     /// The canvas shrinks into the current page's cell; the grid shows every page.
     func showGallery() {
+        logGallery("galleryShow")
         tips.openedOverview(); practiceTick(.overview); usage.record("overview", ["pages": canvas.pages.count])
         guard !galleryShown, transitionView == nil else { return }
         var ms: [String: Double] = [:]; var tl = CACurrentMediaTime()
@@ -52,6 +71,7 @@ extension AppDelegate {
 
     /// Page i grows from its cell to the full canvas.
     func openPage(_ i: Int) {
+        logGallery("galleryOpenPage", ["page": i])
         guard let g = gallery, galleryShown, transitionView == nil, canvas.pages.indices.contains(i) else { return }
         let from = g.cellRect(i, in: container)
         canvas.goToPage(i)
@@ -73,6 +93,7 @@ extension AppDelegate {
             guard let self else { return }
             self.canvas.renderingPaused = false   // renders the opened page under the transition's last frame
             self.gallery?.isHidden = true
+            self.logGallery("galleryHidden", ["page": i])
             self.window.makeFirstResponder(self.canvas)
             if self.galleryReturnsToDraw { self.enterDrawMode(lock: !self.canvas.testMode) }
         }
