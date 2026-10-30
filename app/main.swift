@@ -329,6 +329,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// A short message in the middle of the top edge ("Undo", "Redo"), fading out.
     func showToast(_ text: String, seconds: Double = 0.9) {
         let t = container.toast
+        // In front of everything, the pages overview too (added later, it covered "Page 3 deleted · ⌘Z to undo").
+        if container.subviews.last !== t { container.addSubview(t, positioned: .above, relativeTo: nil) }
         t.stringValue = text
         t.frame = CGRect(x: container.bounds.midX - t.fittingWidth / 2, y: container.bounds.height - 64, width: t.fittingWidth, height: 24)
         toastFade?.cancel(); t.alphaValue = 1; t.isHidden = false

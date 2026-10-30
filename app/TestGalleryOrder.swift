@@ -118,6 +118,8 @@ enum TestGalleryOrder {
         let before = labels()
         key("\u{7f}", 51); spin(0.2)
         r["afterDelete"] = overview(); r["labelsBeforeDelete"] = before
+        let sv = app.container.subviews, ti = sv.firstIndex { $0 === app.container.toast } ?? -1, gi = sv.firstIndex { $0 === app.gallery } ?? 99
+        r["deleteNote"] = ["text": app.container.toast.isHidden ? "" : app.container.toast.stringValue, "inFrontOfOverview": ti > gi]
         app.undo(); spin(0.2)
         r["afterRestore"] = overview()
         // 7. Reduce motion: the page fades at full size, no zoom from or into the tile.

@@ -45,6 +45,8 @@ o2 = r["open2"]
 chk(o2["visual"][:3] == ["new", "8", "4"] and o2["selected"] == "8", f"reopened: the new page comes right after New page and is highlighted: {o2['visual'][:4]}")
 b, ad = r["labelsBeforeDelete"], r["afterDelete"]
 chk(ad["pages"] == 8 and ad["labels"][ad["selectedAt"]] == b[2] and ad["selectedAt"] == 1, f"Delete: the next tile moves up and is highlighted: {ad['labels'][1]} (was {b[2]})")
+dn = r.get("deleteNote", {})
+chk("⌘Z" in dn.get("text", "") and dn.get("inFrontOfOverview"), f"the note \"{dn.get('text')}\" shows in front of the overview (in front: {dn.get('inFrontOfOverview')})")
 ar2 = r["afterRestore"]
 chk(ar2["pages"] == 9 and ar2["labels"] == b, "⌘Z: the page is back, in the same place")
 chk([str(x) for x in r["matching"]] == ar2["visual"][1:], f"search results come in tile order: {r['matching']}")
