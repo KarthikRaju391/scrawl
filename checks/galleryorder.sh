@@ -48,6 +48,9 @@ chk(ad["pages"] == 8 and ad["labels"][ad["selectedAt"]] == b[2] and ad["selected
 ar2 = r["afterRestore"]
 chk(ar2["pages"] == 9 and ar2["labels"] == b, "⌘Z: the page is back, in the same place")
 chk([str(x) for x in r["matching"]] == ar2["visual"][1:], f"search results come in tile order: {r['matching']}")
+rm = r.get("reduceMotion", {})
+chk(all(rm.get(k, {}).get("from") == rm.get("full") and rm.get(k, {}).get("to") == rm.get("full") for k in ("open", "close")),
+    f"Reduce motion on: the overview and the page fade at full size, no zoom ({rm.get('open', {}).get('from')} -> {rm.get('open', {}).get('to')})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 print("screenshots:", d)
 PY

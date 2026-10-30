@@ -120,7 +120,18 @@ enum TestGalleryOrder {
         r["afterDelete"] = overview(); r["labelsBeforeDelete"] = before
         app.undo(); spin(0.2)
         r["afterRestore"] = overview()
-        // 7. Search with no query matches every page, in tile order.
+        // 7. Reduce motion: the page fades at full size, no zoom from or into the tile.
+        AppDelegate.reduceMotionForTest = true
+        key("\u{1b}", 53); waitTransition()
+        func tr() -> [String: Any] { ["from": (app.lastTransition["from"] as? [CGFloat] ?? []).map { Double($0) }, "to": (app.lastTransition["to"] as? [CGFloat] ?? []).map { Double($0) },
+                                     "reduce": app.lastTransition["reduceMotion"] as? Bool ?? false] }
+        let full = [canvas.frame.minX, canvas.frame.minY, canvas.frame.width, canvas.frame.height].map { Double($0) }
+        key("g", 5); waitTransition(); let rmClose = tr()
+        key("g", 5); waitTransition(); let rmOpen = tr()
+        AppDelegate.reduceMotionForTest = nil
+        r["reduceMotion"] = ["close": rmClose, "open": rmOpen, "full": full]
+        key("g", 5); waitTransition()
+        // 8. Search with no query matches every page, in tile order.
         r["matching"] = app.gallery!.matching
         key("\u{1b}", 53); waitTransition()
         try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-gallery-order.json"))

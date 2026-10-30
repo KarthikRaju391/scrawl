@@ -130,8 +130,14 @@ extension AppDelegate {
     /// from full size; it fades in over the first quarter of opening, over the overview's own tile (which is what the
     /// first frame shows), and fades out over the last quarter of closing, uncovering that tile (the last frame).
     /// The toolbar and header stay above it and fade in (open) or out (close).
-    private func transition(kind: String, page: Int, snapshot: Any?, cell: CGRect, then: @escaping () -> Void) {
-        let opening = kind == "open", full = canvas.frame
+    /// System Settings › Accessibility › Display › Reduce motion: the page fades in and out at full size instead of
+    /// growing from its tile (tests can force it).
+    nonisolated(unsafe) static var reduceMotionForTest: Bool?
+    static var reduceMotion: Bool { reduceMotionForTest ?? NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    private func transition(kind: String, page: Int, snapshot: Any?, cell tile: CGRect, then: @escaping () -> Void) {
+        let opening = kind == "open", full = canvas.frame, still = Self.reduceMotion
+        let cell = still ? full : tile
         let from = opening ? cell : full, to = opening ? full : cell
         let tv = NSView(frame: from)
         tv.wantsLayer = true
@@ -154,12 +160,12 @@ extension AppDelegate {
             tv.frame = clip
             root.cornerRadius = 6 * (1 - CGFloat(p))
             snapLayer.frame = CGRect(origin: .zero, size: clip.size)
-            snapLayer.opacity = Float(smooth(p, 0, 0.25))   // opaque from a quarter of the way: no overview seen through the page
+            snapLayer.opacity = Float(still ? p : smooth(p, 0, 0.25))   // opaque from a quarter of the way: no overview seen through the page
             CATransaction.commit()
             let a = CGFloat(smooth(p, 0.5, 1))
             for c in chrome { c.alphaValue = a }
         }
-        lastTransition = ["kind": kind, "page": page, "from": [from.minX, from.minY, from.width, from.height], "to": [to.minX, to.minY, to.width, to.height],
+        lastTransition = ["kind": kind, "page": page, "reduceMotion": still, "from": [from.minX, from.minY, from.width, from.height], "to": [to.minX, to.minY, to.width, to.height],
                           "startFrame": [tv.frame.minX, tv.frame.minY, tv.frame.width, tv.frame.height]]
         // Driven by the display link (one step per screen refresh), not Core Animation: it runs the same in a hidden or
         // background window, and every intermediate frame is a plain, inspectable view frame.
