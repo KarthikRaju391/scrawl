@@ -794,7 +794,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     @objc func startPracticeAction() { startPractice() }
     func startPractice() {
         if galleryShown { openPage(canvas.pageIndex) }
-        page(0)
+        if !canvas.doc.strokes.isEmpty { page(0) }   // a blank open page (a new notebook's first) is used as it is
         practiceStrokes = 0
         let p = container.practice
         p.reset(); p.isHidden = false; p.alphaValue = 1
