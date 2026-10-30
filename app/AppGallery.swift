@@ -57,8 +57,10 @@ extension AppDelegate {
         window.acceptsMouseMovedEvents = true; window.makeFirstResponder(g)   // hover moves the highlight
         let to = g.cellRect(canvas.pageIndex, in: container); lap("cellRect")
         g.display(); lap("display")
-        CATransaction.flush(); lap("flush")   // draw and commit the grid now, before the first frame, not during the animation
         transition(kind: "close", page: canvas.pageIndex, snapshot: img, cell: to) {}
+        // Commit the grid and the page's picture over it together, now, before the next frame (flushed before the
+        // picture was added, one frame could show the overview alone, then the page again: a flash).
+        CATransaction.flush(); lap("flush")
         lastTransition["stepsMs"] = ms
     }
 
@@ -74,7 +76,7 @@ extension AppDelegate {
         finishTransitionNow()
         logGallery("galleryOpenPage", ["page": i])
         guard let g = gallery, galleryShown, transitionView == nil, canvas.pages.indices.contains(i) else { return }
-        let from = g.cellRect(i, in: container)
+        let from = g.cellRectAsShown(i, in: container)   // where it is now: no scroll at the moment of opening
         canvas.goToPage(i)
         updateBanner()
         finishOpening(page: i, from: from)
@@ -84,7 +86,7 @@ extension AppDelegate {
     func openNewPage() {
         finishTransitionNow()
         guard let g = gallery, galleryShown, transitionView == nil else { return }
-        let from = g.cellRect(canvas.pages.count, in: container)
+        let from = g.cellRectAsShown(canvas.pages.count, in: container)
         canvas.newPage()
         updateBanner()
         finishOpening(page: canvas.pageIndex, from: from)
@@ -93,7 +95,6 @@ extension AppDelegate {
     private func finishOpening(page i: Int, from: CGRect) {
         transition(kind: "open", page: i, snapshot: canvasSnapshot(), cell: from) { [weak self] in
             guard let self else { return }
-            self.canvas.renderingPaused = false   // renders the opened page under the transition's last frame
             self.gallery?.isHidden = true
             self.logGallery("galleryHidden", ["page": i])
             self.window.makeFirstResponder(self.canvas)
@@ -168,14 +169,21 @@ extension AppDelegate {
         lastTransition["durationS"] = dur
         // Not coalesced or throttled while it runs (e.g. when the system is saving power).
         let activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "page transition")
-        // The clock starts one frame back so the first step is applied right now, not at the first timer tick.
-        let t0 = start - 1.0 / 120
+        // The first step is applied right now, one frame's worth in; the clock then runs from the first display tick
+        // (the overview's grid can take 10-40 ms to reach the screen first: counted in, that ate half the move and the
+        // page jumped from full size to 60% in one frame).
+        var t0: Double? = nil
         var first = true, done = false, lastFrame = CACurrentMediaTime(), maxGap = 0.0, gaps: [Double] = []
-        func step(force: Bool) {
+        func step(force: Bool, tick: Bool = true) {
             guard !done else { return }
-            let now = CACurrentMediaTime(); maxGap = max(maxGap, now - lastFrame); gaps.append((now - lastFrame) * 1000); lastFrame = now
-            let u = force ? 1 : min((now - t0) / dur, 1)
-            let e = 1 - pow(1 - u, 3)   // ease out (cubic): most of the movement right after the press
+            let now = CACurrentMediaTime()
+            // Gaps between animation frames on screen: from the first display tick on (before it, the overview's grid
+            // reaches the screen with the first frame, and the clock doesn't run).
+            if t0 != nil { maxGap = max(maxGap, now - lastFrame); gaps.append((now - lastFrame) * 1000) }
+            lastFrame = now
+            if tick, t0 == nil { t0 = now - 1.0 / 120 }
+            let u = force ? 1 : t0.map { min((now - $0) / dur, 1) } ?? (1.0 / 120) / dur
+            let e = 1 - pow(1 - u, 2)   // ease out (quadratic): immediate, but no big jump in the first frames
             apply(opening ? e : 1 - e)
             if first {
                 first = false
@@ -190,12 +198,15 @@ extension AppDelegate {
             lastTransition["totalMs"] = (now - start) * 1000; lastTransition["maxFrameGapMs"] = maxGap * 1000; lastTransition["gapsMs"] = gaps.map { ($0 * 10).rounded() / 10 }
             lastTransition["finishedEarly"] = force
             for c in chrome { c.layer?.zPosition = 0; c.alphaValue = 1 }
+            // Opening: the canvas draws the opened page now, in the same screen update that removes the picture and
+            // hides the overview (it still held the page it drew before; for a frame or two that page flashed).
+            if opening { canvas.drawNowWithTransaction() }
             tv.removeFromSuperview()
             transitionView = nil; transitionFinish = nil
             then()
         }
         transitionFinish = { step(force: true) }
-        step(force: false)
+        step(force: false, tick: false)
         // Paced by the window's display link (one step per screen refresh), not a timer: macOS throttles
         // timers of apps whose windows are behind others (measured: one step every ~40 ms).
         TransitionDriver.start(on: container) { step(force: false) }

@@ -258,6 +258,8 @@ final class GalleryView: NSView {
         grid.scrollToVisible(r.insetBy(dx: 0, dy: -Self.gap))
         return grid.convert(r, to: view)
     }
+    /// Cell i's thumbnail rect in `view`'s coordinates, as it is on screen now (no scrolling).
+    func cellRectAsShown(_ i: Int, in view: NSView) -> CGRect { grid.convert(cellRectInGrid(i), to: view) }
     func cellIndex(at gridPoint: CGPoint) -> Int? { (0..<cellCount).first { cellRectInGrid($0).insetBy(dx: -4, dy: -4).contains(gridPoint) } }
 
     /// The text under tile i: "Page 3  ·  Oct 25, 2026" (created date), "New page" for the last tile.

@@ -946,6 +946,16 @@ final class CanvasView: MTKView {
     override func draw(_ dirtyRect: NSRect) { render(predictAhead: predictAhead) }
 
     func setNeedsRender() { needsRender = true }
+    /// Draw the current page now, presented with the current Core Animation transaction: whatever else changes in the
+    /// window this turn (a transition's picture removed, the overview hidden) reaches the screen in the same frame as
+    /// the page. Otherwise the canvas showed the page it drew before for a frame or two (Karthik, 30 Oct).
+    func drawNowWithTransaction() {
+        renderingPaused = false
+        presentsWithTransaction = true
+        needsRender = false
+        draw()
+        DispatchQueue.main.async { [weak self] in self?.presentsWithTransaction = false }
+    }
 
     /// Arrow keys: pan by 10% of the view (a whole view with `screen`), like scrolling a document (→ shows what's
     /// to the right, ↓ what's further down). Clamped like any pan (page sides and top); never a new line or a

@@ -213,8 +213,13 @@ final class Renderer {
         encode(cb, rpd, visible: visible, background: background, spacing: spacing, pxPerUnit: pxPerUnit, page: page, items: items)
         if let presented { drawable.addPresentedHandler { d in presented(d.presentedTime) } }
         if let gpuMs { cb.addCompletedHandler { cb in gpuMs((cb.gpuEndTime - cb.gpuStartTime) * 1000) } }
-        cb.present(drawable)
-        cb.commit()
+        if view.presentsWithTransaction {
+            // Shown in the same Core Animation transaction as the window's other changes (the overview's handoff).
+            cb.commit(); cb.waitUntilScheduled(); drawable.present()
+        } else {
+            cb.present(drawable)
+            cb.commit()
+        }
     }
 
     func encode(_ cb: MTLCommandBuffer, _ rpd: MTLRenderPassDescriptor, visible: CGRect, background: Int, spacing: Double,

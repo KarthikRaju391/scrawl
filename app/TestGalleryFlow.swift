@@ -179,7 +179,7 @@ enum TestGalleryFlow {
         let slow = AppDelegate.transitionSeconds > 1
         /// One G press; the transition it starts is sampled frame by frame until it ends (or the next press comes).
         func press(tile: Int?, nextIn: Double) {
-            let before = app.galleryShown, page = canvas.pageIndex
+            let before = target(), page = canvas.pageIndex   // heading to the overview: this press opens a page
             if let t = tile { hover(cell: t) }
             key("g", 5); presses += 1
             let opening = before
@@ -218,8 +218,8 @@ enum TestGalleryFlow {
             }
             out.append(rec)
         }
-        // Calm loop: 0.25 s and 0.6 s between presses, through pages 2, 5 (370%), 3, 5, 7, 1.
-        for (t, gap) in [(1, 0.6), (4, 0.6), (2, 0.25), (6, 0.25), (3, 0.25), (4, 0.6), (0, 0.6)] {
+        // Calm loop: 0.3 s (his fastest, 30 Oct 19:54) and 0.6 s between presses, through pages 2, 5 (370%), 3, 5, 7, 1.
+        for (t, gap) in [(1, 0.6), (4, 0.6), (2, 0.3), (6, 0.3), (3, 0.3), (4, 0.6), (0, 0.6)] {
             let g = slow ? AppDelegate.transitionSeconds + 0.4 : gap
             press(tile: nil, nextIn: g)            // G: back to the overview
             press(tile: t, nextIn: g)              // pointer on a tile, G: open it
