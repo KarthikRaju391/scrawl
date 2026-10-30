@@ -413,6 +413,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if !galleryShown, let a = arrow, plainOrShift {
             canvas.panByArrow(dx: a.0, dy: a.1, screen: e.modifierFlags.contains(.shift)); return true
         }
+        // Every other single-key shortcut acts once per press, like G: a held D, W, L or tool key flipped its mode
+        // ~25 times a second, a held N added a page per repeat, a held Return a line per repeat.
+        if e.isARepeat, !galleryShown, plainOrShift { return true }
         if galleryShown {   // the page overview: G or Esc goes back to the current page; other keys do nothing
             // G (like Return / Space) opens the highlighted tile; Esc goes back to the page that was open.
             if e.isARepeat { }

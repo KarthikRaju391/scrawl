@@ -108,6 +108,28 @@ enum TestGalleryKeys {
         r["holdGInOverview"] = hold("g", 5, seconds: 1.5)        // the overview, page 7 highlighted: G held -> page 7, once
         key("g", 5); waitTransition(); mouse(.mouseMoved, cell: 8)
         r["holdReturnInOverview"] = hold("\r", 36, seconds: 1.5) // Return held -> page 9, once
+        // The other single-key shortcuts on a page: held for 1 s, each changes its mode (or adds a page, or a line) once.
+        func holdKey(_ ch: String, _ code: UInt16, _ read: () -> String) -> [String: Any] {
+            var seen = [read()]
+            func send(_ rep: Bool) {
+                if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: app.window.windowNumber, context: nil,
+                                            characters: ch, charactersIgnoringModifiers: ch, isARepeat: rep, keyCode: code) { _ = app.key(e) }
+                if read() != seen.last { seen.append(read()) }
+            }
+            send(false)
+            let t0 = Date(); var next = 0.225
+            while Date().timeIntervalSince(t0) < 1.0 { spin(0.005); if Date().timeIntervalSince(t0) >= next { send(true); next += 0.033 } }
+            spin(0.1); if read() != seen.last { seen.append(read()) }
+            return ["changes": seen.count - 1, "values": seen]
+        }
+        var held: [String: Any] = [:]
+        held["D"] = holdKey("d", 2) { "\(canvas.drawMode)" }
+        held["W"] = holdKey("w", 13) { "\(canvas.writingMode)" }
+        held["L"] = holdKey("l", 37) { "\(canvas.tools.zoomLocked)" }
+        held["E"] = holdKey("e", 14) { canvas.tools.tool.rawValue }
+        held["N"] = holdKey("n", 45) { "\(canvas.pages.count)" }
+        held["Return (writing mode)"] = holdKey("\r", 36) { "\(canvas.camera.center.y.rounded())" }
+        r["heldKeys"] = held
         try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-gallerykeys.json"))
         try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
     }

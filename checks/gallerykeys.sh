@@ -28,6 +28,8 @@ for k, want_shown, label in (("holdGOnPage", True, "G held on a page"), ("holdGI
     x = r[k]
     chk(x["transitions"] == 1 and x["switches"] == 1 and x["shownAfter"] == want_shown,
         f"{label} for 1.5 s (auto-repeat): one change, no flashing between the overview and the page (transitions {x['transitions']}, switches {x['switches']}, overview shown after: {x['shownAfter']}, page {x['pageBefore'] + 1} -> {x['pageAfter'] + 1})")
+for k, x in r["heldKeys"].items():
+    chk(x["changes"] == 1, f"{k} held for 1 s (auto-repeat): one change, not one per repeat ({x['changes']}: {' -> '.join(x['values'][:6])})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 print("screenshots:", sys.argv[1].rsplit("/", 1)[0])
 PY
