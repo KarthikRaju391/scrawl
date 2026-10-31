@@ -14,7 +14,7 @@ mode that pans along your line.
 
 The app asks for no permissions. Your pages stay on your Mac. Scrawl keeps anonymous usage counts (which
 features you use; never your ink or text) in a local log; Settings › Share anonymous usage counts turns
-them off ([what's counted](https://github.com/KarthikRaju391/trackpad-draw/blob/main/docs/analytics.md)).
+them off ([what's counted](https://github.com/KarthikRaju391/scrawl/blob/main/docs/analytics.md)).
 The only other network request is **Check for Updates**, when you choose it.
 
 ## What's new in 0.1.1
@@ -31,7 +31,7 @@ The only other network request is **Check for Updates**, when you choose it.
 - **Settings** window tidied: nothing cut off, the click-to-draw time sits under its switch.
 
 Everything from 0.1.0 is still here: see its notes and the full list in
-[CHANGELOG.md](https://github.com/KarthikRaju391/trackpad-draw/blob/main/CHANGELOG.md).
+[CHANGELOG.md](https://github.com/KarthikRaju391/scrawl/blob/main/CHANGELOG.md).
 
 ## Checksums (SHA-256)
 
@@ -41,7 +41,7 @@ Everything from 0.1.0 is still here: see its notes and the full list in
 ```
 ## Tested
 
-Every automated check passes ([what they cover](https://github.com/KarthikRaju391/trackpad-draw/blob/main/DEVELOPMENT.md#tests)),
+Every automated check passes ([what they cover](https://github.com/KarthikRaju391/scrawl/blob/main/DEVELOPMENT.md#tests)),
 including a robot user that drives the real app like a person: it writes, scratches out, scrubs, pans,
 searches and shares, and checks what's on screen
-([results and screenshots](https://github.com/KarthikRaju391/trackpad-draw/blob/main/docs/robot-report.md)).
+([results and screenshots](https://github.com/KarthikRaju391/scrawl/blob/main/docs/robot-report.md)).

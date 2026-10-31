@@ -15,7 +15,7 @@ you to the next line when a line is full.
 ## Installing
 
 1. Download `Scrawl-<version>.dmg` from the
-   [Releases](https://github.com/KarthikRaju391/trackpad-draw/releases) page. Check it against
+   [Releases](https://github.com/KarthikRaju391/scrawl/releases) page. Check it against
    `SHA256SUMS.txt` if you like: `shasum -a 256 Scrawl-*.dmg`.
 2. Open the DMG and drag **Scrawl** into **Applications**.
 3. Open it. The app isn't notarized by Apple yet, so macOS stops it the first time:
