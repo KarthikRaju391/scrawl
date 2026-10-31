@@ -8,6 +8,8 @@ set -e
 cd "$(dirname "$0")"
 . ./release.conf
 CONFIG=${CONFIG:-dev}
+# Usage counts go to PostHog from release builds only (docs/analytics.md).
+if [ "$CONFIG" = release ]; then PH_TOKEN=${POSTHOG_PROJECT_TOKEN:-}; else PH_TOKEN=; fi
 BUILD=${BUILD_NUMBER:-1}
 if [ "$CONFIG" = release ]; then FINAL="build/release/$APP_NAME.app"; else FINAL="build/$APP_NAME.app"; fi
 FRAMEWORKS="-framework AppKit -framework Metal -framework MetalKit -framework QuartzCore -framework Carbon"
@@ -49,7 +51,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>NSSupportsAutomaticTermination</key><false/>
   <key>TDUpdateURL</key><string>$UPDATE_URL</string>
-  <key>ScrawlPostHogToken</key><string>${POSTHOG_PROJECT_TOKEN:-}</string>
+  <key>ScrawlPostHogToken</key><string>$PH_TOKEN</string>
   <key>ScrawlPostHogHost</key><string>${POSTHOG_HOST:-}</string>
   <key>TDBuildConfig</key><string>$CONFIG</string>
 </dict></plist>
