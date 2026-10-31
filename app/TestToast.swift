@@ -39,7 +39,11 @@ enum TestToast {
         NSApp.appearance = NSAppearance(named: .darkAqua)
         app.showToast("Undo"); record("toast \"Undo\", app in dark appearance", c.toast)
         NSApp.appearance = nil
-        try? JSONSerialization.data(withJSONObject: ["cases": cases], options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-toast.json"))
+        // A note shown while the previous one fades out stays up (the old fade's end used to hide it).
+        app.showToast("first", seconds: 0.2); spin(0.3)          // its fade-out is running now
+        app.showToast("second", seconds: 2.5); spin(0.6)
+        let overlap: [String: Any] = ["text": c.toast.stringValue, "hidden": c.toast.isHidden, "alpha": c.toast.alphaValue]
+        try? JSONSerialization.data(withJSONObject: ["cases": cases, "overlap": overlap], options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-toast.json"))
         try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
     }
 }

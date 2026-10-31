@@ -47,6 +47,8 @@ for c in r["cases"]:
     px_c, py_c = cw / 2 / k, ch / 2 / k   # the crop is symmetric about the pill's centre
     dx, dy = tx - px_c, ty - py_c
     chk(abs(dx) <= 1 and abs(dy) <= 1, f"{c['name']}: text centre is {dx:+.1f} pt across, {dy:+.1f} pt down from the pill's centre (pill {w:.0f}x{h:.0f} pt)  [shot-{c['n']}.png]")
+o = r.get("overlap", {})
+chk(o.get("text") == "second" and not o.get("hidden") and o.get("alpha", 0) > 0.9, f"a note shown while the last one fades out stays up ({o})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 print("screenshots:", d)
 PY

@@ -106,6 +106,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     var notebookStatus = ""
     var previousCrash = false
     var toastFade: DispatchWorkItem?
+    /// Counts notes shown: a fade-out only hides the note it started on.
+    var toastShown = 0
     var gallery: GalleryView?
     var lastSharePicker: NSSharingServicePicker?
     var galleryReturnsToDraw = false
@@ -333,8 +335,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if container.subviews.last !== t { container.addSubview(t, positioned: .above, relativeTo: nil) }
         t.stringValue = text
         t.frame = CGRect(x: container.bounds.midX - t.fittingWidth / 2, y: container.bounds.height - 64, width: t.fittingWidth, height: 24)
-        toastFade?.cancel(); t.alphaValue = 1; t.isHidden = false
-        let w = DispatchWorkItem { [weak t] in NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; t?.animator().alphaValue = 0 }, completionHandler: { t?.isHidden = true }) }
+        // A note shown while the last one fades out: that fade must not hide the new one when it ends (it did, and
+        // moving the note to the front above ends a running fade at once: "Practice done" vanished as it appeared).
+        toastFade?.cancel(); toastShown += 1
+        let shown = toastShown
+        NSAnimationContext.runAnimationGroup { $0.duration = 0; t.animator().alphaValue = 1 }
+        t.isHidden = false
+        let w = DispatchWorkItem { [weak self, weak t] in
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; t?.animator().alphaValue = 0 },
+                                                completionHandler: { if self?.toastShown == shown { t?.isHidden = true } })
+        }
         toastFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: w)
     }
 
