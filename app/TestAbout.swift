@@ -14,7 +14,9 @@ enum TestAbout {
         var menus: [[String: Any]] = []
         for top in NSApp.mainMenu?.items ?? [] {
             for i in top.submenu?.items ?? [] where !i.isSeparatorItem {
-                let ok = i.action.map { a in (i.target as AnyObject?)?.responds(to: a) ?? NSApp.target(forAction: a) != nil } ?? false
+                // Edit › Cut / Paste / Select All go to the focused text field (the first responder): wired when a
+                // text view handles them, even with no field focused while this runs.
+                let ok = i.action.map { a in (i.target as AnyObject?)?.responds(to: a) ?? (NSApp.target(forAction: a) != nil || NSTextView.instancesRespond(to: a)) } ?? false
                 menus.append(["menu": top.submenu?.title ?? "", "title": i.title, "key": i.keyEquivalent,
                               "mods": i.keyEquivalent.isEmpty ? "" : modString(i.keyEquivalentModifierMask), "wired": ok])
             }
