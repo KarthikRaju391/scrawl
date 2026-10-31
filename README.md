@@ -1,10 +1,33 @@
 # Scrawl
 
-Write and sketch with a finger on your Mac's trackpad. The tools follow Google Keep's drawing screen:
-pen, marker, highlighter, eraser, backgrounds. Pages scroll down forever, and a writing mode takes
-you to the next line when a line is full.
+Scrawl is a Mac note-taking app for thoughts that come more naturally by hand. It turns the trackpad
+under your fingers into a writing surface, so you can jot ideas in your own handwriting without
+reaching for a tablet or stylus.
+
+Zoom in to write small, and writing mode moves you to the next line as you go. Pages scroll down
+forever, and a zig-zag scratches out a mistake.
 
 ![Scrawl](examples/porsche-window.png)
+
+## Why it's different
+
+In most Mac apps, drawing with the trackpad means holding down a click and dragging a pointer around.
+That's fine for a signature and painful for a sentence. Scrawl works more like a tablet:
+
+- **Your finger is the pen.** Touch and write: no clicking, no holding. The pointer is frozen while
+  you write, so nothing else gets clicked by accident, and Esc gives it back.
+- **The trackpad is the page.** Where you touch on the trackpad is where the ink lands on screen, not
+  wherever the pointer happened to be. Two fingers pan, a pinch zooms.
+- **It feels like ink.** Lines get thicker when you press harder, the finger's wobble is smoothed out,
+  and the tip is drawn slightly ahead to hide lag.
+- **It stays out of your way.** A palm or thumb resting on the trackpad's edge is ignored. A two-finger
+  double tap undoes. Writing mode moves to the next line only after you pause, never mid-word.
+- **Your notes stay yours.** No account, works offline, saved automatically on your Mac. The only
+  thing sent anywhere is anonymous usage counts, which you can turn off
+  ([what's counted](docs/analytics.md)).
+
+To read your fingers directly, Scrawl uses a macOS framework Apple doesn't document. That's what
+makes it work, and it's also why Scrawl isn't on the Mac App Store.
 
 ## Requirements
 
