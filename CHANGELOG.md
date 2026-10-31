@@ -2,16 +2,23 @@
 
 ## Unreleased
 
+## 0.1.3 (2026-10-31, build 6)
+
 - Pages overview: the "+ New page" tile comes first, then your pages, the one you changed most recently first
   (writing, erasing, scratching out, undoing; just looking at a page doesn't count). Tiles show when each page
   last changed. Page numbers and ⌘[ / ⌘] keep the notebook's order.
 - The welcome window fits a 13-inch screen (its Start Drawing button used to be below the screen), and Start
   Drawing starts drawing. Help scrolls when it's taller than the screen.
-- VoiceOver reaches every toolbar button, with its name, whether it's on, and its shortcut.
 - A held key does one thing: holding N no longer adds a page per key repeat, and D, W, L and the tool keys
   no longer flicker their mode.
-- The window can't get narrower than the toolbar (the Draw button used to be cut off).
+- VoiceOver reaches every toolbar button, with its name, whether it's on, and its shortcut.
 - With Reduce Motion on, opening and closing the pages overview fades instead of zooming.
+- Edit menu: Cut, Copy, Paste and Select All work in the search, zoom and export-name fields (Copy copies the
+  text there, not the page). View › Enter Full Screen is listed once.
+- The window can't get narrower than the toolbar (the Draw button used to be cut off).
+- Anonymous usage counts are now sent (release builds), not only kept in the local log: which features you
+  use and how long you write, never your ink, pages or text. Settings › Share anonymous usage counts turns
+  them off. What's counted: docs/analytics.md.
 
 ## 0.1.2 (2026-10-30, build 5)
 

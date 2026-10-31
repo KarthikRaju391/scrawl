@@ -12,8 +12,8 @@ where they give up. It never records ink, page images, handwriting text or file 
   - recording takes 1.4 ms per 10,000 events, even while the sink is stalled.
 - A background queue writes the batch every 30 s, and at quit, to:
   - **the local log**, `~/Library/Logs/Scrawl/events.jsonl`. It rotates at 1 MB and keeps two files.
-  - **PostHog**, only when `POSTHOG_PROJECT_TOKEN` in `release.conf` is set. It's empty now, so nothing is
-    sent anywhere.
+  - **PostHog** (US Cloud), from release builds only, since 0.1.3: `POSTHOG_PROJECT_TOKEN` in `release.conf`
+    goes into release builds; development builds always leave it empty and send nothing.
 - A failed send is tried again 30 s later, then after 2, 4, 8 and 16 minutes (an hour at most), and
   dropped after 6 tries: nothing ever retries in a loop.
 - Props are filtered to an allow-list of keys. Values can only be numbers, true/false, or words of 32
@@ -69,14 +69,13 @@ Stroke points, page images, OCR text, search queries, page titles, file names or
 destinations, window titles, settings values, IP-derived location (every event sets `$geoip_disable`; no person profiles: `$process_person_profile` is false),
 anything typed.
 
-## To turn on remote counts (Karthik)
+## How remote counts are set up (on since 0.1.3)
 
-1. Create a free PostHog account at posthog.com. Pick **EU Cloud** (`release.conf` assumes it; for US Cloud
-   set `POSTHOG_HOST=https://us.i.posthog.com`) and a project called "Scrawl". No SDK is needed: Scrawl
-   speaks PostHog's batch API directly, as their iOS/macOS SDK does.
+1. A PostHog project called "Scrawl" on **US Cloud** (`POSTHOG_HOST=https://us.i.posthog.com` in
+   `release.conf`). No SDK is needed: Scrawl speaks PostHog's batch API directly, as their iOS/macOS SDK does.
 2. In the project's settings, turn on **Discard client IP data**, so PostHog doesn't keep IP addresses.
 3. Copy the project token (it starts with `phc_`) into `release.conf`: `POSTHOG_PROJECT_TOKEN=phc_...`. It's
    meant to be public (write-only), so it's fine in the repo and the app.
-4. Run `scripts/release.sh`. Builds without a token send nothing.
+4. `scripts/release.sh` builds it in. Builds without a token (every development build) send nothing.
 
 The free tier allows far more events than Scrawl will send at launch (a session sends roughly 30–50).
