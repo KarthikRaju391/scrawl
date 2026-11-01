@@ -4,8 +4,8 @@ synthetic scratches. Shape only, in pad millimetres (independent of zoom):
   big legs  legs at least 55% of the extent long
   ratio     path length / extent along the axis
   speed     path length / duration (mm/s)
-A scratch: >= 4 big legs (3 turn-backs), ratio >= 3.2, speed >= 60 mm/s, extent >= 4 mm, a pen or marker
-stroke, net turning under 0.75 turns (circling isn't scratching), and >= 60% of its points within 1.5 mm
+A scratch: >= 4 legs (3 turn-backs), 3 of them big, ratio >= 3.0, speed >= 60 mm/s, extent >= 4 mm, a pen or marker
+stroke, net turning under 0.75 turns (circling isn't scratching), and >= 40% of its points within 1.5 mm
 of ink already on the page.
 Usage: python3 -I tools/scratch_analysis.py [--worst N]
 """
@@ -45,7 +45,7 @@ def features(pts, ts):
     return {"bigLegs": big, "legs": len(legs), "ratio": L / ext, "speed": L / dur, "extent": ext, "dur": dur, "loops": abs(net) / (2 * math.pi)}
 
 def is_scratch(f):
-    return f and f["bigLegs"] >= 4 and f["ratio"] >= 3.2 and f["speed"] >= 60 and f["extent"] >= 4 and f["loops"] < 0.75
+    return f and f["bigLegs"] >= 3 and f["legs"] >= 4 and f["ratio"] >= 3.0 and f["speed"] >= 60 and f["extent"] >= 4 and f["loops"] < 0.75
 
 def synthetic(rng, n):
     out = []
@@ -96,7 +96,7 @@ def main():
                 k = math.hypot(sm[-1][5] - sm[0][5], sm[-1][6] - sm[0][6]) / dmm or 1
                 ov = overlap(cpts, prev, 1.5 * k)
                 shape_only.append((f, d.get("tool"), round(ov, 2), ft))
-                if d.get("tool") in ("pen", "marker") and ov >= 0.6: fp.append((f, ft))
+                if d.get("tool") in ("pen", "marker") and ov >= 0.4: fp.append((f, ft))
             xs = [p[0] for p in cpts]; ys = [p[1] for p in cpts]
             prev.append((cpts, (min(xs), min(ys), max(xs), max(ys))))
             prev = prev[-400:]

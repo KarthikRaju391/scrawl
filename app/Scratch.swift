@@ -1,20 +1,23 @@
 // Scratch-out: a quick zig-zag over ink erases what it covers, and the zig-zag itself goes too, in one undo
 // step. Tuned on every committed stroke Karthik recorded (tools/scratch_analysis.py: 6,056 strokes, none
-// detected; 97.5% of 2,000 synthetic scratches detected). Shape is measured in pad millimetres, so it
-// doesn't depend on the zoom:
+// detected; 97.5% of 2,000 synthetic scratches detected), then loosened for the three attempts in his 31 Oct
+// screen recording that didn't work (bench/fixtures/scratch-attempts-20261031.json): one had 3 big legs of 4 and
+// a ratio of 3.06, two lay 44% and 59.7% on ink. Still none of 11,475 recorded strokes erases anything it
+// shouldn't. Shape is measured in pad millimetres, so it doesn't depend on the zoom:
 //   legs      the stroke projected on its main axis, split where it turns back (hysteresis 30% of the extent)
-//   big legs  legs at least 55% of the extent: a scratch has 4 or more (3 turn-backs)
-//   ratio     path length / extent along the axis, >= 3.2
+//   big legs  legs at least 55% of the extent: a scratch has 4 or more legs (3 turn-backs), 3 of them big
+//   ratio     path length / extent along the axis, >= 3.0
 //   speed     >= 60 mm/s (writing a letter is slower and smaller)
 //   loops     net turning under 0.75 turns: circling (a wheel drawn round and round) isn't scratching
-// Then it must lie on ink: >= 60% of its points within 1.5 mm of strokes already on the page. Pen and marker
+// Then it must lie on ink: >= 40% of its points within 1.5 mm of strokes already on the page (a quick scratch
+// overshoots a short word's ends). Pen and marker
 // only: a highlighter zig-zag over text is highlighting.
 import Foundation
 
 enum ScratchOut {
     struct Features { var bigLegs = 0, legs = 0; var ratio = 0.0, speed = 0.0, extent = 0.0, loops = 0.0 }
 
-    static let minBigLegs = 4, minRatio = 3.2, minSpeed = 60.0, minExtent = 4.0, maxLoops = 0.75, minOverlap = 0.6, reachMM = 1.5
+    static let minBigLegs = 3, minLegs = 4, minRatio = 3.0, minSpeed = 60.0, minExtent = 4.0, maxLoops = 0.75, minOverlap = 0.4, reachMM = 1.5
     /// Settings › Scratch out (on by default; tests always start with it on).
     nonisolated(unsafe) static var enabled = Launch.testing ? true : (UserDefaults.standard.object(forKey: "scratchOut") as? Bool ?? true)
 
@@ -63,7 +66,7 @@ enum ScratchOut {
 
     static func shapeMatches(_ f: Features?) -> Bool {
         guard let f else { return false }
-        return f.bigLegs >= minBigLegs && f.ratio >= minRatio && f.speed >= minSpeed && f.extent >= minExtent && f.loops < maxLoops
+        return f.bigLegs >= minBigLegs && f.legs >= minLegs && f.ratio >= minRatio && f.speed >= minSpeed && f.extent >= minExtent && f.loops < maxLoops
     }
 
     /// The strokes a scratch (canvas points) erases: the ones it touches whose bounds lie mostly inside the

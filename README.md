@@ -83,14 +83,15 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   opens its sizes and colours or the writing settings.
 - **Edge guard:** touches that start within 5% of the trackpad's edges are ignored, so a resting palm
   or thumb doesn't draw, pan or zoom. A stroke that starts inside can still run to the edge. Change
-  it in **Settings (⌘,)** › Edge guard (0 turns it off), along with smoothing and prediction, and the
-  switches for scratch-out and the page map.
+  it in **Settings (⌘,)** › Edge guard (0 turns it off), along with smoothing and prediction, writing mode's wait
+  before the next line, and the switches for scratch-out and the page map.
 - **Toolbar:** Draw first, then the tools and paper, writing and zoom lock, undo and redo, and pages.
   Hover over any button for what it does and its shortcut.
 - **Writing mode (W):** the page stays put while you write along a line (pan with two fingers if you need
   room). When the line reaches its width, 50%, 75% or 100% of the page counted from where the block you're
   writing began (capped near the page's right edge), the page moves to the next line once your finger has
-  been up for 0.4 s, so it never moves in the middle of a word; touching again sooner cancels it. A word
+  been up for a short pause (0.4 s by default, adjustable in **Settings** › Wait before next line), so it
+  never moves in the middle of a word; touching again sooner cancels it. A word
   that ends just short of the width counts too. The next line starts back where the block's first line
   began, so a block started mid-page stays mid-page, and it sits a little below the middle so the lines you
   just wrote stay in sight (Return does it by hand). Moving somewhere new by hand, a page change or

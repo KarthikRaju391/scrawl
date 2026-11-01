@@ -26,5 +26,10 @@ n0, e0, e1 = s["a new line, eraser selected"], s["eraser stroke over a line"], s
 chk(e0["strokes"] == n0["strokes"] - 1 and e1["strokes"] == e0["strokes"] + 1, f"eraser selected: the double tap undoes the erase ({e0['strokes']} -> {e1['strokes']}), not an empty step")
 p0, p1 = s["a line to pan over, eraser selected"], s["eraser: one finger on the line, a second joins (pan)"]
 chk(p1["strokes"] == p0["strokes"], f"eraser selected, one finger on a line and a second joining to pan: nothing erased ({p0['strokes']} -> {p1['strokes']})")
+for j in json.load(open(sys.argv[1])).get("jittered", []):
+    want = -1 if j["name"].startswith("2") else 1
+    chk(j["framesMoved"] == 0 and j["viewSameAfter"] and j["strokesAfter"] - j["strokesBefore"] == want,
+        f"recorded {j['name']} double tap: the view never moved ({j['framesMoved']} of {j['frames']} frames moved, by up to {j['worstMove']:.2f}), "
+        f"{'undo' if want < 0 else 'redo'} done ({j['strokesBefore']} -> {j['strokesAfter']} strokes)")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 PY

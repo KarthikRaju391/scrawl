@@ -58,7 +58,10 @@ enum TestEdge {
             for _ in 0..<10 { frame([(0, 60, gy * 0.4)]) }
             for k in 0...40 { let d = 10 + Double(k) * 0.5; frame([(0, 60, gy * 0.4), (1, 60 - d, 40), (2, 60 + d, 40)]) }
             liftAll()
-            r[prefix + "pinchWithThumbOnBottom"] = state()
+            var pinch = state()
+            // Spread from 20 to 60 mm, zooming by the ratio from where the distance left the dead zone.
+            pinch["want"] = 3 * 60 / (20 + floor(GestureEngine.deadZoneMM) + 1)
+            r[prefix + "pinchWithThumbOnBottom"] = pinch
             // 5. Two-finger pan with one finger in the band: only one finger counts, so no pan or zoom.
             reset()
             for k in 0...40 { frame([(1, 50, 40 + Double(k) * 0.4), (2, pad.width - gx * 0.4, 40 + Double(k) * 0.4)]) }

@@ -35,12 +35,18 @@ struct Settings {
     /// Blind A/B: with rejoinMode "ab", each launch secretly picks on or off (logged, never shown).
     static let abCondition = Bool.random() ? "on" : "off"
     var rejoinSnap: Bool { rejoinMode != "off" }
-    /// Writing mode moves the page only after the finger has been up this long (0 = immediately).
+    /// Writing mode moves the page only after the finger has been up this long (0 = immediately). Settings › Wait
+    /// before next line sets it, 0.2-1 s (Karthik, 1 Nov); read at each lift, so a change applies at the next one.
     var pauseBeforeMoveMs: Double {
         let a = CommandLine.arguments
         if let i = a.firstIndex(of: "--pause-ms"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
-        return d.object(forKey: "pauseBeforeMoveMs") as? Double ?? 400
+        if let v = Self.pauseChosenMs { return v }
+        if Launch.testing { return Self.defaultPauseMs }   // tests neither save nor read the stored choice
+        return d.object(forKey: "pauseBeforeMoveMs") as? Double ?? Self.defaultPauseMs
     }
+    static let defaultPauseMs = 400.0
+    /// The Settings slider's value this run (saved to "pauseBeforeMoveMs" too, except in tests).
+    nonisolated(unsafe) static var pauseChosenMs: Double?
     /// Edge guard: touches that start within this fraction of the pad from any edge are ignored (a resting
     /// palm or thumb). 0 = off; `--edge-guard` overrides (replays of old sessions use 0). The inner area
     /// maps to the whole writing area.
@@ -268,6 +274,14 @@ final class GestureEngine {
     private var drewIds = Set<Int32>()
     private var seen = Set<Int32>()
     private var navPrev: (ids: [Int32], centroid: CGPoint, dist: Double)?
+    /// Dead zone (Karthik, 1 Nov: a two- or three-finger double tap nudged the view): two or more fingers move nothing
+    /// until their centroid has moved `deadZoneMM` or the distance between them has changed `deadZoneMM` (pad mm),
+    /// from where the pair landed. In 35 recorded sessions (4,676 episodes, tools/tap_analysis.py) no tap-shaped
+    /// episode got there (most: centroid 1.41 mm, distance 1.67 mm; 1,140 taps), and pans and pinches got there
+    /// 25 ms after they began moving (median; p95 158 ms, slow drifts). A 4% distance rule caught 23 taps.
+    static let deadZoneMM = 2.0
+    private var navStart: (ids: [Int32], centroidMM: CGPoint, dist: Double)?
+    private var navLive = false
     var settings = Settings()
     lazy var inkThreshold = settings.inkThreshold
 
@@ -279,7 +293,7 @@ final class GestureEngine {
 
     func reset() {
         if case .drawing = mode { onEnd?(false) }
-        mode = .idle; palm.removeAll(); edgeIgnored.removeAll(); navPrev = nil; drewIds.removeAll(); seen.removeAll()
+        mode = .idle; palm.removeAll(); edgeIgnored.removeAll(); navPrev = nil; navStart = nil; navLive = false; drewIds.removeAll(); seen.removeAll()
     }
 
     /// Click to draw: false while it's off, so a finger only aims (hovers) and never inks by touch.
@@ -343,7 +357,7 @@ final class GestureEngine {
                 mode = fingers.isEmpty ? .idle : .waitLift
             }
         case .navigating:
-            if fingers.count >= 2 { navigate(fingers) } else { navPrev = nil; mode = fingers.isEmpty ? .idle : .waitLift }
+            if fingers.count >= 2 { navigate(fingers) } else { navPrev = nil; navStart = nil; navLive = false; mode = fingers.isEmpty ? .idle : .waitLift }
         case .waitLift:
             if fingers.isEmpty { mode = .idle }
         }
@@ -362,6 +376,14 @@ final class GestureEngine {
         let c = CGPoint(x: (a.norm.x + b.norm.x) / 2, y: (a.norm.y + b.norm.y) / 2)
         let d = hypot(a.mm.x - b.mm.x, a.mm.y - b.mm.y)
         defer { navPrev = ([a.id, b.id], c, Double(d)) }
+        if !navLive {
+            // In the dead zone: measured from where this pair landed; a new pair starts it again.
+            let cmm = CGPoint(x: (a.mm.x + b.mm.x) / 2, y: (a.mm.y + b.mm.y) / 2)
+            guard let s = navStart, s.ids == [a.id, b.id] else { navStart = ([a.id, b.id], cmm, Double(d)); return }
+            guard hypot(cmm.x - s.centroidMM.x, cmm.y - s.centroidMM.y) > Self.deadZoneMM || abs(Double(d) - s.dist) > Self.deadZoneMM else { return }
+            navLive = true
+            return   // out of it: moves count from here (navPrev = now), no jump
+        }
         guard let p = navPrev, p.ids == [a.id, b.id] else { return }
         let ratio = p.dist > 5 && d > 5 ? Double(d) / p.dist : 1
         onNavigate?(p.centroid, c, ratio)
@@ -1417,9 +1439,9 @@ final class CanvasView: MTKView {
             if move == .none || lineHeld { pendingMove = nil }
             else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
             else {
-                // A line break waits for a word gap: the usual 400 ms after the lift (a touch before then cancels it),
+                // A line break waits for a word gap: the usual pause after the lift (Settings, 400 ms by default) (a touch before then cancels it),
                 // once the line's ink has crossed the limit (Karthik, 29 Oct, option A), or reached 93% of the page with
-                // the limit near the page's edge: the same 400 ms (Karthik on b03bac2: "don't wait for 1.5s, users won't
+                // the limit near the page's edge: the same pause (Karthik on b03bac2: "don't wait for 1.5s, users won't
                 // know that"). Written ink never moves.
                 let wait = settings.pauseBeforeMoveMs
                 pendingMove = (move, now(), wait)
