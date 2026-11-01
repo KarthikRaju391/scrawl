@@ -236,7 +236,7 @@ struct PageExport {
         var o = SVGOut(top: pageTop)
         let vb = CGRect(x: rect.minX, y: pageTop - rect.maxY, width: rect.width, height: rect.height)
         o.raw("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-        o.raw("<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"\(sz.width)\" height=\"\(sz.height)\" viewBox=\"")
+        o.raw("<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"\(sz.width)\" height=\"\(sz.height)\" preserveAspectRatio=\"none\" viewBox=\"")
         o.num(vb.minX); o.raw(" "); o.num(vb.minY); o.raw(" "); o.num(vb.width); o.raw(" "); o.num(vb.height); o.raw("\">\n")
         if let title { o.raw("<title>"); o.raw(title.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")); o.raw("</title>\n") }
         func hex(_ c: (Double, Double, Double)) -> String { String(format: "#%02x%02x%02x", Int((c.0 * 255).rounded()), Int((c.1 * 255).rounded()), Int((c.2 * 255).rounded())) }
@@ -332,13 +332,26 @@ struct SVGOut {
         if s.contains(".") { while s.hasSuffix("0") { s.removeLast() }; if s.hasSuffix(".") { s.removeLast() } }
         return s == "-0" ? "0" : s
     }
-    private mutating func pt(_ p: CGPoint) { num(p.x); bytes.append(UInt8(ascii: " ")); y(p.y) }
+    // Path data: each subpath starts absolute (M) and goes on relative (l, a), in hundredths rounded from the absolute
+    // positions, so nothing accumulates and the numbers are short.
+    private var at = (x: 0, y: 0)
+    private mutating func int(_ i: Int) {
+        var i = i
+        if i < 0 { bytes.append(UInt8(ascii: "-")); i = -i }
+        bytes.append(contentsOf: String(i / 100).utf8)
+        let f = i % 100
+        if f != 0 { bytes.append(UInt8(ascii: ".")); bytes.append(UInt8(48 + f / 10)); if f % 10 != 0 { bytes.append(UInt8(48 + f % 10)) } }
+    }
+    private func fixed(_ p: CGPoint) -> (x: Int, y: Int) { (Int((p.x * 100).rounded()), Int(((top - p.y) * 100).rounded())) }
+    private mutating func moveTo(_ p: CGPoint) { let f = fixed(p); raw("M"); int(f.x); raw(" "); int(f.y); at = f }
+    private mutating func lineTo(_ p: CGPoint) { let f = fixed(p); raw("l"); int(f.x - at.x); raw(" "); int(f.y - at.y); at = f }
     /// A circle as two half arcs, wound the same way as the quads (counterclockwise on screen; y-up counterclockwise
     /// in page units, like CGPath.addEllipse), so a nonzero fill is their union.
     mutating func circle(_ c: CGPoint, _ r: Double) {
-        raw("M"); pt(CGPoint(x: c.x + r, y: c.y))
-        raw("A"); num(r); raw(" "); num(r); raw(" 0 1 0 "); pt(CGPoint(x: c.x - r, y: c.y))
-        raw("A"); num(r); raw(" "); num(r); raw(" 0 1 0 "); pt(CGPoint(x: c.x + r, y: c.y)); raw("Z")
+        moveTo(CGPoint(x: c.x + r, y: c.y))
+        let left = fixed(CGPoint(x: c.x - r, y: c.y)), ri = Int((r * 100).rounded())
+        raw("a"); int(ri); raw(" "); int(ri); raw(" 0 1 0 "); int(left.x - at.x); raw(" 0")
+        raw("a"); int(ri); raw(" "); int(ri); raw(" 0 1 0 "); int(at.x - left.x); raw(" 0z")
     }
     /// strokePath's outline (Ink.swift) for points `from..<to`: a circle at each point and the quad from the point before.
     mutating func strokeOutline(_ pts: [StrokePoint], radii r: [Double], _ from: Int, _ to: Int) {
@@ -349,10 +362,10 @@ struct SVGOut {
             let dx = b.x - a.x, dy = b.y - a.y, d = hypot(dx, dy)
             if d > 1e-6 {
                 let nx = -dy / d, ny = dx / d
-                raw("M"); pt(CGPoint(x: a.x - nx * ra, y: a.y - ny * ra))
-                raw("L"); pt(CGPoint(x: b.x - nx * rb, y: b.y - ny * rb))
-                raw("L"); pt(CGPoint(x: b.x + nx * rb, y: b.y + ny * rb))
-                raw("L"); pt(CGPoint(x: a.x + nx * ra, y: a.y + ny * ra)); raw("Z")
+                moveTo(CGPoint(x: a.x - nx * ra, y: a.y - ny * ra))
+                lineTo(CGPoint(x: b.x - nx * rb, y: b.y - ny * rb))
+                lineTo(CGPoint(x: b.x + nx * rb, y: b.y + ny * rb))
+                lineTo(CGPoint(x: a.x + nx * ra, y: a.y + ny * ra)); raw("z")
             }
             circle(b, rb)
         }

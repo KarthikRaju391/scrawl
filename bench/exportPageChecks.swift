@@ -38,10 +38,18 @@ private func diff(_ a: RGBA, _ b: RGBA, tol: Int) -> (over: Double, mean: Double
 /// The SVG's root attributes and its paths, read with XMLParser.
 private final class SVGRead: NSObject, XMLParserDelegate {
     var root: [String: String] = [:], paths: [[String: String]] = [], ok = false
+    /// Paths inside a stroke's <g> (a long stroke's pieces), and how many of them carry an opacity of their own.
+    var pieces = 0, piecesWithOpacity = 0
+    private var inGroup = 0
     init(_ data: Data) { super.init(); let p = XMLParser(data: data); p.delegate = self; ok = p.parse() }
     func parser(_ parser: XMLParser, didStartElement e: String, namespaceURI: String?, qualifiedName: String?, attributes a: [String: String] = [:]) {
         if e == "svg" { root = a }
         if e == "path" || e == "g" { paths.append(a) }
+        if e == "g", (a["class"] ?? "").hasPrefix("stroke") { inGroup += 1 }
+        if e == "path", inGroup > 0 { pieces += 1; if a["opacity"] != nil || a["fill-opacity"] != nil { piecesWithOpacity += 1 } }
+    }
+    func parser(_ parser: XMLParser, didEndElement e: String, namespaceURI: String?, qualifiedName: String?) {
+        if e == "g", inGroup > 0 { inGroup -= 1 }   // stroke groups hold only paths
     }
     /// One element per stroke: a <path>, or a <g> of pieces for a long stroke.
     var strokePaths: [[String: String]] { paths.filter { ($0["class"] ?? "").hasPrefix("stroke") } }
@@ -187,6 +195,12 @@ func exportPageChecks(_ check: (Bool, String) -> Void) {
             NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
             svgImg.draw(in: NSRect(x: 0, y: 0, width: png.w, height: png.h)); NSGraphicsContext.restoreGraphicsState()
         }, png.w, png.h)
+        // The long stroke is a group with the opacity, its pieces opaque (CoreSVG ignores a piece's fill-opacity inside an
+        // opacity group, so the render-back alone can't tell; WebKit would draw such pieces lighter).
+        let sv = SVGRead(try! Data(contentsOf: URL(fileURLWithPath: dir + "/h.svg")))
+        let g = sv.strokePaths.first
+        check(h.doc.strokes[0].points.count > PageExport.svgOnePathMax && g?["opacity"] == "0.35" && sv.pieces > 1 && sv.piecesWithOpacity == 0,
+              "a long highlighter stroke (\(h.doc.strokes[0].points.count) points) is one <g opacity=\"\(g?["opacity"] ?? "?")\"> of \(sv.pieces) opaque pieces (\(sv.piecesWithOpacity) with their own opacity)")
         // Expected: yellow at 35% over white once. The crossing is the centre; a single pass is the top of a lobe.
         let want = [0xFD, 0xD6, 0x63].map { Int((255 * 0.65 + Double($0) * 0.35).rounded()) }
         for (name, img) in [("PNG", png), ("SVG", svg)] {
