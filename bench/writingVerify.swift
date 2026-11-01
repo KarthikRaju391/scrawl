@@ -574,9 +574,16 @@ func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
                     strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex)
     }
     var afterWidth: (old: Double, at: Double)?
+    var heldFrom: Double?
     func check(_ e: WEv, _ pre: WObs, _ committed: CGRect?) {
         let post = obs()
         if case .width = e, let rs = pre.runStart { afterWidth = (rs, vclock) }
+        if committed != nil, post.lineHeld, let ink = post.lineInk, let p0 = heldFrom, ink.height > p0 * 1.8 {
+            res.notes.append(String(format: "held line at %.1f s grew from %.0f to %.0f units tall (absorbed a line below it): %d strokes, no automatic move for them", vclock - (rows.first?["m"] as? Double ?? 0), p0, ink.height, post.lineStrokes.count))
+            heldFrom = .infinity
+        }
+        if post.lineHeld && !pre.lineHeld { heldFrom = post.lineInk.map { Double($0.height) } }
+        if !post.lineHeld { heldFrom = nil }
         if let a = afterWidth, let s = committed {
             res.notes.append(String(format: "width change at %.1f s: block start was %.1f; the next stroke came %.1f s later at x %.1f (%+.1f%% of the page), %@ the old line",
                                     a.at - (rows.first?["m"] as? Double ?? 0), a.old, vclock - a.at, s.minX, (s.minX - a.old) / wPage.width * 100,

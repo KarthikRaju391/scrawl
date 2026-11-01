@@ -117,7 +117,7 @@ struct WModel {
             lineInk = p.ink; lineStrokes = p.strokes; lineHeld = true; continued = true
         }
         if lineInk == nil { prevLine = nil }
-        if let line = lineInk, abs(s.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
+        if let line = lineInk, abs(s.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 || (lineHeld && s.midY < line.minY) {
             let nextOfBlock = s.midY < line.midY && line.midY - s.midY < max(line.height, vh * 0.12) * 3.5 &&
                 runStart.map { abs(s.minX - $0) < cam.page.width * WritingLayout.newRunAway } == true
             lineInk = nil; lineStrokes = []; lineHeld = false; prevLine = nil
@@ -336,7 +336,7 @@ struct WSpec {
         if line == nil, let p = o.prevLine, abs(s.midY - p.midY) < max(p.height * 0.6, v.height * 0.05), s.minX >= p.maxX - max(p.height, v.width * 0.03) {
             line = p; continued = true
         }
-        if let l = line, abs(s.midY - l.midY) > max(l.height, v.height * 0.12) * 1.2 {   // well above or below
+        if let l = line, abs(s.midY - l.midY) > max(l.height, v.height * 0.12) * 1.2 || ((continued || o.lineHeld) && s.midY < l.minY) {   // well above or below; under a held line
             let nextOfBlock = s.midY < l.midY && l.midY - s.midY < max(l.height, v.height * 0.12) * 3.5 && rs.map { abs(s.minX - $0) < newRun * W } == true
             line = nil
             if !nextOfBlock { rs = nil }

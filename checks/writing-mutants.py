@@ -91,7 +91,16 @@ MUTANTS = {
         (M, "widthIdx = i; cancelPendingMove()", "widthIdx = i; endWritingLine()", 1),
         (M, "            cancelPendingMove()\n            handMove(to: camAfter ?? c, touch: false)", "            handMove(to: camAfter ?? c, touch: false)", 1),
         (M, "    mutating func scratchedLine(_ gone: CGRect) -> Bool {\n", "    mutating func scratchedLine(_ gone: CGRect) -> Bool {\n        if true { return false }\n", 1),
-        (M, "        if movedByHand >= vw * WritingLayout.deliberatePan * (1 - 1e-9) {", "        if movedByHand >= vw * WritingLayout.deliberatePan {", 1)]),
+        (M, "        if movedByHand >= vw * WritingLayout.deliberatePan * (1 - 1e-9) {", "        if movedByHand >= vw * WritingLayout.deliberatePan {", 1),
+        (C, " || (lineHeld && s.bounds.midY < line.minY) {", " {", 1),
+        (M, " || (lineHeld && s.midY < line.minY) {", " {", 1),
+        (C, "        if lineInk == nil { lineHeld = false }   // nothing left to finish (a held empty line never moved again)\n", "", 1),
+        (M, "        if lineInk == nil { lineHeld = false }\n", "", 1)]),
+    "heldAbsorbs": ("P8c", "a held line takes the line written under it (main)", [
+        (C, " || (lineHeld && s.bounds.midY < line.minY) {", " {", 1), (M, " || (lineHeld && s.midY < line.minY) {", " {", 1)]),
+    "heldEmpty": ("P8c", "an emptied line stays held (this branch's first scratch-out fix)", [
+        (C, "        if lineInk == nil { lineHeld = false }   // nothing left to finish (a held empty line never moved again)\n", "", 1),
+        (M, "        if lineInk == nil { lineHeld = false }\n", "", 1)]),
 }
 
 def build(name, edits, real_only=False):

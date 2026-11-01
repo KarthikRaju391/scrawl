@@ -89,7 +89,9 @@ started 20 units left of the page). The view centre the app remembers (`handRef`
   `max(gap, 10% of W)` right of the line's end or more than a gap left of its start; with no line open, it
   lands more than 10% of W from the block's start.
 - (c) A stroke well above or below the open line starts a new block, unless it is just below (within 3.5
-  pitches) and within 10% of W of the block's start: then it's the block's next line.
+  pitches) and within 10% of W of the block's start: then it's the block's next line. Under a held line (one you
+  went back to finish), any stroke whose middle is below its ink counts as below (main: the next line, written
+  where the move put you, joined the held line, which then absorbed every line below it, never moving again).
 - (d) Nothing else changes the block: not undo, not Return, not a move, not a pause, and not the app's own
   moves (they never count as hand moves). So in a block written line after line with no hand moves, the
   block's start never drifts.

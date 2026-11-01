@@ -1367,7 +1367,10 @@ final class CanvasView: MTKView {
             if lineInk == nil { prevLine = nil }
             // A stroke well above or below the current line (you moved there yourself): a new line there. Just below it
             // and near the block's start, it's the block's next line; anywhere else, a new block.
-            if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
+            // A line you went back to finish (held): anything written under its ink is a new line too. Written where the
+            // move put you (one line down: 0.12 of the view when that's more than 1.35 line heights), the next line was
+            // within the usual 1.2x and joined the held line, which then took every line below it, with no move again.
+            if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 || (lineHeld && s.bounds.midY < line.minY) {
                 let nextOfBlock = s.bounds.midY < line.midY && line.midY - s.bounds.midY < max(line.height, vh * 0.12) * 3.5 &&
                     runStart.map { abs(s.bounds.minX - $0) < camera.page.width * WritingLayout.newRunAway } == true
                 lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; lineHeld = false; prevLine = nil
