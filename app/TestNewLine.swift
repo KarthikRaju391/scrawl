@@ -100,6 +100,32 @@ enum TestNewLine {
                         "wantMinX": min(max((canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - v.width * 0.05, 0), canvas.camera.page.width - v.width), "movedDown": v0.midY - v.midY]
             for _ in 0..<3 { frame(nil) }
         }
+        // The wait is a setting (Karthik, 1 Nov): untouched it's 400 ms; set to 700 ms with the Settings slider, the page
+        // hasn't moved 650 ms after the lift that finished the line and has by 700 ms. Read at the lift, no restart.
+        func waitCase(slider ms: Double?, checks: [Double]) -> [String: Any] {
+            if let ms { app.settingsWindow.setPauseForTest(ms) }
+            canvas.clearPage()
+            var t = canvas.tools; t.lineWidthIndex = 0; t.zoomLocked = false; canvas.tools = t
+            canvas.setVisibleForReplay(x: canvas.camera.page.width * 2 / 3, y: canvas.camera.page.height - canvas.camera.page.height / 3, w: canvas.camera.page.width / 3, z: 3)
+            let v0 = canvas.camera.visible, lines0 = canvas.newLineCount, lw_ = v0.width * 0.035
+            var x = v0.minX + v0.width * 0.55
+            while true {
+                letter(x: x, y: v0.midY, w: lw_); x += lw_ * 1.25
+                if x >= v0.minX + v0.width * 0.95 { break }
+                wait(0.12)
+            }
+            let lift = vt - 0.016   // letter() lifts at the first of its three empty frames
+            var seen: [[Double]] = []
+            for c in checks {
+                while vt - lift < c { vt += 0.002; canvas.advanceClock() }
+                canvas.flushInputForTest()
+                seen.append([c * 1000, Double(canvas.newLineCount - lines0)])
+            }
+            return ["slider": ms ?? -1, "shown": app.settingsWindow.pauseForTest.shown, "range": app.settingsWindow.pauseForTest.range, "newLinesAt": seen]
+        }
+        let waitDefault = waitCase(slider: nil, checks: [0.35, 0.405])
+        let wait700 = waitCase(slider: 700, checks: [0.4, 0.65, 0.705])
+        app.settingsWindow.setPauseForTest(Settings.defaultPauseMs)
         // Return: a new line by hand, same rule.
         canvas.clearPage()
         var t = canvas.tools; t.lineWidthIndex = 1; t.zoomLocked = false; canvas.tools = t
@@ -110,7 +136,7 @@ enum TestNewLine {
                                     characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36) { _ = app.key(e) }
         wait(0.7)
         let vr = canvas.camera.visible
-        let r: [String: Any] = ["cases": results, "palmOnEdgeDuringPause": palmCase,
+        let r: [String: Any] = ["cases": results, "palmOnEdgeDuringPause": palmCase, "waitDefault": waitDefault, "wait700": wait700,
                                 "returnKey": ["viewMinX": vr.minX, "wantMinX": min(max((canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - vr.width * 0.05, 0), canvas.camera.page.width - vr.width),
                                               "movedDown": v0.midY - vr.midY]]
         try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-newline.json"))

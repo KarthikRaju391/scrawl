@@ -6,6 +6,8 @@
 
 - Pages overview: a cleaner header. The hint line next to the title is gone; the header is the title and the
   search field.
+- Writing mode: the pause before the page moves to the next line is a setting, **Settings › Wait before next
+  line**, from 0.2 s to 1 s (0.4 s by default, as before). A change applies from your next lift.
 
 ## 0.1.3 (2026-10-31, build 6)
 

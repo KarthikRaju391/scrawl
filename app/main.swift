@@ -690,6 +690,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         w.onSwitch = { key in Analytics.shared.record("settings_changed", ["key": key]) }
         w.onClickDrawTimeout = { [weak self] v in self?.setClickDrawTimeout(v) }
+        w.onPauseBeforeMove = { ms in
+            let v = min(max((ms / 50).rounded() * 50, 200), 1000)
+            Settings.pauseChosenMs = v
+            if !Launch.testing { UserDefaults.standard.set(v, forKey: "pauseBeforeMoveMs") }
+        }
         return w
     }()
     @objc func showSettings() {

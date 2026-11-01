@@ -21,6 +21,14 @@ pc = r["palmOnEdgeDuringPause"]
 okp = pc["newLines"] == 1 and abs(pc["viewMinX"] - pc["wantMinX"]) < 1.0 and pc["movedDown"] > 0
 print(("PASS" if okp else "FAIL"), f"palm resting on the pad's edge through the pause: the new line still happens ({pc['newLines']}, view x {pc['viewMinX']:.0f}, want {pc['wantMinX']:.0f})")
 if not okp: bad.append(pc)
+# The wait before the next line is a setting: 400 ms untouched, 700 ms once the Settings slider says so.
+for name, want, label in (("waitDefault", [0, 1], "untouched: no new line at 350 ms, one by 405 ms"),
+                          ("wait700", [0, 0, 1], "Settings › Wait before next line at 0.7 s: none at 400 or 650 ms, one by 705 ms")):
+    w = r.get(name)
+    got = [int(n) for _, n in w["newLinesAt"]] if w else None
+    okw = got == want and (name != "wait700" or (w["shown"] == "0.7 s" and w["range"] == [200, 1000]))
+    print(("PASS" if okw else "FAIL"), f"wait before next line, {label} (new lines at each check {got}, slider shows {w and w['shown']!r}, range {w and w['range']})")
+    if not okw: bad.append(name)
 rk = r["returnKey"]
 okr = abs(rk["viewMinX"] - rk["wantMinX"]) < 1.0 and rk["movedDown"] > 0
 print(("PASS" if okr else "FAIL"), f"Return in writing mode: one line down and back to the line start (view x {rk['viewMinX']:.0f}, want {rk['wantMinX']:.0f}, down {rk['movedDown']:.0f})")

@@ -35,12 +35,18 @@ struct Settings {
     /// Blind A/B: with rejoinMode "ab", each launch secretly picks on or off (logged, never shown).
     static let abCondition = Bool.random() ? "on" : "off"
     var rejoinSnap: Bool { rejoinMode != "off" }
-    /// Writing mode moves the page only after the finger has been up this long (0 = immediately).
+    /// Writing mode moves the page only after the finger has been up this long (0 = immediately). Settings › Wait
+    /// before next line sets it, 0.2-1 s (Karthik, 1 Nov); read at each lift, so a change applies at the next one.
     var pauseBeforeMoveMs: Double {
         let a = CommandLine.arguments
         if let i = a.firstIndex(of: "--pause-ms"), i + 1 < a.count, let v = Double(a[i + 1]) { return v }
-        return d.object(forKey: "pauseBeforeMoveMs") as? Double ?? 400
+        if let v = Self.pauseChosenMs { return v }
+        if Launch.testing { return Self.defaultPauseMs }   // tests neither save nor read the stored choice
+        return d.object(forKey: "pauseBeforeMoveMs") as? Double ?? Self.defaultPauseMs
     }
+    static let defaultPauseMs = 400.0
+    /// The Settings slider's value this run (saved to "pauseBeforeMoveMs" too, except in tests).
+    nonisolated(unsafe) static var pauseChosenMs: Double?
     /// Edge guard: touches that start within this fraction of the pad from any edge are ignored (a resting
     /// palm or thumb). 0 = off; `--edge-guard` overrides (replays of old sessions use 0). The inner area
     /// maps to the whole writing area.
@@ -1383,9 +1389,9 @@ final class CanvasView: MTKView {
             if move == .none || lineHeld { pendingMove = nil }
             else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
             else {
-                // A line break waits for a word gap: the usual 400 ms after the lift (a touch before then cancels it),
+                // A line break waits for a word gap: the usual pause after the lift (Settings, 400 ms by default) (a touch before then cancels it),
                 // once the line's ink has crossed the limit (Karthik, 29 Oct, option A), or reached 93% of the page with
-                // the limit near the page's edge: the same 400 ms (Karthik on b03bac2: "don't wait for 1.5s, users won't
+                // the limit near the page's edge: the same pause (Karthik on b03bac2: "don't wait for 1.5s, users won't
                 // know that"). Written ink never moves.
                 let wait = settings.pauseBeforeMoveMs
                 pendingMove = (move, now(), wait)

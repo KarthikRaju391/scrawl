@@ -1,5 +1,6 @@
 // Settings (⌘,): the feel sliders that used to sit in the toolbar (smoothing, prediction, edge guard), and
-// switches for scratch-out, the page map, tips, where draw mode starts, click to draw (with its time) and usage counts. Each is saved at once (tests never save).
+// writing mode's wait before the next line, switches for scratch-out, the page map, tips, where draw mode starts, click to draw (with its time) and
+// usage counts. Each is saved at once (tests never save).
 import AppKit
 
 final class SettingsWindow: NSWindowController, NSWindowDelegate {
@@ -10,14 +11,18 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
     var onSwitch: ((String) -> Void)?
     var onClose: (() -> Void)?
     var onClickDrawTimeout: ((Double) -> Void)?
+    var onPauseBeforeMove: ((Double) -> Void)?
     private let armSlider = NSSlider(value: CanvasView.clickDrawTimeout, minValue: 0, maxValue: 5, target: nil, action: nil)
 
     private let armValue = NSTextField(labelWithString: "")
+    /// Writing mode: how long the finger stays up before the page moves to the next line, 0.2-1 s in 0.05 s steps.
+    private let pauseSlider = NSSlider(value: Settings.defaultPauseMs, minValue: 200, maxValue: 1000, target: nil, action: nil)
+    private let pauseValue = NSTextField(labelWithString: "")
 
     init(switches: [Switch]) {
         // Laid out top-down; the window is as tall as its rows. The click-to-draw time sits right under its switch.
         let width: CGFloat = 480, rowH: CGFloat = 24, sliderRowH: CGFloat = 30, panelH: CGFloat = 196
-        let height = 20 + 18 + 8 + panelH + 16 + CGFloat(switches.count) * rowH + sliderRowH + 16
+        let height = 20 + 18 + 8 + panelH + 16 + 18 + sliderRowH + 16 + CGFloat(switches.count) * rowH + sliderRowH + 16
         let w = NSWindow(contentRect: CGRect(x: 0, y: 0, width: width, height: height), styleMask: [.titled, .closable], backing: .buffered, defer: false)
         w.title = "\(AppInfo.name) Settings"
         w.isReleasedWhenClosed = false
@@ -37,6 +42,25 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         panel.mode = .settings
         panel.frame = CGRect(x: 20, y: y, width: width - 40, height: panelH)
         content.addSubview(panel)
+        y -= 16 + 18
+        let writing = NSTextField(labelWithString: "Writing mode")
+        writing.font = .systemFont(ofSize: 13, weight: .semibold)
+        writing.frame = CGRect(x: 20, y: y, width: width - 40, height: 18)
+        content.addSubview(writing)
+        y -= sliderRowH
+        let pauseLabel = NSTextField(labelWithString: "Wait before next line")
+        pauseLabel.font = .systemFont(ofSize: 12)
+        pauseLabel.frame = CGRect(x: 20, y: y + 6, width: 172, height: 16)
+        pauseSlider.frame = CGRect(x: 196, y: y + 2, width: 190, height: 22)
+        pauseSlider.numberOfTickMarks = 17; pauseSlider.allowsTickMarkValuesOnly = true
+        pauseSlider.doubleValue = min(max(Settings().pauseBeforeMoveMs, 200), 1000)
+        pauseSlider.target = self; pauseSlider.action = #selector(pauseChanged)
+        pauseSlider.toolTip = "How long your finger stays up before the page moves to the next line. Shorter: less waiting; longer: room for slower words."
+        pauseSlider.setAccessibilityLabel("Wait before next line")
+        pauseValue.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        pauseValue.frame = CGRect(x: 394, y: y + 6, width: width - 20 - 394, height: 16)
+        for v in [pauseLabel, pauseSlider, pauseValue] as [NSView] { content.addSubview(v) }
+        updatePauseLabel()
         y -= 16
         for (i, sw) in switches.enumerated() {
             y -= rowH
@@ -64,6 +88,11 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         w.delegate = self
     }
     func windowWillClose(_ n: Notification) { onClose?() }
+    @objc private func pauseChanged() { onPauseBeforeMove?(pauseSlider.doubleValue); updatePauseLabel() }
+    private func updatePauseLabel() { pauseValue.stringValue = String(format: "%g s", (pauseSlider.doubleValue / 50).rounded() * 50 / 1000) }
+    /// Test hooks: the wait slider's range and value as shown, and a drag to `ms`.
+    var pauseForTest: (range: [Int], shown: String) { ([Int(pauseSlider.minValue), Int(pauseSlider.maxValue)], pauseValue.stringValue) }
+    func setPauseForTest(_ ms: Double) { pauseSlider.doubleValue = ms; pauseChanged() }
     @objc private func armChanged() { onClickDrawTimeout?(armSlider.doubleValue); updateArmLabel() }
     private func updateArmLabel() {
         armValue.stringValue = armSlider.doubleValue < 0.5 ? "0 s (each)" : String(format: "%.0f s", armSlider.doubleValue)
@@ -81,7 +110,11 @@ final class SettingsWindow: NSWindowController, NSWindowDelegate {
         if !Launch.testing && !sw.key.hasSuffix("Switch") { UserDefaults.standard.set(on, forKey: sw.key) }   // "…Switch": stores itself
         onSwitch?(sw.key); onChange?()
     }
-    func refresh() { for (i, b) in boxes.enumerated() { b.state = switches[i].get() ? .on : .off }; updateArmLabel() }
+    func refresh() {
+        for (i, b) in boxes.enumerated() { b.state = switches[i].get() ? .on : .off }
+        updateArmLabel()
+        pauseSlider.doubleValue = min(max(Settings().pauseBeforeMoveMs, 200), 1000); updatePauseLabel()
+    }
     /// Test hook: the switches and whether each is on.
     var switchesForTest: [(String, Bool)] { switches.map { ($0.title, $0.get()) } }
     func setSwitchForTest(_ i: Int, _ on: Bool) { boxes[i].state = on ? .on : .off; toggled(boxes[i]) }
