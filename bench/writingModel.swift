@@ -63,6 +63,7 @@ struct WObs {
     var limit: Double?
     var newLines: Int
     var page: Int
+    var handPanX: Double? = nil   // the app's own measure (diagnostics only)
 }
 
 // MARK: - The model (CanvasView's writing logic)
@@ -124,7 +125,7 @@ struct WModel {
         }
         let vw = cam.visible.width
         let movedByHand = continued ? 0 : max(handPanX, handRef.map { abs(cam.center.x - $0.x) } ?? 0)
-        if movedByHand >= vw * WritingLayout.deliberatePan {
+        if movedByHand >= vw * WritingLayout.deliberatePan * (1 - 1e-9) {
             if let line = lineInk {
                 let gap = max(line.height * 1.5, vw * 0.08)
                 if s.minX > line.maxX + max(gap, cam.page.width * WritingLayout.newRunAway) || s.maxX < line.minX - gap {
@@ -246,6 +247,7 @@ struct WModel {
         case .scroll(let f):
             guard counted == 0 else { return false }
             var c = cam; c.center.x += f * cam.visible.width; c.clamp()
+            cancelPendingMove()
             handMove(to: camAfter ?? c, touch: false)
             clock += 0.1; advanceClock()
         case .undo:
@@ -276,13 +278,33 @@ struct WModel {
             writing.toggle(); endWritingLine()
         case .width(let i):
             guard counted == 0, i != widthIdx else { return false }
-            widthIdx = i; endWritingLine()
+            widthIdx = i; cancelPendingMove()
         }
         return true
     }
 
-    /// After a scratch-out or eraser stroke: the app leaves the line as it was (a hook for the fix).
-    mutating func scratchedLine(_ gone: CGRect) -> Bool { false }
+    /// A scratch-out or eraser stroke that erased `gone` (the fuzzer passes what the app erased).
+    mutating func erase(_ gone: [CGRect]) {
+        counted = 1; cancelPendingMove(); clock += 0.2; counted = 0
+        pages[pageIdx].undo.append(pages[pageIdx].strokes); pages[pageIdx].redo = []
+        var pool = gone
+        pages[pageIdx].strokes.removeAll { r in if let i = pool.firstIndex(of: r) { pool.remove(at: i); return true }; return false }
+        scratchedLine(gone.first ?? .null)
+        advanceClock()
+    }
+
+    /// pruneWritingLine: after a scratch-out or the eraser, the line is what's left of it.
+    @discardableResult
+    mutating func scratchedLine(_ gone: CGRect) -> Bool {
+        func alive(_ rs: [CGRect]) -> [CGRect] { rs.filter { r in strokes.contains(r) } }
+        let left = alive(lineStrokes)
+        if left.count != lineStrokes.count { lineStrokes = left; lineInk = left.first.map { f in left.dropFirst().reduce(f) { $0.union($1) } } }
+        if let p = prevLine {
+            let pl = alive(p.strokes)
+            if pl.count != p.strokes.count { prevLine = pl.first.map { f in (pl.dropFirst().reduce(f) { $0.union($1) }, pl) } }
+        }
+        return true
+    }
 }
 
 // MARK: - The oracle (the spec's properties, its own constants)
@@ -318,7 +340,7 @@ struct WSpec {
             line = nil
             if !nextOfBlock { rs = nil }
         }
-        if !continued && hand >= deliberate * v.width {
+        if !continued && hand >= deliberate * v.width * (1 - 1e-9) {   // "10% or more": exactly 10% (one arrow press) counts
             if let l = line {
                 let gap = max(l.height * 1.5, v.width * 0.08)
                 if s.minX > l.maxX + max(gap, newRun * W) || s.maxX < l.minX - gap { rs = s.minX }
@@ -417,7 +439,7 @@ struct WSpec {
         if let s = committed, post.writing {
             let want = Self.expectedRunStart(pre.writing ? pre : post, s, hand: hand)
             if post.runStart == nil || !Self.near(post.runStart!, want) {
-                fail("P6", String(format: "block start %@ after the stroke at x %.1f, want %.1f (hand move %.0f%% of the view)", post.runStart.map { String(format: "%.1f", $0) } ?? "nil", s.minX, want, hand / pre.cam.visible.width * 100))
+                fail("P6", String(format: "block start %@ after the stroke at x %.1f, want %.1f (hand move %.0f%% of the view)", post.runStart.map { String(format: "%.1f", $0) } ?? "nil", s.minX, want, hand / pre.cam.visible.width * 100) + String(format: " [oracle: pans %.6f, net %.6f; app: pans %.6f, net %.6f; 10%% = %.6f]", mon.panSum, mon.refX.map { abs(pre.cam.center.x - $0) } ?? -1, pre.handPanX ?? -1, pre.handRef.map { abs(pre.cam.center.x - $0.x) } ?? -1, 0.1 * pre.cam.visible.width))
             }
         } else if committed == nil {
             switch e {
@@ -448,7 +470,7 @@ struct WSpec {
         if case .arrow = e, pre.writing { mon.panSum += abs(post.cam.center.x - pre.cam.center.x) }
         if committed != nil, post.writing { mon.refX = post.cam.center.x; mon.panSum = 0 }
         if moved > 0 { mon.refX = post.cam.center.x; mon.panSum = 0 }
-        switch e { case .toggle, .page, .width, .undo: mon.panSum = 0; default: break }
+        switch e { case .toggle, .page, .undo: mon.panSum = 0; default: break }
         if committed != nil, let t = post.pendingLiftAt { mon.schedAt = t; mon.downSinceSched = false }
         else if post.pendingLiftAt == nil { mon.schedAt = nil }
         return bad

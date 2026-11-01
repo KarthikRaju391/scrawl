@@ -243,7 +243,7 @@ final class WReal {
         return WObs(writing: canvas.writingMode, width: ToolState.lineWidths[canvas.tools.lineWidthIndex], cam: canvas.camera, runStart: s.runStart, lineInk: s.lineInk,
                     lineStrokes: s.lineStrokes, prevLine: s.prevLine, lineHeld: s.lineHeld, handRef: s.handRef, pendingTarget: s.pending?.target,
                     pendingLiftAt: s.pending?.liftAt, counted: s.countedContacts, edge: edge == nil ? 0 : 1, clock: vclock,
-                    strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex)
+                    strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex, handPanX: s.handPanX)
     }
 
     private func contact(_ id: Int32, page p: CGPoint) -> Contact {
@@ -492,7 +492,11 @@ struct WFuzz {
                 case .up:
                     if let c = committed { model.apply(e, stroke: c) } else { model.counted = 0; model.held = nil; model.advanceClock() }
                 case .scratch:
-                    if post.strokes.count < pre.strokes.count { model.apply(e) } else if let c = committed { model.apply(.write(.next), stroke: c) } else { model.counted = 1; model.cancelPendingMove(); model.clock += 0.2; model.counted = 0; model.advanceClock() }
+                    if post.strokes.count < pre.strokes.count {
+                        var gone = pre.strokes
+                        for r in post.strokes { if let i = gone.firstIndex(of: r) { gone.remove(at: i) } }
+                        model.erase(gone)
+                    } else if let c = committed { model.apply(.write(.next), stroke: c) } else { model.counted = 1; model.cancelPendingMove(); model.clock += 0.2; model.counted = 0; model.advanceClock() }
                 case .pan, .pinch, .scroll: model.apply(e, camAfter: post.cam)
                 default: model.apply(e)
                 }
@@ -683,4 +687,37 @@ func wCheckRecordedMoves(_ path: String) -> (checked: Int, moves: Int, bad: [Str
         _ = lastLift
     }
     return (checked, moves, bad)
+}
+
+// MARK: - Targeted checks on the real canvas (things the model doesn't have: the 0.18 s slide)
+
+/// A page switch while the new-line slide is still running: the page you open must show its own view, not the
+/// end of the other page's slide. Returns failures.
+func wSlideChecks(waitMs: Double) -> [String] {
+    var bad: [String] = []
+    for (name, act) in [("new page", { (c: CanvasView) in c.newPage() }), ("go to page", { (c: CanvasView) in c.goToPage(1 - c.pageIndex) })] {
+        let r = WReal(waitMs: waitMs, widthIdx: 0, zoom: 3, viewX: 0)
+        if name == "go to page" { r.canvas.newPage(); r.canvas.goToPage(0) }   // two pages, on the first
+        let otherView = r.canvas.cameraForPage(1).center
+        // A line that reaches the limit, then the pause: the move starts sliding.
+        var o = r.obs
+        for _ in 0..<40 {
+            guard let p = wPlace(o.lineInk == nil ? .at(0.05) : .next, o) else { break }
+            _ = r.apply(.write(.next), place: p); o = r.obs
+            if o.pendingLiftAt != nil { break }
+            if let l = o.lineInk, l.maxX > o.cam.visible.maxX - o.cam.visible.width * 0.15 { _ = r.apply(.pan(0.5), place: nil); o = r.obs }
+        }
+        guard o.pendingLiftAt != nil else { bad.append("\(name): setup never scheduled a move"); continue }
+        r.vclock += waitMs / 1000 + 0.01
+        r.canvas.advanceClock()   // the move starts its slide (no flush: the slide is still running)
+        guard r.canvas.writingStateForTest.sliding else { bad.append("\(name): no slide started"); continue }
+        act(r.canvas)
+        let want: CGPoint = name == "new page" ? { var c = Camera(page: wPage); c.zoom = r.canvas.camera.zoom; c.home(); return c.center }() : otherView
+        r.canvas.flushInputForTest()   // the next display ticks: the slide runs to its end
+        let got = r.canvas.camera.center
+        if abs(got.x - want.x) > 1e-6 || abs(got.y - want.y) > 1e-6 {
+            bad.append(String(format: "%@ during the new-line slide: the page opened at (%.0f, %.0f), want its own view (%.0f, %.0f)", name, got.x, got.y, want.x, want.y))
+        }
+    }
+    return bad
 }

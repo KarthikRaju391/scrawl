@@ -102,5 +102,14 @@ if let dir = arg("--replay") {
     for b in bad.prefix(40) { out("  " + b) }
 }
 
+if args.contains("--targeted") {
+    for w in waits {
+        let bad = wSlideChecks(waitMs: w)
+        out(String(format: "TARGETED wait %.0f ms: page switch during the new-line slide: %@", w, bad.isEmpty ? "PASS" : "FAIL"))
+        for b in bad { out("  " + b) }
+        if !bad.isEmpty { failures += 1 }
+    }
+}
+
 out(failures == 0 ? "RESULT: PASS" : "RESULT: FAIL (\(failures))")
 exit(failures == 0 ? 0 : 1)
