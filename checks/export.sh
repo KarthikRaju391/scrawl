@@ -7,6 +7,8 @@ cd "$(dirname "$0")/.."
 APP="${APP:-build/Scrawl.app/Contents/MacOS/TrackpadDraw}"
 BENCH="${BENCH:-build/bench}"
 bad=0
+# A failed build leaves the old app in place: never test it (an old binary once saved into the person's Documents).
+if [ -z "$ALLOW_STALE" ] && [ -n "$(find app -name '*.swift' -newer "$APP" | head -1)" ]; then echo "FAIL $APP is older than app/ (build first)"; echo "RESULT: FAIL"; exit 1; fi
 if [ -x "$BENCH" ] && [ -z "$NO_BENCH" ]; then
     BENCH_ONLY=export "$BENCH" | tee /tmp/td-export-bench.$$ | grep -E "^(PASS|FAIL)"
     grep -q "^FAIL" /tmp/td-export-bench.$$ && bad=1; rm -f /tmp/td-export-bench.$$

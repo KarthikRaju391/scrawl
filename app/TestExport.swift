@@ -31,7 +31,6 @@ enum TestExport {
             while app.window.attachedSheet == nil && Date() < d { spin(0.05) }
             spin(0.4)
             // The panel can hand back a wrapper for its accessory view; the app keeps the options view it attached.
-            r["openSheetSeen", default: [String]()] = (r["openSheetSeen"] as? [String] ?? []) + ["panel \(app.exportPanel != nil) sheet \(String(describing: app.window.attachedSheet.map { type(of: $0) })) acc \(app.exportAccessory != nil) accWin \(app.exportAccessory?.window != nil)"]
             guard let p = app.exportPanel, app.window.attachedSheet != nil else { return nil }
             return (p, app.exportAccessory.flatMap { $0.window != nil ? $0 : nil })
         }
