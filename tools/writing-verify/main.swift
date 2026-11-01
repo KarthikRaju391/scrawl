@@ -108,6 +108,10 @@ if args.contains("--targeted") {
         out(String(format: "TARGETED wait %.0f ms: page switch during the new-line slide: %@", w, bad.isEmpty ? "PASS" : "FAIL"))
         for b in bad { out("  " + b) }
         if !bad.isEmpty { failures += 1 }
+        let sc = wStaleCountChecks(waitMs: w)
+        out(String(format: "TARGETED wait %.0f ms: draw mode left between a commit and the next frame: %@", w, sc.isEmpty ? "PASS" : "FAIL"))
+        for b in sc { out("  " + b) }
+        if !sc.isEmpty { failures += 1 }
         let ab = wArrowChecks(waitMs: w)
         out(String(format: "TARGETED wait %.0f ms: one arrow press counts as a deliberate move: %@", w, ab.isEmpty ? "PASS" : "FAIL"))
         for b in ab { out("  " + b) }

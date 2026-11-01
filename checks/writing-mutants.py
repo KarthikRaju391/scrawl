@@ -76,8 +76,11 @@ MUTANTS = {
         (M, "lineHeld = false; lineInk = nil; lineStrokes = []; segmentStart = runStart; handPanX = 0", "lineInk = nil; lineStrokes = []; segmentStart = runStart; handPanX = 0", 1)]),
     "slideRace": ("slide", "goToPage / newPage don't finish the slide (the bug fixed here)", [
         (C, "endWritingLine(); finishSlide()   // a new-line slide still running belongs to this page, not the next", "endWritingLine()", 2)]),
+    "staleCount": ("P8", "the touch count isn't reset when draw mode changes (TLC's counterexample)", [
+        (C, "            if countedContacts > 0 { countedContacts = 0; onTouching?(false) }\n", "", 1)]),
     # The code before this branch's fixes (main), with the model reverted the same way.
     "baseline": ("all", "main before the fixes", [
+        (C, "            if countedContacts > 0 { countedContacts = 0; onTouching?(false) }\n", "", 1),
         (C, "            if tools.lineWidthIndex != oldValue.lineWidthIndex { cancelPendingMove() }", "            if tools.lineWidthIndex != oldValue.lineWidthIndex { endWritingLine() }", 1),
         (C, "endWritingLine(); finishSlide()   // a new-line slide still running belongs to this page, not the next", "endWritingLine()", 2),
         (C, "        cancelPendingMove(); finishSlide()   // moved by hand: a waiting next-line move is dropped (as for arrows and the map)\n", "", 1),
@@ -115,7 +118,7 @@ def caught(text, kind):
     for line in text.splitlines():
         m = re.match(r"\s+(P\d\w?|model): (COUNTEREXAMPLE|FAIL)", line)
         if m: props.append(m.group(1))
-        if kind == "targeted" and line.startswith("TARGETED") and "FAIL" in line: props.append("arrow" if "arrow" in line else "slide")
+        if kind == "targeted" and line.startswith("TARGETED") and "FAIL" in line: props.append("arrow" if "arrow" in line else "staleCount" if "between a commit" in line else "slide")
     return sorted(set(props))
 
 def main():
@@ -128,7 +131,7 @@ def main():
         fz = run(both, "--fuzz", "300", "--waits", "400", "--no-diff", "--seed", "3")
         tg = run(both, "--targeted", "--waits", "400")
         tmp2, real = build(n + "-realonly", edits, real_only=True)
-        df = run(real, "--fuzz", "300", "--waits", "400", "--seed", "3")
+        df = run(real, "--fuzz", "300", "--waits", "400", "--seed", "3", "--diff-only")
         row = (n, prop, desc, caught(ex, "explore"), caught(fz, "fuzz") + caught(tg, "targeted"), "model" in caught(df, "fuzz"))
         rows.append(row)
         def short(t, tag):

@@ -566,6 +566,9 @@ final class CanvasView: MTKView {
         didSet {
             if drawMode != oldValue { act("drawMode", ["on": drawMode]) }
             if !drawMode { clickDrawOff() }
+            // Frames are only handled in draw mode: a finger that lifts outside it would leave the count stale, and a
+            // waiting move would never fire (nothing touching means no frames). The next frame recounts.
+            if countedContacts > 0 { countedContacts = 0; onTouching?(false) }
             gestures.reset(); contacts = []; needsRender = true
             if drawMode { gestures.ignoreUntilLifted(downIds) }
             // No App Nap / timer coalescing while drawing: input and frames must not be throttled.

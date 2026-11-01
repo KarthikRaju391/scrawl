@@ -482,7 +482,7 @@ struct WFuzz {
             if post.lineHeld && !pre.lineHeld { stats["lines continued (held)", default: 0] += 1 }
             if post.pendingLiftAt != nil && post.edge > 0 { stats["pending with an edge contact down", default: 0] += 1 }
             log?("\(i) \(e) committed \(committed.map { String(format: "%.0f-%.0f", $0.minX, $0.maxX) } ?? "-") runStart \(post.runStart.map { String(format: "%.0f", $0) } ?? "nil") pending \(post.pendingLiftAt != nil) lines \(post.newLines)")
-            if let b = bad.first { return (i, b.0, b.1) }
+            if let b = bad.first, !CommandLine.arguments.contains("--diff-only") { return (i, b.0, b.1) }
             if differential {
                 // The model, on the same event with the real stroke and the real hand-moved camera.
                 switch e {
@@ -749,4 +749,31 @@ func wArrowChecks(waitMs: Double) -> [String] {
         }
     } } }
     return missed == 0 ? [] : ["one arrow press didn't count as a deliberate move in \(missed) of \(total) cases, e.g. \(example)"]
+}
+
+/// Draw mode left in the ~8 ms between a stroke's commit and the next sensor frame, with a second finger resting
+/// (TLC's counterexample to EventuallyDone): that finger lifts outside draw mode, draw mode comes back, nothing touches.
+/// The waiting move must still be done with (fire), not wait for the next touch. Returns failures.
+func wStaleCountChecks(waitMs: Double) -> [String] {
+    let r = WReal(waitMs: waitMs, widthIdx: 0, zoom: 1, viewX: 0)
+    let c = r.canvas, pad = Multitouch.padMM
+    func contact(_ id: Int32, _ x: Double, _ y: Double) -> Contact {
+        Contact(id: id, state: 4, norm: CGPoint(x: x, y: y), mm: CGPoint(x: x * pad.width, y: y * pad.height), pressure: 25, size: 0.5, major: 7.5)
+    }
+    // A long stroke across the limit (½-page lines end at 53% of the page); a second finger lands late in it (after
+    // 0.25 s and 6 mm, so it stays a stroke).
+    var t = r.vclock
+    for k in 0...60 { t += 0.008; c.handle([contact(1, 0.10 + 0.60 * Double(k) / 60, 0.5)], arrival: t, sensorT: t); c.advanceClock() }
+    let late = contact(2, 0.75, 0.25)
+    for k in 0...5 { t += 0.008; c.handle([contact(1, 0.70 + 0.002 * Double(k), 0.5), late], arrival: t, sensorT: t); c.advanceClock() }
+    t += 0.008; r.vclock = t
+    c.handle([late], arrival: t, sensorT: t)   // the drawing finger lifts: commit, move scheduled
+    guard c.writingStateForTest.pending != nil else { return ["setup: the stroke didn't schedule a move"] }
+    c.drawMode = false                          // Esc before the next frame
+    t += 0.1; r.vclock = t
+    c.handle([], arrival: t, sensorT: t)        // the resting finger lifts (ignored outside draw mode)
+    c.drawMode = true
+    r.tick(3 * waitMs / 1000)
+    let s = c.writingStateForTest
+    return s.pending == nil ? [] : [String(format: "a move still waiting %.1f s after its lift with nothing touching (the canvas still counts %d finger(s) down)", r.vclock - (s.pending?.liftAt ?? 0), s.countedContacts)]
 }
