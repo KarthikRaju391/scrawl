@@ -1,5 +1,5 @@
-// Writing mode as a pure state machine, for the model checker and the fuzzer (writingVerify.swift); spec in
-// docs/writing-spec.md.
+// Writing mode as a pure state machine, for the model checker and the fuzzer (writingVerify.swift; the properties
+// P1-P8 are listed at its top).
 //
 // - `WModel` is CanvasView's writing-mode logic (the block after "Writing mode, now that the finger is up",
 //   applyMove, advanceClock, endWritingLine, undo, newLineByHand, the hand-move bookkeeping), statement for

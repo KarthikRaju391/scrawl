@@ -43,5 +43,4 @@ Everything from 0.1.0 is still here: see its notes and the full list in
 
 Every automated check passes ([what they cover](https://github.com/KarthikRaju391/scrawl/blob/main/DEVELOPMENT.md#tests)),
 including a robot user that drives the real app like a person: it writes, scratches out, scrubs, pans,
-searches and shares, and checks what's on screen
-([results and screenshots](https://github.com/KarthikRaju391/scrawl/blob/main/docs/robot-report.md)).
+searches and shares, and checks what's on screen ([how it works](https://github.com/KarthikRaju391/scrawl/blob/main/robot/README.md)).

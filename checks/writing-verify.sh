@@ -1,5 +1,5 @@
 #!/bin/bash
-# Formal checks of writing mode (docs/writing-spec.md): bounded model checking, fuzzing of the real CanvasView, and
+# Formal checks of writing mode (properties P1-P8, bench/writingVerify.swift): bounded model checking, fuzzing of the real CanvasView, and
 # replay of the recorded sessions.
 #   checks/writing-verify.sh [--explore 5] [--fuzz 300] [--replay data] [--waits 200,400,1000]
 # With no arguments: --explore 4 --fuzz 200 --waits 200,400,1000. SRC=<dir> builds from another source tree (mutants).

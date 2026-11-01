@@ -54,7 +54,7 @@ Test modes (`--test-*`) never load or save the real notebook unless `TRACKPAD_DR
 scratch folder, and the scripts always set it. Test crashes drop their crash-report port, so no
 "quit unexpectedly" dialog appears. Both crash checks fail, and close the dialog, if one ever does.
 
-Manual checks still need a person (see CHECKS.md):
+Manual checks still need a person:
 - OCR accuracy on real handwriting;
 - finger-to-ink latency on 240 fps video;
 - jitter on a still finger;

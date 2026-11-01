@@ -1,4 +1,13 @@
-// Formal checks of writing mode (docs/writing-spec.md): a bounded model checker over WModel, property-based
+// Writing mode's rules, checked as properties:
+//   P1  the page never moves mid-word: a move comes only once the finger has been up the wait, with no counted touch since
+//   P2  written ink never moves
+//   P3  the guide line sits at the block's start + the width, at most 95% of the page
+//   P4  the move comes exactly when the line's live ink reaches the zone (an i-dot can't cancel it)
+//   P5  where the move goes (the block's start, one line down; the clamped target remembered)
+//   P6  blocks start and end only by their rules (a hand move of 10% of the view or more, Return, page, writing off)
+//   P7  edge-band contacts never cancel or delay a move
+//   P8  a move never waits past its time (a), stale moves are dropped (b), and writing mode never wedges (c)
+// Formal checks of writing mode: a bounded model checker over WModel, property-based
 // fuzzing of the real CanvasView (with WModel run alongside as a differential check, and shrinking), and replay
 // of recorded sessions with every property checked on every event. Entry: writingVerifyMain (checks/writing-verify.sh).
 import AppKit

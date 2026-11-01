@@ -1,4 +1,4 @@
-// checks/writing-verify.sh: the formal checks of writing mode (bench/writingVerify.swift, docs/writing-spec.md).
+// checks/writing-verify.sh: the formal checks of writing mode (bench/writingVerify.swift).
 //   writing-verify --test-writing-verify [--explore DEPTH] [--fuzz N] [--replay DIR] [--waits 200,400,1000] [--seed S]
 // (--test-… keeps the canvas off the real notebook and settings.)
 import AppKit

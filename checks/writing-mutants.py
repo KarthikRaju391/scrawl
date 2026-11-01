@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mutation testing of the writing-mode checks (docs/writing-spec.md): each mutant is one targeted change to the app
+"""Mutation testing of the writing-mode checks (properties P1-P8, bench/writingVerify.swift): each mutant is one targeted change to the app
 (and, for Canvas logic, the same change to the model that mirrors it), built from a copy of the sources and run through
 the model checker, the real-canvas fuzzer (with and without the model alongside) and the targeted slide check.
 

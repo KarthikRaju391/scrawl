@@ -1,6 +1,6 @@
 ------------------------------ MODULE WritingMode ------------------------------
-(* Writing mode's next-line timing: when a move is scheduled, when it fires, what cancels it (docs/writing-spec.md,
-   P1, P7, P8). Time is in ticks of 50 ms; the wait is Wait ticks (4 = 200 ms, 8 = 400 ms, 20 = 1000 ms). The line's
+(* Writing mode's next-line timing: when a move is scheduled, when it fires, what cancels it (properties
+   P1, P7, P8 of bench/writingVerify.swift). Time is in ticks of 50 ms; the wait is Wait ticks (4 = 200 ms, 8 = 400 ms, 20 = 1000 ms). The line's
    geometry (is the line full, is it held) is abstracted to a nondeterministic choice at each commit: the Swift model
    checker (bench/writingVerify.swift) covers it with the real WritingLayout.
 
