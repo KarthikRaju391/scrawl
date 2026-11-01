@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/11c7ae5e-d7d9-4d9f-963f-94fd4b3aec44
 ## Why it's different
 
 In most Mac apps, drawing with the trackpad means holding down a click and dragging a pointer around.
-That's fine for a signature and painful for a sentence. Scrawl works more like a tablet:
+That's fine for a signature but painful for a sentence. Scrawl works more like a tablet:
 
 - **Your finger is the pen.** Touch and write: no clicking, no holding. The pointer is frozen while
   you write, so nothing else gets clicked by accident, and Esc gives it back.
