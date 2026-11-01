@@ -110,6 +110,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     var toastShown = 0
     var gallery: GalleryView?
     var lastSharePicker: NSSharingServicePicker?
+    /// The Export Page sheet while it's open (the test mode drives it).
+    var exportPanel: NSSavePanel?
     var galleryReturnsToDraw = false
     var transitionView: NSView?
     /// Ends the running gallery transition at once (its last frame and completion); nil when none runs.
@@ -840,19 +842,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc func markerAction() { apply(.tool(.marker), from: "menu") }
     @objc func highlighterAction() { apply(.tool(.highlighter), from: "menu") }
     @objc func eraserAction() { apply(.tool(.eraser), from: "menu") }
-    @objc func exportPNG() { export("png") { try self.canvas.exportPNG(to: $0) } }
-    @objc func exportPDF() { export("pdf") { try self.canvas.exportPDF(to: $0) } }
-    private func export(_ ext: String, _ write: @escaping (URL) throws -> Void) {
+    @objc func exportPDF() {
         exitDrawMode("export")
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [ext == "pdf" ? .pdf : .png]
-        panel.nameFieldStringValue = ext == "pdf" ? "\(AppInfo.name) \(f.string(from: Date())).pdf" : "Page \(canvas.pageIndex + 1) \(f.string(from: Date())).png"
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = "\(AppInfo.name) \(f.string(from: Date())).pdf"
         panel.beginSheetModal(for: window) { r in
             guard r == .OK, let url = panel.url else { return }
-            do { try write(url); self.usage.record("export", ["format": ext]) }
-            catch { self.usage.record("error", ["category": "export_failed"]); NSAlert(error: error).runModal() }
+            self.finishExport("pdf") { try self.canvas.exportPDF(to: url) }
         }
+    }
+    /// File › Export Page… (⇧⌘E): the current page as PNG or SVG, with the options under the save panel's browser.
+    @objc func exportPage() {
+        exitDrawMode("export")
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
+        let panel = NSSavePanel()
+        let opts = ExportOptions.load()
+        let canvas = self.canvas
+        let acc = ExportAccessory(options: opts) { canvas.exportArea($0) }
+        panel.accessoryView = acc
+        panel.nameFieldStringValue = "Page \(canvas.pageIndex + 1) \(f.string(from: Date())).\(opts.format.rawValue)"
+        panel.useFormat(opts.format)
+        acc.onChange = { [weak panel] o in
+            guard let panel, panel.allowedContentTypes.first?.preferredFilenameExtension != o.format.rawValue else { return }
+            panel.useFormat(o.format)
+        }
+        exportPanel = panel
+        panel.beginSheetModal(for: window) { r in
+            self.exportPanel = nil
+            guard r == .OK, let url = panel.url else { return }
+            let o = acc.options
+            o.save()
+            self.finishExport(o.format.rawValue) { try self.canvas.export(o, to: url) }
+        }
+    }
+    private func finishExport(_ format: String, _ write: () throws -> Void) {
+        do { try write(); usage.record("export", ["format": format]) }
+        catch { usage.record("error", ["category": "export_failed"]); NSAlert(error: error).runModal() }
     }
 
     func windowWillClose(_ n: Notification) { exitDrawMode("window closed"); NSApp.terminate(nil) }

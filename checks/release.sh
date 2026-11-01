@@ -71,7 +71,7 @@ chk(a["config"] == "release" and a["version"] == ver,
     f"release build reports {a['version']} build {a['build']} ({a['config']})")
 m = {(x["menu"], x["title"]): x for x in a["menus"]}
 need = [("Scrawl", "About Scrawl"), ("Scrawl", "Check for Updates…"), ("Scrawl", "Quit Scrawl"),
-        ("File", "Export All Pages as PDF…"), ("File", "Export Page as PNG…"), ("Edit", "Undo"), ("Edit", "Redo"),
+        ("File", "Export All Pages as PDF…"), ("File", "Export Page…"), ("Edit", "Undo"), ("Edit", "Redo"),
         ("Help", "Scrawl Help"), ("Help", "Keyboard Shortcuts"), ("Help", "Record Touch Diagnostics"), ("Help", "Show Logs in Finder")]
 missing = [n for n in need if n not in m]
 unwired = [f"{k[0]} > {k[1]}" for k, x in m.items() if not x["wired"]]

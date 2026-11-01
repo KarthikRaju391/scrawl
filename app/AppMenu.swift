@@ -37,7 +37,7 @@ extension AppDelegate {
             item("New Page", #selector(newPageAction), "n"),
             .separator(),
             item("Export All Pages as PDF…", #selector(exportPDF), "e"),
-            item("Export Page as PNG…", #selector(exportPNG), "e", [.command, .shift]),
+            item("Export Page…", #selector(exportPage), "e", [.command, .shift]),
             item("Share Page…", #selector(sharePageAction)),
         ])
         menu("Edit", [
