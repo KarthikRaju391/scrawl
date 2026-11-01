@@ -103,12 +103,32 @@ func scratchChecks(_ check: (Bool, String) -> Void) {
     check(Set(gone.map { ObjectIdentifier($0) }) == Set(target.map { ObjectIdentifier($0) }),
           "scratch-out: a scratch over a word erases its \(target.count) strokes, not the next word or a line through it (erased \(gone.count))")
     check(ScratchOut.covered(scratch: scratch.map { CGPoint(x: $0.x, y: $0.y + 60) }, in: target + neighbour, reach: 2) == nil, "scratch-out: a zig-zag on blank paper erases nothing (it stays as ink)")
-    // A zig-zag just under the word, only grazing it (well under 60% on ink), is drawing, not a scratch-out.
+    // A zig-zag just under the word, only grazing it (well under 40% on ink), is drawing, not a scratch-out.
     // (a tall zig-zag drawn across a small word: only where it crosses the word is on ink).
     let grazing = (0...6).flatMap { k -> [CGPoint] in (0..<12).map { i in let u = Double(i) / 12; return CGPoint(x: 98 + Double(k) * 4.5, y: k % 2 == 0 ? 60 + 80 * u : 140 - 80 * u) } }
     let onInk = grazing.filter { p in target.contains { $0.hit(p, r: 2) } }.count
-    check(onInk > 0 && Double(onInk) / Double(grazing.count) < 0.6 && ScratchOut.covered(scratch: grazing, in: target + neighbour, reach: 2) == nil,
+    check(onInk > 0 && Double(onInk) / Double(grazing.count) < ScratchOut.minOverlap && ScratchOut.covered(scratch: grazing, in: target + neighbour, reach: 2) == nil,
           "scratch-out: a tall zig-zag across a word (\(onInk) of \(grazing.count) points on ink) erases nothing")
+
+    // 5b. Karthik's scratches from his 31 Oct screen recording, as recorded, over the ink that was on the page: the three
+    //     that didn't work then (one shape, two on ink) and the two that did must each erase exactly that word.
+    if let data = try? Data(contentsOf: URL(fileURLWithPath: "bench/fixtures/scratch-attempts-20261031.json")),
+       let fx = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let cases = fx["cases"] as? [[String: Any]] {
+        for c in cases {
+            func pts(_ a: Any?) -> [CGPoint] { ((a as? [[Double]]) ?? []).map { CGPoint(x: $0[0], y: $0[1]) } }
+            let mm = pts(c["scratchMM"]), cv = pts(c["scratchCanvas"]), t = c["t"] as? [Double] ?? []
+            let ink = ((c["ink"] as? [[[Double]]]) ?? []).map { s in Stroke(tool: .pen, color: SIMD4(0, 0, 0, 1), size: 2, points: s.map { StrokePoint(p: CGPoint(x: $0[0], y: $0[1]), pressure: 0.6) }, maxStep: 1) }
+            // Canvas units per pad mm for this stroke, from its path length in each.
+            var lm = 0.0, lc = 0.0
+            for i in 1..<max(mm.count, 1) { lm += hypot(mm[i].x - mm[i - 1].x, mm[i].y - mm[i - 1].y); lc += hypot(cv[i].x - cv[i - 1].x, cv[i].y - cv[i - 1].y) }
+            let shape = ScratchOut.shapeMatches(ScratchOut.features(mm: mm, t: t))
+            let gone = shape ? ScratchOut.covered(scratch: cv, in: ink, reach: ScratchOut.reachMM * lc / max(lm, 1e-9)) ?? [] : []
+            let want = Set(((c["erases"] as? [Int]) ?? []).map { ObjectIdentifier(ink[$0]) })
+            check(Set(gone.map { ObjectIdentifier($0) }) == want, "scratch-out, Karthik's recorded scratch \(c["name"] ?? "") (\(c["note"] ?? "")): erases the word's \(want.count) stroke(s) (shape \(shape), erased \(gone.count))")
+        }
+    } else {
+        check(false, "scratch-out: bench/fixtures/scratch-attempts-20261031.json is missing")
+    }
 
     // 6. One undo brings back what a scratch erased, and removes nothing else.
     let doc = Document()

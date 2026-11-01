@@ -18,6 +18,8 @@ mode that takes you to the next line when you reach the end of one.
   the search field.
 - **Choose how long writing mode waits before the next line:** it moves to the next line after a short pause
   (0.4 s by default, as before); **Settings › Wait before next line** sets it from 0.2 s to 1 s.
+- **Scratch-out catches more of your scratches:** a quick zig-zag over a word erases it more reliably, even a
+  short one or one that runs past the word's ends.
 - **Undo and redo taps keep the page still:** a two- or three-finger double tap no longer nudges the view.
 
 Scrawl sends anonymous usage counts (never your ink, pages or text); **Settings › Share anonymous usage counts**

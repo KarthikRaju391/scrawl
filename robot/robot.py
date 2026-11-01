@@ -1742,6 +1742,17 @@ def run_scenarios(app, rep, only, hand):
         fr, cid = hand.frames(blank, cid, speed=140)
         app.touch(fr); e = app.state()
         rep.check(e["strokes"] == d["strokes"] + 1, "a zig-zag on blank paper stays as ink", f"{d['strokes']} -> {e['strokes']}")
+        # Pen and marker scratch out; a highlighter zig-zag over a word is highlighting (Karthik, 1 Nov).
+        for key, tool, gone in (("h", "highlighter", False), ("m", "marker", True)):
+            app.press(key, until=lambda s, t=tool: s["tool"] == t)
+            f0 = app.state()
+            fr, cid = hand.frames(zig, cid, speed=140)
+            app.touch(fr); f1 = app.state()
+            # the marker's scratch takes the word and the highlight just drawn over it
+            want = f0["strokes"] - (a["strokes"] - n0) - 1 if gone else f0["strokes"] + 1
+            rep.check(f1["strokes"] == want, f"with the {tool}, the zig-zag over the word {'scratches out the word and its highlight' if gone else 'stays as a highlight; nothing erased'}",
+                      f"{f0['strokes']} -> {f1['strokes']}")
+        app.press("p", until=lambda s: s["tool"] == "pen")
 
     @scenario("undo-scrub", "Write five words, then two-finger double tap and keep the second tap down: sliding left steps back through them live, sliding right brings them back. A plain double tap still undoes one step.")
     def _():
