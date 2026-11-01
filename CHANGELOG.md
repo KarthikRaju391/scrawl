@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Pages overview: the hint line next to the title is gone; the header is the title and the search field.
+
 ## 0.1.3 (2026-10-31, build 6)
 
 - Pages overview: the "+ New page" tile comes first, then your pages, the one you changed most recently first

@@ -146,7 +146,6 @@ final class GalleryView: NSView {
     let scroll = NSScrollView()
     private let grid = GridView()
     private let title = NSTextField(labelWithString: "Pages")
-    private let hintLabel = NSTextField(labelWithString: "Last changed first  ·  Arrows choose  ·  Return opens  ·  Esc goes back  ·  • the page you came from")
     var onOpen: ((Int) -> Void)?
     var onNewPage: (() -> Void)?
     let thumbnails = ThumbnailCache.shared
@@ -178,8 +177,7 @@ final class GalleryView: NSView {
         scroll.autohidesScrollers = true
         addSubview(scroll)
         title.font = .systemFont(ofSize: 20, weight: .semibold); title.textColor = NSColor(white: 0.15, alpha: 1)
-        hintLabel.font = .systemFont(ofSize: 12); hintLabel.textColor = NSColor(white: 0.45, alpha: 1)
-        addSubview(title); addSubview(hintLabel)
+        addSubview(title)
         search.placeholderString = "Search handwriting (⌘F)"
         search.sendsSearchStringImmediately = true
         search.target = self; search.action = #selector(searchChanged)
@@ -251,13 +249,10 @@ final class GalleryView: NSView {
 
     override func layout() {
         super.layout()
-        title.sizeToFit(); hintLabel.sizeToFit()
+        title.sizeToFit()
         title.frame.origin = CGPoint(x: 28, y: bounds.height - Self.header + 14)
-        hintLabel.frame.origin = CGPoint(x: title.frame.maxX + 16, y: bounds.height - Self.header + 18)
         scroll.frame = CGRect(x: 0, y: 0, width: bounds.width, height: bounds.height - Self.header)
         search.frame = CGRect(x: bounds.width - 268, y: bounds.height - Self.header + 14, width: 240, height: 24)
-        // A narrow window: the hint gives way rather than running under the search field.
-        hintLabel.isHidden = hintLabel.frame.maxX > search.frame.minX - 12
         grid.frame = CGRect(x: 0, y: 0, width: scroll.contentSize.width, height: max(gridHeight, scroll.contentSize.height))
     }
 
