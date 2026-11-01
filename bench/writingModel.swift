@@ -299,6 +299,7 @@ struct WModel {
         func alive(_ rs: [CGRect]) -> [CGRect] { rs.filter { r in strokes.contains(r) } }
         let left = alive(lineStrokes)
         if left.count != lineStrokes.count { lineStrokes = left; lineInk = left.first.map { f in left.dropFirst().reduce(f) { $0.union($1) } } }
+        if lineInk == nil { lineHeld = false }
         if let p = prevLine {
             let pl = alive(p.strokes)
             if pl.count != p.strokes.count { prevLine = pl.first.map { f in (pl.dropFirst().reduce(f) { $0.union($1) }, pl) } }
