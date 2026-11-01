@@ -780,6 +780,16 @@ final class CanvasView: MTKView {
     /// move for it then: you're finishing it by hand).
     private var prevLine: (ink: CGRect, strokes: [CGRect])?
     private var lineHeld = false
+    /// Test hook (bench/writingVerify.swift): the writing-mode state, read only.
+    struct WritingStateForTest { var runStart, segmentStart: Double?; var lineInk: CGRect?; var lineStrokes: [CGRect]; var prevLine: CGRect?
+                                 var lineHeld: Bool; var handPanX: Double; var handRef: CGPoint?; var pending: (target: CGPoint, liftAt: Double)?
+                                 var countedContacts: Int; var sliding: Bool }
+    var writingStateForTest: WritingStateForTest {
+        var p: (target: CGPoint, liftAt: Double)?
+        if let m = pendingMove, case .newLine(let c) = m.move { p = (c, m.liftAt) }
+        return WritingStateForTest(runStart: runStart, segmentStart: segmentStart, lineInk: lineInk, lineStrokes: lineStrokes, prevLine: prevLine?.ink,
+                                   lineHeld: lineHeld, handPanX: handPanX, handRef: handRef, pending: p, countedContacts: countedContacts, sliding: camAnim != nil)
+    }
 
     /// Return in writing mode: next line now (one line down, back to the line start).
     func newLineByHand() {
