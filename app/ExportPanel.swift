@@ -25,7 +25,7 @@ final class ExportAccessory: NSView, NSTextFieldDelegate {
         area.item(at: 1)?.toolTip = "Exactly what the window shows, at its current zoom"
         background.item(at: 0)?.toolTip = "The page as the canvas shows it: white with its grid, dots or lines"
         for p in [format, scale, area, background] { p.target = self; p.action = #selector(changed(_:)) }
-        let f = NumberFormatter(); f.numberStyle = .none; f.minimum = 50; f.maximum = 800; f.allowsFloats = false
+        let f = NumberFormatter(); f.numberStyle = .none; f.allowsFloats = false   // no min/max: out of range is clamped (takePercent), not refused
         percent.formatter = f
         percent.delegate = self
         percent.alignment = .right
