@@ -240,3 +240,13 @@ Calls made while building, one line each with the reason. Newest at the bottom o
 - Transitions grow from and shrink into the tile's current position, wherever the order puts it. With Reduce Motion on, they fade at full size instead.
 - Tiles show the date they sort by ("edited Today at 14:02", older ones by date); the open page's label keeps its created date.
 - checks/galleryorder.sh: fails 11 of 17 on 9594d74.
+
+## Writing mode, formally checked (1 Nov)
+- The rules are written down as properties in docs/writing-spec.md and checked three ways: a bounded model checker over a model of Canvas's writing logic that calls the real WritingLayout, fuzzing of the real CanvasView with that model run alongside it, and TLA+/TLC for the timing (docs/writing-mode.tla). Karthik's 34 recorded sessions are replayed with every property checked on every event. `checks/writing-verify.sh`, `checks/writing-tla.sh`, `checks/writing-mutants.py`.
+- The wait before a move is a parameter (Settings, 200-1000 ms); everything is checked at 200, 400 and 1000 ms.
+- A width change keeps the block and the line (it reset the block, so the next stroke, even mid-line, became the block's start; 5 width changes in the sessions hit it, none mid-line). A waiting move is decided again at the next lift.
+- The eraser and scratch-out take erased strokes out of the line, as undo does: erased ink counted as the line's end and called for the next line after a shorter rewrite.
+- A scroll or magnify outside draw mode drops a waiting move, as arrows and the page map already did: Esc and a scroll within the wait had the move yank the view.
+- New page / go to page finish a running new-line slide first: a page opened within its 0.18 s showed the other page's next-line position.
+- Exactly 10% of the view counts as a deliberate pan ("10% or more"): one arrow press is exactly 10%, and rounding made it 9.99...% in 39% of view positions.
+- The touch count is reset when draw mode changes (TLC's counterexample): a finger lifting outside draw mode left it stale and a waiting move never fired. Needs Esc within one 8 ms frame of a lift with a second finger resting; a missed move at worst.

@@ -24,6 +24,7 @@ Page units: the page is W = 1600 wide (`CanvasView.pageUnits`), y goes up, lines
 | `counted` | fingers down that the edge guard counts | `countedContacts` |
 | `edge` | contacts down that started in the edge band (5% of the pad per side) | `GestureEngine.edgeIgnored` |
 | `clock` | the canvas clock (virtual in replays and checks) | `CanvasView.now` |
+| `W` | the wait before a move: a setting, default 400 ms, about 200-1000 ms (Karthik, 1 Nov) | `Settings.pauseBeforeMoveMs` |
 
 Derived: `limit = min((runStart ?? 0) + w·W, 0.95·W)` (the guide line, `lineLimitX`), and
 `zoneStart = limit > 0.93·W ? 0.93·W : limit − 0.03·w·W` (`nearMarkerStart`).
@@ -46,13 +47,14 @@ Derived: `limit = min((runStart ?? 0) + w·W, 0.95·W)` (the guide line, `lineLi
 
 ## Properties
 
-**P1 Never mid-word.** An automatic next-line move happens only on a clock tick at least 400 ms after the
+**P1 Never mid-word.** An automatic next-line move happens only on a clock tick at least W after the
 lift that scheduled it, with no counted contact down, and no counted touch-down since that lift. Any
 counted touch-down cancels a pending move; it is decided again at the next lift. Return is the only move
 that skips the pause.
 *From:* Writing.swift header (77% of in-word gaps < 300 ms); "Feedback (item 7)": "Any touch cancels the
 move"; "The next line at the next word gap once past the limit (29 Oct, option A)"; b03bac2 feedback
-"don't wait for 1.5s, users won't know that. Keep it 400".
+"don't wait for 1.5s, users won't know that. Keep it 400"; Karthik, 1 Nov: the wait becomes a setting
+(checked at 200, 400 and 1000 ms). Exactly W counts ("at least").
 
 **P2 Written ink never moves.** No writing-mode event changes a committed stroke; moves change only the
 camera. (Undo, redo, scratch-out, the eraser and Clear Page change which strokes exist, never where.)
@@ -73,15 +75,17 @@ pan keeps the block; ink at 93-95%..." (93% rule, 400 ms); the i-dot comment in 
 
 **P5 Where it goes.** A move (automatic or Return) puts the view one pitch below the line
 (`pitch = max(1.35·line height, 0.12·vh)`), the line 57.5% down the view, with the block's start 5% in from
-the view's left, clamped to the page (`Camera.clamp`). The block's start is in view afterwards. The view
-centre the app remembers (`handRef`) is the clamped one.
+the view's left, clamped to the page (`Camera.clamp`). The block's start is in view afterwards (or, if it
+lies off the page, the view is against that side: two of Karthik's sessions have a block whose first stroke
+started 20 units left of the page). The view centre the app remembers (`handRef`) is the clamped one.
 *From:* W2 (57.5%); "The next line goes back to the block's start"; "A block from the middle..." item 2.
 
 **P6 Blocks change only by the rules.**
-- (a) The first stroke after writing mode turns on, a page change / new page, or (today's code) a width
-  change starts a block at that stroke.
-- (b) After a hand move of the view of 10%+ of its width since the last stroke (pan in or out of draw mode,
-  pinch, scroll, arrows, page map), a stroke starts a new block if: with a line open, it lands more than
+- (a) The first stroke after writing mode turns on or a page change / new page starts a block at that
+  stroke. A width change does not: widths count from the block's start, so the block and the line stay
+  (main reset the block, so the next stroke, even mid-line, became the block's start; fixed on this branch).
+- (b) After a hand move of the view of 10% or more of its width since the last stroke (pan in or out of draw
+  mode, pinch, scroll, arrows, page map; exactly 10%, one arrow press, counts), a stroke starts a new block if: with a line open, it lands more than
   `max(gap, 10% of W)` right of the line's end or more than a gap left of its start; with no line open, it
   lands more than 10% of W from the block's start.
 - (c) A stroke well above or below the open line starts a new block, unless it is just below (within 3.5
@@ -100,10 +104,19 @@ move"); `checks/newline.sh` palm case.
 
 **P8 No stuck states.** (a) A pending move never outlives its pause: on any tick with no counted contact
 down and 400 ms or more since its lift, it fires. (b) A pending move is dropped by any event that makes it
-stale: a touch, a hand move of the view, undo, Return, a page change, writing mode off, a width change.
+stale: a touch, a hand move of the view (including a scroll or magnify outside draw mode), undo, Return, a
+page change, writing mode off, a width change (it is decided again at the next lift).
 (c) From every reachable state, writing a line that reaches the limit gives a move again (writing mode is
 never wedged).
 *From:* "Feedback (item 7)"; `panByArrow` ("a pending writing-mode move is dropped"); `centerView`.
+
+## Assumptions about the platform
+
+- While fingers are down in draw mode the sensor sends a frame every 8 ms, and each display tick handles the
+  queued frames before `advanceClock` (`tick`: `drainInput` then `advanceClock`). So a tick never passes a
+  touch it hasn't seen. The TLA+ model builds this in; the fuzzer drives frames and ticks in that order.
+- Frames are only handled in draw mode. The touch count is reset when draw mode changes, because a finger
+  that lifts outside draw mode is never seen to lift (TLC's counterexample on main).
 
 ## Bounds and what is not covered
 
