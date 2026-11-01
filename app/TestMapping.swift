@@ -95,7 +95,9 @@ enum TestMapping {
             for k in 0...20 { let d = Double(k) / 20; frame([(3, 50 + 8 * d, 30 + 5 * d), (4, 70 + 8 * d, 30 + 5 * d)]) }; lift(); canvas.flushInputForTest()
             let c1 = canvas.camera.center, v = canvas.camera.visible
             let perMMx = v.width / (pad.width * (1 - 2 * g)), perMMy = v.height / (pad.height * (1 - 2 * g))
-            s["pan"] = ["dx": c0.x - c1.x, "wantDx": 8 * perMMx, "dy": c0.y - c1.y, "wantDy": 5 * perMMy]
+            // 1:1 from the frame that leaves the dead zone (20 steps of 1/20 of (8, 5) mm)
+            let left = 1 - Double((1...20).first { Double($0) * hypot(8, 5) / 20 > GestureEngine.deadZoneMM }!) / 20
+            s["pan"] = ["dx": c0.x - c1.x, "wantDx": 8 * perMMx * left, "dy": c0.y - c1.y, "wantDy": 5 * perMMy * left]
             // Pinch: zooms when unlocked, not when locked.
             func pinch() { for k in 0...20 { let d = 10 + Double(k); frame([(5, 60 - d, 35), (6, 60 + d, 35)]) }; lift(); canvas.flushInputForTest() }
             var tl = canvas.tools; tl.zoomLocked = true; canvas.tools = tl
