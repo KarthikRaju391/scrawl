@@ -12,6 +12,11 @@
   zoom only once they've moved about 2 mm.
 - Scratch-out is easier to trigger: a quick zig-zag with three long strokes counts, and it only has to lie partly
   over the word (it can overshoot the ends). Still pen and marker only, and one undo brings the word back.
+- Writing mode is more reliable (found by checking it against its spec, docs/writing-spec.md): after going back to
+  finish a line, the next line comes again as usual (it could stop coming until an undo, Return or page change);
+  a word you erase or scratch out no longer counts toward the line; scrolling or zooming during the pause cancels
+  the move instead of yanking the page; changing the line width keeps your place in the block; a page switch right
+  as the page moves opens the right page; one arrow press counts as a move by hand.
 
 ## 0.1.3 (2026-10-31, build 6)
 

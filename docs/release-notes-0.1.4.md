@@ -21,6 +21,9 @@ mode that takes you to the next line when you reach the end of one.
 - **Scratch-out catches more of your scratches:** a quick zig-zag over a word erases it more reliably, even a
   short one or one that runs past the word's ends.
 - **Undo and redo taps keep the page still:** a two- or three-finger double tap no longer nudges the view.
+- **Writing mode is more reliable:** going back to finish a line no longer stops the next line from coming, an
+  erased or scratched-out word no longer counts toward the line, and scrolling or zooming during the pause
+  cancels the move instead of jumping the page.
 
 Scrawl sends anonymous usage counts (never your ink, pages or text); **Settings › Share anonymous usage counts**
 turns them off. [What's counted](https://github.com/KarthikRaju391/scrawl/blob/main/docs/analytics.md).
