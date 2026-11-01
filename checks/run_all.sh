@@ -23,6 +23,7 @@ suites=(
   "overview-order|checks/galleryorder.sh"
   "voiceover-toolbar|checks/a11y.sh"
   "menus|checks/menus.sh"
+  "export-sheet|NO_BENCH=1 checks/export.sh"
   "pill-labels|checks/toast.sh"
   "newline|checks/newline.sh"
   "page-edges|checks/page.sh"

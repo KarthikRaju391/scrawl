@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **File › Export Page…** (⇧⌘E, replacing Export Page as PNG…): one sheet with the options under the file browser.
+  - **Format:** PNG or SVG. SVG is vector: one path per stroke, the same shapes as the PDF, highlighter at 35%,
+    paper patterns as lines and dots. It opens in Figma, Illustrator, Inkscape and browsers.
+  - **Scale:** 1×–4× or a custom 50–800%, with the size shown as you change it. Very large sizes are scaled down
+    to 16,384 px a side and 64 megapixels, and the sheet says so.
+  - **Area:** the page (its full width, from the top to just below the ink), or exactly what's on screen at the
+    current zoom.
+  - **Background:** Paper (the page with its grid, dots or lines, as on screen), White or Transparent.
+  - It remembers your last choices. Export All Pages as PDF… (⌘E) is unchanged.
+
 ## 0.1.4 (2026-11-01, build 7)
 
 - Pages overview: a cleaner header. The hint line next to the title is gone; the header is the title and the

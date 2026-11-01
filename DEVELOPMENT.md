@@ -37,6 +37,7 @@ the pointer or the trackpad, so they're safe to run while you use the Mac. The s
 | `checks/input.sh` | MultitouchSupport off (`--input-nstouch`); MT going quiet mid-use; welcome and help text |
 | `checks/mapping.sh` | The trackpad covers the whole view (window and three full-screen sizes); corners at zoom 1 and zoom 3 (panned) |
 | `checks/edge.sh`, `checks/edge_cf.sh` | Edge guard: synthetic palm and thumb cases with a guard-off control; Karthik's sessions replayed with the guard off and at 5% |
+| `checks/export.sh` | Export Page… (PNG/SVG):<br>• the bench's export checks (size = scale × area; what's on screen = the canvas's own render; transparency; the SVG parses, has one path per stroke and the area as viewBox, and renders back like the PNG; a self-crossing highlighter; the size cap; the PDF read back)<br>• the real sheet: ⇧⌘E, every option through its control, the size shown, Save, remembered choices, the usage event; screenshots of the sheet |
 | `checks/keys.sh`, `checks/modes.sh` | Every mode key pressed twice; the state × input matrix (every key, toolbar button and menu item from all 32 mode states, 592 cases) |
 | `checks/pan.sh` | Horizontal page moves in every window shape: hand pans both ways, writing after a hand pan right, no sideways pan while writing, new lines |
 | `make robot` | The robot user: the real app driven like a person in 30 scenarios, with screenshots (see `robot/README.md`) |
@@ -81,7 +82,7 @@ Manual checks still need a person:
 - `app/Canvas.swift`: document, camera, gesture engine, canvas view, input paths, session recorder
 - `app/Writing.swift`: writing-mode layout (the new line at the width limit)
 - `app/Notebook.swift`: file locations, the notebook file, autosave
-- `app/Export.swift`: PNG and PDF export
+- `app/Export.swift`: page export (PNG, SVG) and PDF export; `app/ExportPanel.swift`: the Export Page sheet's options
 - `app/DrawMode.swift`: pointer lock, watchdog process, signals, global hotkey
 - `app/Multitouch.swift`: private MultitouchSupport access, several trackpads
 - `app/Welcome.swift`, `app/AppMenu.swift`, `app/Updates.swift`: first run and help, menus and About, update check, crash note
