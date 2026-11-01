@@ -2,3 +2,4 @@ probe/probe-bin
 build/
 data/smoke-window.png
 dist/
+__pycache__/
