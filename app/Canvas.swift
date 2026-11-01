@@ -1647,8 +1647,8 @@ final class CanvasView: MTKView {
     /// Dismiss the "new page?" hint until another screen fills up.
     func dismissPageHint() { hintDismissedAt = screensFilled; doc.keptWriting = true; markDirty(); onStatus?() }
     /// Test: add a finished stroke as if drawn at the current zoom.
-    func testAddStroke(_ pts: [StrokePoint], tool: ToolKind = .pen) {
-        let s = Stroke(tool: tool, color: SIMD4(0, 0, 0, 1), size: tools.sizePt / (ptPerUnit * camera.zoom), points: pts, maxStep: smoothStep)
+    func testAddStroke(_ pts: [StrokePoint], tool: ToolKind = .pen, color: SIMD4<Float> = SIMD4(0, 0, 0, 1), sizePt: Double? = nil) {
+        let s = Stroke(tool: tool, color: color, size: (sizePt ?? tools.sizePt) / (ptPerUnit * camera.zoom), points: pts, maxStep: smoothStep)
         s.id = nextStrokeIdValue; nextStrokeIdValue += 1
         doc.add(s)
         updateScreensFilled()

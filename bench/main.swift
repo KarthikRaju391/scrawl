@@ -8,6 +8,11 @@ Diagnostics.off = true
 var failures = 0
 func check(_ ok: Bool, _ msg: String) { print(ok ? "PASS" : "FAIL", msg); if !ok { failures += 1 } }
 
+if ProcessInfo.processInfo.environment["BENCH_ONLY"] == "export" {   // just the export checks (checks/export.sh)
+    exportChecks(check); exportPageChecks(check)
+    exit(failures == 0 ? 0 : 1)
+}
+
 // 1) Union fill: a highlighter stroke must not have holes where circles and quads overlap,
 //    and overlaps must not darken (one fill = alpha applied once).
 do {
@@ -186,6 +191,7 @@ writingLayoutChecks(check)
 settingsChecks(check)
 notebookChecks(check)
 exportChecks(check)
+exportPageChecks(check)
 inputChecks(check)
 updateChecks(check)
 displayChecks(check)
