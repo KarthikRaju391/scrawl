@@ -1,10 +1,10 @@
 | mutant | targets | change | model checker (depth 4, waits 200/400/1000) | real canvas (fuzz 300x40, targeted) | differential (app mutated, model not) |
 |---|---|---|---|---|---|
 | `baseline` | all | main before the fixes | P4, P6, P8b | P4, P6, P8b, arrow, slide, staleCount | caught |
-| `wait0` | P1 | no wait: the move comes at the lift | P1, P4, P5, P8c | P1, slide, staleCount | caught |
+| `wait0` | P1 | no wait: the move comes at the lift | P1, P4, P5 | P1, slide, staleCount | caught |
 | `halfWait` | P1 | the move comes after half the wait | P1 | P1 | caught |
 | `touchKeeps` | P1 | a touch-down doesn't cancel the waiting move | P1, P5, P8b | P1, P4, P8b | caught |
-| `inkMoves` | P2 | a move carries the last stroke down (the old 'move the crossing word' rule) | P2, P8c | P2 | caught |
+| `inkMoves` | P2 | a move carries the last stroke down (the old 'move the crossing word' rule) | P2 | P2 | caught |
 | `rightCap97` | P3 | rightCap 0.97 | P3 | P3 | - |
 | `limitFromEdge` | P3 | the limit counts from the page's edge, not the block's start | P3, P4 | P3 | - |
 | `nearMarker0` | P4 | nearMarker 0 (only a crossing brings the next line) | P4, P8c | P4 | - |
@@ -24,3 +24,5 @@
 | `heldForever` | P8c | a line you went back to finish stays held (no move ever after) | P8c | P8c | caught |
 | `slideRace` | slide | goToPage / newPage don't finish the slide (the bug fixed here) | not caught | slide | - |
 | `staleCount` | P8 | the touch count isn't reset when draw mode changes (TLC's counterexample) | not caught | staleCount | - |
+| `heldAbsorbs` | P8c | a held line takes the line written under it (main) | P6 | not caught | - |
+| `heldEmpty` | P8c | an emptied line stays held (this branch's first scratch-out fix) | not caught | not caught | - |

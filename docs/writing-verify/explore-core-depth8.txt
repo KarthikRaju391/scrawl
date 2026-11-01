@@ -1,4 +1,4 @@
-EXPLORE wait 200 ms, depth 8, 30 starts, 14 events: 35762161 distinct states, 73205614 transitions, 35762161 recovery runs, 61 s
+EXPLORE wait 200 ms, depth 8, 30 starts, 14 events: 35173475 distinct states, 72194605 transitions, 35173475 recovery runs, 50 s
   P1: holds within the bound
   P2: holds within the bound
   P3: holds within the bound
@@ -9,7 +9,7 @@ EXPLORE wait 200 ms, depth 8, 30 starts, 14 events: 35762161 distinct states, 73
   P8a: holds within the bound
   P8b: holds within the bound
   P8c: holds within the bound
-EXPLORE wait 400 ms, depth 8, 30 starts, 14 events: 35991012 distinct states, 73410902 transitions, 35991012 recovery runs, 43 s
+EXPLORE wait 400 ms, depth 8, 30 starts, 14 events: 35403521 distinct states, 72400048 transitions, 35403521 recovery runs, 46 s
   P1: holds within the bound
   P2: holds within the bound
   P3: holds within the bound
@@ -20,7 +20,7 @@ EXPLORE wait 400 ms, depth 8, 30 starts, 14 events: 35991012 distinct states, 73
   P8a: holds within the bound
   P8b: holds within the bound
   P8c: holds within the bound
-EXPLORE wait 1000 ms, depth 8, 30 starts, 14 events: 35690973 distinct states, 72889321 transitions, 35690973 recovery runs, 41 s
+EXPLORE wait 1000 ms, depth 8, 30 starts, 14 events: 35101835 distinct states, 71877353 transitions, 35101835 recovery runs, 56 s
   P1: holds within the bound
   P2: holds within the bound
   P3: holds within the bound
