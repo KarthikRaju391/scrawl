@@ -293,6 +293,32 @@ final class WReal {
         return out
     }
 
+    /// From here, does a writer who carries on (lift, a word low on the view, then words to the right with a two-finger
+    /// pan when out of room) get a move? Several starting heights, as in WExplore.recovers.
+    func recovers() -> Bool {
+        guard canvas.writingMode else { return true }
+        if held != nil { _ = apply(.up, place: nil) }
+        if edge != nil { _ = apply(.edgeUp, place: nil) }
+        let wait = canvas.settings.pauseBeforeMoveMs / 1000
+        tick(1.1 * wait)
+        let n0 = canvas.newLineCount
+        for startY in [0.85, 0.15, 0.5] {
+            let v = canvas.camera.visible, h = min(max(v.height * 0.06, 6), 60)
+            _ = apply(.write(.at(0)), place: CGRect(x: v.minX + 0.05 * v.width, y: v.maxY - startY * v.height - h / 2, width: h * 3, height: h))
+            for _ in 0..<150 {
+                if canvas.newLineCount > n0 { return true }
+                let o = obs
+                if o.pendingLiftAt != nil { tick(1.1 * wait); continue }
+                let lim = WSpec.limit(o.runStart, o.width), zone = WSpec.zone(lim, o.width), vv = o.cam.visible
+                if let r = wPlace(.zone, o), zone + (lim - zone) * 0.5 <= vv.maxX + vv.width * 0.05 - 1, (o.lineInk?.maxX ?? 0) < zone { _ = apply(.write(.zone), place: r) }
+                else if let r = wPlace(.next, o), r.maxX <= vv.maxX - 1 { _ = apply(.write(.next), place: r) }
+                else { _ = apply(.pan(0.5), place: nil) }
+            }
+            if canvas.newLineCount > n0 { return true }
+        }
+        return false
+    }
+
     /// Apply one event; returns (applied, committed stroke bounds).
     func apply(_ e: WEv, place: CGRect?) -> (Bool, CGRect?) {
         let n0 = canvas.doc.strokes.count, page0 = canvas.pageIndex
@@ -361,7 +387,8 @@ final class WReal {
             guard held == nil, let last = canvas.doc.strokes.last else { return (false, nil) }
             // A fast zig-zag over the last stroke: six legs across it.
             nextId += 1
-            let r = last.bounds.insetBy(dx: -2, dy: 0)
+            let v = canvas.camera.visible, mm = v.width / (pad.width * (1 - 2 * Camera.margin))
+            let b = last.bounds, r = CGRect(x: b.midX - max(b.width / 2 + 2, 4 * mm), y: b.midY - max(b.height / 2, 3 * mm), width: max(b.width + 4, 8 * mm), height: max(b.height, 6 * mm))
             var seq: [[Contact]] = []
             for k in 0...24 {
                 let leg = Double(k) / 4, u = leg - floor(leg), dir = Int(leg) % 2 == 0
@@ -369,6 +396,7 @@ final class WReal {
                 seq.append([contact(nextId, page: CGPoint(x: x, y: r.minY + r.height * (0.3 + 0.4 * Double(k) / 24)))])
             }
             gesture(seq, dur: 0.2)
+            return (true, committed())   // not a scratch-out after all (too small or too slow): it's ink
         case .ret: guard held == nil else { return (false, nil) }; canvas.newLineByHand()
         case .page:
             guard held == nil else { return (false, nil) }
@@ -392,6 +420,13 @@ struct WFuzz {
     func alphabet() -> [WEv] { WExplore.fullAlphabet(waitMs / 1000) }
 
     mutating func randomEvent() -> WEv {
+        while true {
+            let e = randomEvent1()
+            let name: String = { switch e { case .width: return "width"; case .scratch: return "scratch"; case .scroll: return "scroll"; default: return "" } }()
+            if !skip.contains(name) { return e }
+        }
+    }
+    mutating func randomEvent1() -> WEv {
         let W = waitMs / 1000
         let r = rng.next()
         switch r {
@@ -401,7 +436,7 @@ struct WFuzz {
         case ..<0.62: return .tick([0.1 * W, 0.5 * W, 0.99 * W, 1.0 * W, 1.5 * W, 3 * W][Int(rng.next() * 6)])
         case ..<0.66: return rng.next() < 0.5 ? .edgeDown : .edgeUp
         case ..<0.69: return rng.next() < 0.5 ? .down(.next) : .up
-        case ..<0.74: return .pan((rng.next() - 0.4) * 0.8)
+        case ..<0.74: return .pan((rng.next() - 0.45) * 0.7)
         case ..<0.77: return .pinch([1.5, 1 / 1.5, 1.2, 2][Int(rng.next() * 4)])
         case ..<0.80: return .arrow(rng.next() < 0.7 ? 1 : -1)
         case ..<0.82: return .scroll((rng.next() - 0.4) * 0.6)
@@ -416,10 +451,15 @@ struct WFuzz {
     }
 
     struct Start { var widthIdx: Int; var zoom: Double; var viewX: Double }
+    /// Leave out events (for runs that look past known failures).
+    var skip: Set<String> = []
 
-    /// Run `events` on a fresh canvas from `start` with the oracle and the model alongside. Returns the first
-    /// failure: (index, property, message).
-    static func run(_ start: Start, _ events: [WEv], waitMs: Double, differential: Bool = true, log: ((String) -> Void)? = nil) -> (Int, String, String)? {
+    /// What the runs reached (to see the fuzzer exercises the paths that matter).
+    nonisolated(unsafe) static var stats: [String: Int] = [:]
+
+    /// Run `events` on a fresh canvas from `start` with the oracle and the model alongside, then check a writer who
+    /// carries on still gets a move (P8c). Returns the first failure: (index, property, message).
+    static func run(_ start: Start, _ events: [WEv], waitMs: Double, differential: Bool = true, recovery: Bool = true, log: ((String) -> Void)? = nil) -> (Int, String, String)? {
         let real = WReal(waitMs: waitMs, widthIdx: start.widthIdx, zoom: start.zoom, viewX: start.viewX)
         var model = WModel(); model.waitMs = waitMs; model.widthIdx = start.widthIdx; model.cam = real.canvas.camera; model.clock = real.vclock
         var spec = WSpec(waitMs: waitMs)
@@ -434,6 +474,13 @@ struct WFuzz {
             if !ok { continue }
             let post = real.obs
             let bad = spec.check(e, pre: pre, post: post, committed: committed)
+            stats["steps", default: 0] += 1
+            if committed != nil { stats["commits", default: 0] += 1; if post.pendingLiftAt != nil { stats["commits that scheduled a move", default: 0] += 1 } }
+            if post.newLines > pre.newLines { stats[e == .ret ? "Return moves" : "automatic moves", default: 0] += 1 }
+            if pre.pendingLiftAt != nil && post.pendingLiftAt == nil && post.newLines == pre.newLines { stats["pending moves dropped", default: 0] += 1 }
+            if pre.runStart != nil && post.runStart != nil && pre.runStart != post.runStart { stats["block start moved", default: 0] += 1 }
+            if post.lineHeld && !pre.lineHeld { stats["lines continued (held)", default: 0] += 1 }
+            if post.pendingLiftAt != nil && post.edge > 0 { stats["pending with an edge contact down", default: 0] += 1 }
             log?("\(i) \(e) committed \(committed.map { String(format: "%.0f-%.0f", $0.minX, $0.maxX) } ?? "-") runStart \(post.runStart.map { String(format: "%.0f", $0) } ?? "nil") pending \(post.pendingLiftAt != nil) lines \(post.newLines)")
             if let b = bad.first { return (i, b.0, b.1) }
             if differential {
@@ -445,13 +492,14 @@ struct WFuzz {
                 case .up:
                     if let c = committed { model.apply(e, stroke: c) } else { model.counted = 0; model.held = nil; model.advanceClock() }
                 case .scratch:
-                    if post.strokes.count < pre.strokes.count { model.apply(e) } else { model.counted = 1; model.cancelPendingMove(); model.clock += 0.2; model.counted = 0; model.advanceClock() }
+                    if post.strokes.count < pre.strokes.count { model.apply(e) } else if let c = committed { model.apply(.write(.next), stroke: c) } else { model.counted = 1; model.cancelPendingMove(); model.clock += 0.2; model.counted = 0; model.advanceClock() }
                 case .pan, .pinch, .scroll: model.apply(e, camAfter: post.cam)
                 default: model.apply(e)
                 }
                 if let d = wDiff(model, post) { return (i, "model", "model and app differ after \(e): \(d)") }
             }
         }
+        if recovery && !real.recovers() { return (events.count, "P8c", "a writer carrying on gets no move (writing mode wedged)") }
         return nil
     }
 
@@ -497,7 +545,7 @@ func wDiff(_ m: WModel, _ o: WObs) -> String? {
 
 // MARK: - Recorded sessions
 
-struct WReplayResult { var events = 0, commits = 0, moves = 0, pendings = 0; var violations: [(String, String, Double)] = [] }
+struct WReplayResult { var events = 0, commits = 0, moves = 0, pendings = 0; var violations: [(String, String, Double)] = []; var notes: [String] = [] }
 
 /// Replay a recorded session through a real CanvasView (as TestSession does) and check the properties on every record.
 func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
@@ -519,18 +567,28 @@ func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
                     pendingLiftAt: s.pending?.liftAt, counted: s.countedContacts, edge: 0, clock: vclock,
                     strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex)
     }
+    var afterWidth: (old: Double, at: Double)?
     func check(_ e: WEv, _ pre: WObs, _ committed: CGRect?) {
         let post = obs()
+        if case .width = e, let rs = pre.runStart { afterWidth = (rs, vclock) }
+        if let a = afterWidth, let s = committed {
+            res.notes.append(String(format: "width change at %.1f s: block start was %.1f; the next stroke came %.1f s later at x %.1f (%+.1f%% of the page), %@ the old line",
+                                    a.at - (rows.first?["m"] as? Double ?? 0), a.old, vclock - a.at, s.minX, (s.minX - a.old) / wPage.width * 100,
+                                    abs(s.midY - (pre.lineInk?.midY ?? .infinity)) < 30 ? "on" : "not on"))
+            afterWidth = nil
+        }
         res.events += 1
         if post.newLines > pre.newLines { res.moves += 1 }
         if committed != nil { res.commits += 1; if post.pendingLiftAt != nil { res.pendings += 1 } }
         for (p, m) in spec.check(e, pre: pre, post: post, committed: committed) { res.violations.append((p, m, vclock - (rows.first?["m"] as? Double ?? 0))) }
     }
     var lastIds = Set<Int32>()
+    var commits = 0
+    canvas.onAct = { a, _ in if a == "commit" { commits += 1 } }
     for r in rows {
         vclock = r["m"] as? Double ?? vclock
         do { let pre = obs(); canvas.advanceClock(); canvas.flushInputForTest(); check(.tick(0), pre, nil) }
-        let pre = obs(), n0 = canvas.doc.strokes.count, page0 = canvas.pageIndex
+        let pre = obs(), n0 = canvas.doc.strokes.count, page0 = canvas.pageIndex, c0 = commits
         var e: WEv = .tick(0)
         switch r["k"] as? String {
         case "touch":
@@ -541,7 +599,9 @@ func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
             let z0 = canvas.camera.zoom, x0 = canvas.camera.center.x
             canvas.handle(contacts, arrival: vclock, sensorT: r["t"] as? Double ?? 0)
             let post = canvas.writingStateForTest
-            if canvas.camera.zoom != z0 { e = .pinch(canvas.camera.zoom / z0) }
+            // The eraser (it erases while the finger moves, and puts strokes back if its touch becomes a pinch), or a scratch-out.
+            if (canvas.doc.strokes.count < n0 || canvas.tools.tool == .eraser) && canvas.pageIndex == page0 { e = .scratch }
+            else if canvas.camera.zoom != z0 { e = .pinch(canvas.camera.zoom / z0) }
             else if canvas.camera.center.x != x0 { e = .pan(0) }
             else if !ids.subtracting(lastIds).isEmpty { e = post.countedContacts > pre.counted ? .down(.next) : .edgeDown }
             else if canvas.doc.strokes.count != n0 { e = .up }
@@ -572,7 +632,7 @@ func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
         default: break
         }
         canvas.flushInputForTest()
-        let committed = canvas.pageIndex == page0 && canvas.doc.strokes.count == n0 + 1 ? canvas.doc.strokes.last!.bounds : nil
+        let committed = canvas.pageIndex == page0 && commits == c0 + 1 ? canvas.doc.strokes.last!.bounds : nil   // a new stroke (not a redo)
         if committed != nil, case .tick = e { e = .up }
         if case .scratch = e {} else if canvas.doc.strokes.count < n0, canvas.pageIndex == page0, case .up = e { e = .scratch }
         if canvas.doc.strokes.count < n0, canvas.pageIndex == page0 { if case .undo = e {} else if case .page = e {} else { e = .scratch } }

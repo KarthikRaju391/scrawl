@@ -51,6 +51,7 @@ if let n = arg("--fuzz").flatMap(Int.init) {
     for w in waits {
         let t0 = Date()
         var fz = WFuzz(rng: TestRNG(s: seed &+ UInt64(w)), waitMs: w)
+        fz.skip = Set((arg("--skip") ?? "").split(separator: ",").map(String.init))
         var fails: [String: (WFuzz.Start, [WEv], String)] = [:]
         var steps = 0
         for _ in 0..<n {
@@ -60,6 +61,8 @@ if let n = arg("--fuzz").flatMap(Int.init) {
             if let (k, p, m) = WFuzz.run(start, evs, waitMs: w), fails[p] == nil || fails[p]!.1.count > k + 1 { fails[p] = (start, Array(evs.prefix(k + 1)), m) }
         }
         out(String(format: "FUZZ wait %.0f ms: %d runs x %d events (%d steps) on the real CanvasView, %.0f s", w, n, len, steps, Date().timeIntervalSince(t0)))
+        out("  reached: " + WFuzz.stats.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))
+        WFuzz.stats = [:]
         for p in ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8a", "P8b", "P8c", "model"] {
             guard let (start, evs, _) = fails[p] else { out("  \(p): no failure"); continue }
             failures += 1
@@ -87,6 +90,7 @@ if let dir = arg("--replay") {
                 for v in r.violations where shown[v.0, default: 0] < 3 { shown[v.0, default: 0] += 1; out(String(format: "      %@ at %.1f s: %@", v.0, v.2, v.1)) }
             }
             tot.violations += r.violations
+            for n in r.notes { out("      note: " + n) }
         }
         out(String(format: "REPLAY wait %.0f ms: %d sessions, %d events, %d strokes committed, %d moves, %d violations %@", w, files.count, tot.events, tot.commits, tot.moves,
                    tot.violations.count, byProp.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: " ")))

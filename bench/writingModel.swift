@@ -388,7 +388,7 @@ struct WSpec {
             let has = post.pendingLiftAt != nil || moved > 0
             if want != has {
                 fail("P4", String(format: "line's ink ends at %.1f (zone from %.1f, limit %.1f, held %@): move %@, want %@", right, zone, lim, post.lineHeld ? "yes" : "no",
-                                  has ? "pending" : "none", want ? "pending" : "none"))
+                                  has ? "pending" : "none", want ? "pending" : "none") + String(format: " [counted %d, line ink to %.1f, %d line strokes, stroke %.1f-%.1f, event %@]", post.counted, post.lineInk?.maxX ?? -1, post.lineStrokes.count, s.minX, s.maxX, "\(e)"))
             }
             if let ink = post.lineInk, let first = post.lineStrokes.first {
                 let u = post.lineStrokes.dropFirst().reduce(first) { $0.union($1) }
@@ -405,7 +405,12 @@ struct WSpec {
                 fail("P5", String(format: "view centre after the move (%.1f, %.1f), want (%.1f, %.1f)", post.cam.center.x, post.cam.center.y, want.x, want.y))
             }
             if let r = post.handRef, !Self.near(r.x, post.cam.center.x) { fail("P5", String(format: "remembered centre %.1f, but the view went to %.1f", r.x, post.cam.center.x)) }
-            if let rs = post.runStart, rs < post.cam.visible.minX - 1e-6 || rs > post.cam.visible.maxX + 1e-6 { fail("P5", "block start out of view after the move") }
+            // In view, unless it's off the page (a block whose first stroke started past the page's side) and the view is
+            // against that side.
+            let vis = post.cam.visible
+            if let rs = post.runStart, (rs < vis.minX - 1e-6 && !(rs < 0 && vis.minX < 1e-6)) || (rs > vis.maxX + 1e-6 && !(rs > W && vis.maxX > W - 1e-6)) {
+                fail("P5", String(format: "block start %.1f out of view after the move (view x %.1f-%.1f, zoom %.2f; pending target (%.1f, %.1f))", rs, post.cam.visible.minX, post.cam.visible.maxX, post.cam.zoom, pre.pendingTarget?.x ?? -1, pre.pendingTarget?.y ?? -1))
+            }
         }
         // P6: blocks change only by the rules.
         let hand = max(mon.panSum, mon.refX.map { abs(pre.cam.center.x - $0) } ?? 0)
