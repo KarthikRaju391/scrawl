@@ -7,7 +7,9 @@ reaching for a tablet or stylus.
 Zoom in to write small, and writing mode moves you to the next line as you go. Pages scroll down
 forever, and a zig-zag scratches out a mistake.
 
-![Scrawl](examples/porsche-window.png)
+[![Scrawl: writing on the trackpad, and writing mode moving to the next line](docs/media/scrawl-readme.webp)](https://github.com/KarthikRaju391/scrawl/releases/download/v0.1.4/scrawl-launch.mp4)
+
+https://github.com/user-attachments/assets/11c7ae5e-d7d9-4d9f-963f-94fd4b3aec44
 
 ## Why it's different
 
