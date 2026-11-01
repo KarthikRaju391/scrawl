@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-- Pages overview: the hint line next to the title is gone; the header is the title and the search field.
+## 0.1.4 (2026-11-01, build 7)
+
+- Pages overview: a cleaner header. The hint line next to the title is gone; the header is the title and the
+  search field.
 
 ## 0.1.3 (2026-10-31, build 6)
 
