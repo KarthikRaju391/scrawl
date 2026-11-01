@@ -152,3 +152,12 @@ real-canvas fuzz 300 x 40 at 400 ms, the targeted checks; the differential colum
   (NotOverdue), edgeCancels (EdgeGuard), staleCount (NotOverdue), scrollKeeps (NoFireAfterHandMove): 7 of 7 caught.
 
 
+
+## After merging main (e0c943d)
+
+Main moved on while this ran (the wait setting 38f7bd6, the 2 mm pan/pinch dead zone 0fa5ab7, scratch-out tuning
+533ca6e). It merges into this branch without conflicts. In test runs the new setting ignores the stored value, so the
+checks now set `Settings.pauseChosenMs`. On the merged code: model checker at depth 4 (3 waits), 3,000 fuzz runs x 60
+plus the 5,000-run seed that found the held-line bug, the targeted checks and the replay (146 / 124 / 93 moves at
+200 / 400 / 1000 ms, 0 violations) all pass; the `baseline` mutant (main's code) still fails P4, P6, P8b and the
+three targeted checks. The large runs above were on the pre-merge branch (6699d14).

@@ -227,7 +227,7 @@ final class WReal {
     var acts: [String] = []
 
     init(waitMs: Double, widthIdx: Int, zoom: Double, viewX: Double) {
-        UserDefaults.standard.set(waitMs, forKey: "pauseBeforeMoveMs")
+        Settings.pauseChosenMs = waitMs   // the Settings slider (tests ignore the stored choice)
         canvas = CanvasView(frame: NSRect(x: 0, y: 0, width: 1200, height: 740), device: nil)
         canvas.now = { [unowned self] in self.vclock }
         var t = canvas.tools; t.lineWidthIndex = widthIdx; canvas.tools = t
@@ -556,7 +556,7 @@ struct WReplayResult { var events = 0, commits = 0, moves = 0, pendings = 0; var
 /// Replay a recorded session through a real CanvasView (as TestSession does) and check the properties on every record.
 func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
     var res = WReplayResult()
-    UserDefaults.standard.set(waitMs, forKey: "pauseBeforeMoveMs")
+    Settings.pauseChosenMs = waitMs   // the Settings slider (tests ignore the stored choice)
     let canvas = CanvasView(frame: NSRect(x: 0, y: 0, width: 1200, height: 740), device: nil)
     let pad = Multitouch.padMM
     let rows = (try? String(contentsOfFile: path, encoding: .utf8))?.split(separator: "\n")

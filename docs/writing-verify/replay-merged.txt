@@ -1,0 +1,4 @@
+REPLAY wait 200 ms: 34 sessions, 2210332 events, 8188 strokes committed, 146 moves, 0 violations 
+REPLAY wait 400 ms: 34 sessions, 2210332 events, 8188 strokes committed, 124 moves, 0 violations 
+REPLAY wait 1000 ms: 34 sessions, 2210332 events, 8188 strokes committed, 93 moves, 0 violations 
+RECORDED moves (the app as it was when recorded): 182 moves, 86 with a logged reason, 0 against the spec
