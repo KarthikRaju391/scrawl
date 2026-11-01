@@ -142,12 +142,50 @@ struct PageExport {
                 ctx.restoreGState()
             }
         }
-        for s in visibleStrokes {
-            ctx.setFillColor(CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: CGFloat(s.color.w)))
-            ctx.addPath(strokePath(s.points, size: s.size, brush: Brush.of(s.tool)))
-            ctx.fillPath(using: .winding)   // one fill per stroke: the highlighter's alpha is applied once
-        }
+        for s in visibleStrokes { Self.fill(s, in: ctx) }
         return ctx.makeImage()
+    }
+
+    /// Points per piece when a stroke is filled (PNG) or written as a group (SVG). CoreGraphics' fill time grows much
+    /// faster than the number of overlapping subpaths in one fill: a 3,886-point highlighter scribble on a real page took
+    /// 67 s as one path and 0.12 s in pieces of 16 (Quick Look and Preview draw SVG and PDF the same way).
+    static let fillPiece = 16, svgPiece = 64
+    /// SVG strokes up to this many points are one <path> (98% of strokes in a real notebook); longer ones are a <g>.
+    static let svgOnePathMax = 512
+
+    /// strokePath's outline, points `a..<b` (the circle at each, and the quad from the point before).
+    static func outline(_ s: Stroke, _ a: Int, _ b: Int) -> CGPath {
+        let p = CGMutablePath(), pts = s.points, r = s.radii
+        for i in a..<b {
+            if i > 0 {
+                let pa = pts[i - 1].p, pb = pts[i].p, ra = r[i - 1], rb = r[i]
+                let dx = pb.x - pa.x, dy = pb.y - pa.y, d = hypot(dx, dy)
+                if d > 1e-6 {
+                    let nx = -dy / d, ny = dx / d
+                    p.move(to: CGPoint(x: pa.x - nx * ra, y: pa.y - ny * ra))
+                    p.addLine(to: CGPoint(x: pb.x - nx * rb, y: pb.y - ny * rb))
+                    p.addLine(to: CGPoint(x: pb.x + nx * rb, y: pb.y + ny * rb))
+                    p.addLine(to: CGPoint(x: pa.x + nx * ra, y: pa.y + ny * ra))
+                    p.closeSubpath()
+                }
+            }
+            p.addEllipse(in: CGRect(x: pts[i].p.x - r[i], y: pts[i].p.y - r[i], width: 2 * r[i], height: 2 * r[i]))
+        }
+        return p
+    }
+    /// One stroke, filled in pieces. A translucent stroke (the highlighter) is drawn opaque into a transparency layer that
+    /// is composited once at its alpha: where it crosses itself it isn't darker.
+    static func fill(_ s: Stroke, in ctx: CGContext) {
+        guard !s.points.isEmpty else { return }
+        let a = CGFloat(s.color.w)
+        ctx.saveGState()
+        ctx.setFillColor(CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: 1))
+        if a < 1 { ctx.clip(to: s.bounds.insetBy(dx: -1, dy: -1)); ctx.setAlpha(a); ctx.beginTransparencyLayer(auxiliaryInfo: nil) }
+        for i in stride(from: 0, to: s.points.count, by: fillPiece) {
+            ctx.addPath(outline(s, i, min(i + fillPiece, s.points.count))); ctx.fillPath(using: .winding)
+        }
+        if a < 1 { ctx.endTransparencyLayer() }
+        ctx.restoreGState()
     }
 
     func pngData() -> Data? {
@@ -251,11 +289,20 @@ struct PageExport {
         }
         o.raw("<g id=\"ink\" fill-rule=\"nonzero\">\n")
         for (i, s) in visibleStrokes.enumerated() {
-            o.raw("<path id=\"stroke-\(i + 1)\" class=\"stroke \(s.tool.rawValue)\" fill=\"\(hex((Double(s.color.x), Double(s.color.y), Double(s.color.z))))\"")
-            if s.color.w < 1 { o.raw(" fill-opacity=\"\(SVGOut.fmt(Double(s.color.w), places: 3))\"") }
-            o.raw(" d=\"")
-            o.strokeOutline(s.points, radii: s.radii)
-            o.raw("\"/>\n")
+            let fill = hex((Double(s.color.x), Double(s.color.y), Double(s.color.z))), alpha = SVGOut.fmt(Double(s.color.w), places: 3)
+            if s.points.count <= Self.svgOnePathMax {   // one path, filled once: fill-opacity is applied once
+                o.raw("<path id=\"stroke-\(i + 1)\" class=\"stroke \(s.tool.rawValue)\" fill=\"\(fill)\"")
+                if s.color.w < 1 { o.raw(" fill-opacity=\"\(alpha)\"") }
+                o.raw(" d=\""); o.strokeOutline(s.points, radii: s.radii, 0, s.points.count); o.raw("\"/>\n")
+            } else {   // a long stroke: opaque pieces in a group, the group's opacity composited once
+                o.raw("<g id=\"stroke-\(i + 1)\" class=\"stroke \(s.tool.rawValue)\" fill=\"\(fill)\"")
+                if s.color.w < 1 { o.raw(" opacity=\"\(alpha)\"") }
+                o.raw(">")
+                for a in stride(from: 0, to: s.points.count, by: Self.svgPiece) {
+                    o.raw("<path d=\""); o.strokeOutline(s.points, radii: s.radii, a, min(a + Self.svgPiece, s.points.count)); o.raw("\"/>")
+                }
+                o.raw("</g>\n")
+            }
         }
         o.raw("</g>\n</svg>\n")
         return String(decoding: o.bytes, as: UTF8.self)
@@ -293,11 +340,11 @@ struct SVGOut {
         raw("A"); num(r); raw(" "); num(r); raw(" 0 1 0 "); pt(CGPoint(x: c.x - r, y: c.y))
         raw("A"); num(r); raw(" "); num(r); raw(" 0 1 0 "); pt(CGPoint(x: c.x + r, y: c.y)); raw("Z")
     }
-    /// strokePath's outline (Ink.swift): a circle at each point and a quad per segment.
-    mutating func strokeOutline(_ pts: [StrokePoint], radii r: [Double]) {
-        guard !pts.isEmpty else { return }
-        circle(pts[0].p, r[0])
-        for i in 1..<pts.count {
+    /// strokePath's outline (Ink.swift) for points `from..<to`: a circle at each point and the quad from the point before.
+    mutating func strokeOutline(_ pts: [StrokePoint], radii r: [Double], _ from: Int, _ to: Int) {
+        guard from < to else { return }
+        for i in from..<to {
+            guard i > 0 else { circle(pts[0].p, r[0]); continue }
             let a = pts[i - 1].p, b = pts[i].p, ra = r[i - 1], rb = r[i]
             let dx = b.x - a.x, dy = b.y - a.y, d = hypot(dx, dy)
             if d > 1e-6 {

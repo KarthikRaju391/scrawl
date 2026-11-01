@@ -41,8 +41,9 @@ private final class SVGRead: NSObject, XMLParserDelegate {
     init(_ data: Data) { super.init(); let p = XMLParser(data: data); p.delegate = self; ok = p.parse() }
     func parser(_ parser: XMLParser, didStartElement e: String, namespaceURI: String?, qualifiedName: String?, attributes a: [String: String] = [:]) {
         if e == "svg" { root = a }
-        if e == "path" { paths.append(a) }
+        if e == "path" || e == "g" { paths.append(a) }
     }
+    /// One element per stroke: a <path>, or a <g> of pieces for a long stroke.
     var strokePaths: [[String: String]] { paths.filter { ($0["class"] ?? "").hasPrefix("stroke") } }
     var viewBox: [Double] { (root["viewBox"] ?? "").split(separator: " ").compactMap { Double($0) } }
 }
@@ -194,6 +195,67 @@ func exportPageChecks(_ check: (Bool, String) -> Void) {
             let once = abs(single.2 - want[2]) <= 3
             check(same && once, "self-crossing highlighter, \(name): crossing \(cross.0),\(cross.1),\(cross.2) = single pass \(single.0),\(single.1),\(single.2) (35% once: \(want))")
         }
+    }
+
+    // 6a. The same with a small loop that stays one <path> (fill-opacity, nonzero), and a sparse stroke: two points far
+    //     apart, where a circle wound the other way from its quad would leave a hole (dense strokes hide it).
+    do {
+        let h = CanvasView(frame: NSRect(x: 0, y: 0, width: 1200, height: 740), device: nil)
+        let loop = (0...40).map { i -> StrokePoint in
+            let t = Double(i) / 40 * 2.3 * .pi + 0.2 * .pi   // goes round past its start: crosses itself
+            return StrokePoint(p: CGPoint(x: 400 + 60 * cos(t) + Double(i) * 1, y: 500 + 60 * sin(t)), pressure: 0.5)
+        }
+        h.testAddStroke(Array(loop), tool: .highlighter, color: yellow, sizePt: 30)
+        h.testAddStroke([StrokePoint(p: CGPoint(x: 700, y: 300), pressure: 0.5), StrokePoint(p: CGPoint(x: 1100, y: 340), pressure: 0.5)],
+                        tool: .highlighter, color: yellow, sizePt: 36)
+        let n = h.doc.strokes.map(\.points.count)
+        try? h.export(ExportOptions(format: .png, scale: 1, area: .page, background: .white), to: URL(fileURLWithPath: dir + "/l.png"))
+        try? h.export(ExportOptions(format: .svg, scale: 1, area: .page, background: .white), to: URL(fileURLWithPath: dir + "/l.svg"))
+        let png = pixels(pngImage(try! Data(contentsOf: URL(fileURLWithPath: dir + "/l.png")))!)
+        let svgImg = NSImage(contentsOf: URL(fileURLWithPath: dir + "/l.svg"))!
+        let svg = pixels({ ctx in
+            NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+            svgImg.draw(in: NSRect(x: 0, y: 0, width: png.w, height: png.h)); NSGraphicsContext.restoreGraphicsState()
+        }, png.w, png.h)
+        let r = h.exportArea(.page)
+        // Every pixel inside the two strokes' cores is yellow at 35% once, in both formats (no hole, no double).
+        var bad = 0, n2 = 0
+        for s in h.doc.strokes { for (k, p) in s.points.enumerated() where k % 2 == 0 {
+            for (dx, dy) in [(0.0, 0.0), (s.radii[k] * 0.6, 0), (0, s.radii[k] * 0.6), (-s.radii[k] * 0.6, 0)] {
+                let x = Int(p.p.x + dx - r.minX), y = Int(r.maxY - p.p.y - dy); n2 += 1
+                for img in [png, svg] where abs(img[x, y].2 - 201) > 4 { bad += 1 }
+            } } }
+        let one = SVGRead(try! Data(contentsOf: URL(fileURLWithPath: dir + "/l.svg"))).strokePaths.filter { $0["fill-opacity"] == "0.35" }.count
+        check(bad == 0 && one == 2, "a small self-crossing loop (\(n[0]) points) and a 2-point stroke stay one path each with fill-opacity (\(one)); \(n2) samples in their cores are 35% once in the PNG and the SVG (\(bad) off)")
+    }
+
+    // 6c. A dense highlighter scribble (colouring in, 4,000 points in a small box, like one on a real page that took
+    //     67 s as one fill) exports and renders back quickly, and is still 35% once.
+    do {
+        let h = CanvasView(frame: NSRect(x: 0, y: 0, width: 1200, height: 740), device: nil)
+        let scribble = (0..<4000).map { i -> StrokePoint in
+            let t = Double(i) / 4000
+            return StrokePoint(p: CGPoint(x: 300 + 200 * t + 90 * sin(Double(i) * 0.09), y: 500 + 16 * sin(Double(i) * 0.013)), pressure: 0.5)
+        }
+        h.testAddStroke(scribble, tool: .highlighter, color: yellow, sizePt: 12)
+        let t0 = CFAbsoluteTimeGetCurrent()
+        try? h.export(ExportOptions(format: .png, scale: 2, area: .page, background: .white), to: URL(fileURLWithPath: dir + "/s.png"))
+        let tPNG = CFAbsoluteTimeGetCurrent() - t0
+        try? h.export(ExportOptions(format: .svg, scale: 2, area: .page, background: .white), to: URL(fileURLWithPath: dir + "/s.svg"))
+        let pngImg = pngImage(try! Data(contentsOf: URL(fileURLWithPath: dir + "/s.png")))!
+        let t1 = CFAbsoluteTimeGetCurrent()
+        let svgImg = NSImage(contentsOf: URL(fileURLWithPath: dir + "/s.svg"))!
+        let svg = pixels({ ctx in
+            NSGraphicsContext.saveGraphicsState(); NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+            svgImg.draw(in: NSRect(x: 0, y: 0, width: pngImg.width, height: pngImg.height)); NSGraphicsContext.restoreGraphicsState()
+        }, pngImg.width, pngImg.height)
+        let tSVG = CFAbsoluteTimeGetCurrent() - t1
+        let png = pixels(pngImg), dd = diff(png, svg, tol: 40)
+        var darkest = 255
+        for i in stride(from: 0, to: png.px.count, by: 4) { darkest = min(darkest, Int(png.px[i + 2]), Int(svg.px[i + 2])) }
+        check(tPNG < 2 && tSVG < 3 && dd.over < 0.004 && darkest >= 197,
+              String(format: "a 4,000-point highlighter scribble (%d points): PNG in %.2f s, SVG drawn by CoreSVG in %.2f s, %.3f%% of pixels apart; darkest blue %d (35%% once = 201)",
+                     h.doc.strokes[0].points.count, tPNG, tSVG, dd.over * 100, darkest))
     }
 
     // 6b. The saved file gets the format's extension (the save panel can keep the old one after a format switch), and an
