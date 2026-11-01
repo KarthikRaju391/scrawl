@@ -55,7 +55,7 @@ bw, bh = r["bounds"]; vis = r["visible"]
 chk(abs(screen[2] / screen[3] - bw / bh) < 0.002 and screen[0] <= vis[0] + 0.01 and screen[0] + screen[2] >= vis[0] + vis[2] - 0.01,
     f"the screen area is the whole view (aspect {screen[2] / screen[3]:.4f} = window {bw / bh:.4f}) around the pad's area")
 s = st["transparent"]; chk(s["background"] == "transparent", "background: Transparent")
-s = st["800% page"]; chk(s["orange"] and "too large at 800%" in s["label"], f"800% of the page warns and is capped: {s['label']!r}")
+s = st["800% page"]; chk(s["orange"] and "Too large at 800%" in s["label"], f"800% of the page warns and is capped: {s['label']!r}")
 s = st["40% typed"]; chk(s["scale"] == 0.5 and not s["orange"], f"40% typed is held at the 50% minimum ({s['scale']}, {s['label']!r})")
 chk(r.get("savedSVG") and r.get("pngFilesAfterSVG") == [] and r.get("svgPaths") == r.get("svgWantPaths"),
     f"Save after switching PNG → SVG wrote one .svg file holding SVG ({r.get('svgFiles')}, .png files: {r.get('pngFilesAfterSVG')}): {r.get('svgPaths')} stroke paths for {r.get('svgWantPaths')} strokes in view")

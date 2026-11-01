@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 final class ExportAccessory: NSView, NSTextFieldDelegate {
     let format = NSPopUpButton(), scale = NSPopUpButton(), percent = NSTextField(), area = NSPopUpButton(), background = NSPopUpButton()
-    let sizeLabel = NSTextField(labelWithString: "")
+    let sizeLabel = NSTextField(wrappingLabelWithString: "")
     /// The area's rect in page units (the current page; what's on screen depends on the view).
     private let areaRect: (ExportOptions.Area) -> CGRect
     /// Called on every change (the panel's file type follows the format).
@@ -33,8 +33,8 @@ final class ExportAccessory: NSView, NSTextFieldDelegate {
         percent.widthAnchor.constraint(equalToConstant: 56).isActive = true
         sizeLabel.textColor = .secondaryLabelColor
         sizeLabel.font = .monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular)
-        sizeLabel.lineBreakMode = .byWordWrapping
-        sizeLabel.preferredMaxLayoutWidth = 300
+        sizeLabel.maximumNumberOfLines = 2
+        sizeLabel.preferredMaxLayoutWidth = 240   // the warning wraps under the size instead of running off the sheet
         sizeLabel.setAccessibilityIdentifier("exportSize")
 
         func label(_ s: String) -> NSTextField { let l = NSTextField(labelWithString: s); l.alignment = .right; return l }
@@ -113,7 +113,7 @@ final class ExportAccessory: NSView, NSTextFieldDelegate {
         let nf = NumberFormatter(); nf.numberStyle = .decimal
         let dims = "\(nf.string(from: sz.width as NSNumber)!) × \(nf.string(from: sz.height as NSNumber)!) px"
         if sz.capped {
-            sizeLabel.stringValue = "\(dims): too large at \(Int((o.scale * 100).rounded()))%, saved at \(Int((sz.scale * 100).rounded(.down)))%"
+            sizeLabel.stringValue = "\(dims)\nToo large at \(Int((o.scale * 100).rounded()))%: saved at \(Int((sz.scale * 100).rounded(.down)))%"
             sizeLabel.textColor = .systemOrange
         } else {
             sizeLabel.stringValue = o.format == .svg ? "\(dims) (vector)" : dims
