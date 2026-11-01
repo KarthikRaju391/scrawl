@@ -65,6 +65,9 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
   a thin blue frame marks the window, and a small capsule at the bottom shows the tool, writing mode, the
   zoom lock and the page. **Esc** gives the pointer back. So do ⌃⌥D,
   switching apps, the display sleeping, and quitting.
+
+![One finger on the trackpad writes "hello" on the page: touch, no click](docs/media/trackpad-hello.webp)
+
 - **One finger** draws. **Two fingers** pan, and pinching zooms. In draw mode, a **two-finger double
   tap** undoes and a **three-finger double tap** redoes (a short "Undo" / "Redo" shows). Keep the second
   tap down and **slide**: left steps back through your strokes, right brings them back, live; lift to keep
