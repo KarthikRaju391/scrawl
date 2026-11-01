@@ -196,6 +196,18 @@ func exportPageChecks(_ check: (Bool, String) -> Void) {
         }
     }
 
+    // 6b. The saved file gets the format's extension (the save panel can keep the old one after a format switch), and an
+    //     existing file of the corrected name isn't overwritten.
+    do {
+        let chosen = URL(fileURLWithPath: dir + "/Page 1.png")
+        let a = ExportOptions.url(chosen, for: .svg), b = ExportOptions.url(URL(fileURLWithPath: dir + "/x.svg"), for: .svg)
+        FileManager.default.createFile(atPath: dir + "/Page 1.svg", contents: Data("keep".utf8))
+        let cURL = ExportOptions.url(chosen, for: .svg)
+        let kept = (try? String(contentsOfFile: dir + "/Page 1.svg", encoding: .utf8)) == "keep"
+        check(a.lastPathComponent == "Page 1.svg" && b.lastPathComponent == "x.svg" && cURL.lastPathComponent == "Page 1 2.svg" && kept,
+              "the saved file takes the format's extension (\(a.lastPathComponent)); an existing \"Page 1.svg\" isn't overwritten (\(cURL.lastPathComponent))")
+    }
+
     // 7. A huge scale is capped (16,384 px a side, 64 MP) and still exports, quickly.
     do {
         let big = CanvasView(frame: NSRect(x: 0, y: 0, width: 1200, height: 740), device: nil)

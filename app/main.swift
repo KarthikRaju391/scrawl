@@ -112,6 +112,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     var lastSharePicker: NSSharingServicePicker?
     /// The Export Page sheet while it's open (the test mode drives it).
     var exportPanel: NSSavePanel?
+    var exportAccessory: ExportAccessory?
+    /// Test runs: the folder the sheet opens in (set before it's shown; an out-of-process panel ignores later changes).
+    var exportDirectoryForTest: String?
+    var exportChosenForTest: [String] = []
     var galleryReturnsToDraw = false
     var transitionView: NSView?
     /// Ends the running gallery transition at once (its last frame and completion); nil when none runs.
@@ -869,12 +873,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             guard let panel, panel.allowedContentTypes.first?.preferredFilenameExtension != o.format.rawValue else { return }
             panel.useFormat(o.format)
         }
-        exportPanel = panel
+        if let d = exportDirectoryForTest { panel.directoryURL = URL(fileURLWithPath: d) }
+        exportPanel = panel; exportAccessory = acc
         panel.beginSheetModal(for: window) { r in
-            self.exportPanel = nil
-            guard r == .OK, let url = panel.url else { return }
+            self.exportPanel = nil; self.exportAccessory = nil
+            guard r == .OK, let chosen = panel.url else { return }
             let o = acc.options
             o.save()
+            var url = ExportOptions.url(chosen, for: o.format)
+            if let d = self.exportDirectoryForTest {   // tests never write outside their folder, whatever the panel says
+                self.exportChosenForTest.append(chosen.path)
+                url = URL(fileURLWithPath: d).appendingPathComponent(url.lastPathComponent)
+            }
             self.finishExport(o.format.rawValue) { try self.canvas.export(o, to: url) }
         }
     }

@@ -7,6 +7,8 @@ import AppKit
 enum TestExport {
     static func run(app: AppDelegate) {
         let dir = AppPaths.dataDir
+        TestCrash.noReports(crashOnly: true)   // a crash here must never leave a dialog on the screen
+        var r: [String: Any] = [:]
         func spin(_ s: Double) { RunLoop.current.run(until: Date().addingTimeInterval(s)) }
         func step(_ s: String) { try? s.write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8) }
         /// Asks checks/export.sh to photograph the window and its sheet (shot-<name>.req) and waits for shot-<name>.done; 15 s at most.
@@ -15,32 +17,40 @@ enum TestExport {
             let d = Date().addingTimeInterval(15)
             while !FileManager.default.fileExists(atPath: dir + "/shot-\(name).done") && Date() < d { spin(0.1) }
         }
+        /// The File menu item whose shortcut is ⇧⌘E, triggered as the menu does (a synthetic key event can't reach a
+        /// background app's menu reliably).
         func shiftCmdE() -> Bool {
-            guard let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0, windowNumber: app.window.windowNumber,
-                                           context: nil, characters: "E", charactersIgnoringModifiers: "e", isARepeat: false, keyCode: 14) else { return false }
-            return NSApp.mainMenu?.performKeyEquivalent(with: e) ?? false
+            guard let m = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "File" })?.submenu,
+                  let i = m.items.firstIndex(where: { $0.keyEquivalent.lowercased() == "e" && $0.keyEquivalentModifierMask == [.command, .shift] }) else { return false }
+            m.performActionForItem(at: i)
+            return true
         }
         func openSheet() -> (NSSavePanel, ExportAccessory?)? {
             guard shiftCmdE() else { return nil }
             let d = Date().addingTimeInterval(5)
             while app.window.attachedSheet == nil && Date() < d { spin(0.05) }
             spin(0.4)
-            guard let p = app.window.attachedSheet as? NSSavePanel else { return nil }
-            return (p, p.accessoryView as? ExportAccessory)
+            // The panel can hand back a wrapper for its accessory view; the app keeps the options view it attached.
+            r["openSheetSeen", default: [String]()] = (r["openSheetSeen"] as? [String] ?? []) + ["panel \(app.exportPanel != nil) sheet \(String(describing: app.window.attachedSheet.map { type(of: $0) })) acc \(app.exportAccessory != nil) accWin \(app.exportAccessory?.window != nil)"]
+            guard let p = app.exportPanel, app.window.attachedSheet != nil else { return nil }
+            return (p, app.exportAccessory.flatMap { $0.window != nil ? $0 : nil })
         }
         func pick(_ p: NSPopUpButton, _ title: String) { p.selectItem(withTitle: title); _ = p.sendAction(p.action, to: p.target) }
-        var r: [String: Any] = [:]
+        /// Types a percentage into the field, as a person would (the field's text and the live update).
+        func type(_ a: ExportAccessory, _ text: String) { a.percent.stringValue = text; a.takePercent(text) }
         let out = dir + "/exports"
         try? FileManager.default.createDirectory(atPath: out, withIntermediateDirectories: true)
         func finish() {
             Analytics.shared.flushAndWait()
             let log = (try? String(contentsOfFile: AppPaths.logsDir + "/events.jsonl", encoding: .utf8)) ?? ""
             r["exportEvents"] = log.split(separator: "\n").filter { $0.contains("\"export\"") }.map(String.init)
+            r["panelChose"] = app.exportChosenForTest
             r["exports"] = (try? FileManager.default.contentsOfDirectory(atPath: out)) ?? []
             try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-export.json"))
             step("done")
         }
         let c = app.canvas
+        app.exportDirectoryForTest = out   // never the person's own folders
         if c.drawMode { app.exitDrawMode("test") }
 
         // A page with pen, marker and a self-crossing highlighter, on dot paper, viewed at 250%.
@@ -65,7 +75,7 @@ enum TestExport {
         r["sheet"] = true
         guard let acc = accOpt else {
             r["accessory"] = false
-            panel.cancel(nil); spin(0.3); finish(); return
+            app.window.endSheet(panel, returnCode: .cancel); spin(0.3); finish(); return
         }
         r["accessory"] = true
         func state() -> [String: Any] {
@@ -85,26 +95,35 @@ enum TestExport {
         photo("defaults")
         pick(acc.format, "SVG"); states.append(["step": "svg"].merging(state()) { a, _ in a })
         pick(acc.scale, "3×"); states.append(["step": "3x"].merging(state()) { a, _ in a })
-        pick(acc.scale, "Custom"); acc.takePercent("250"); states.append(["step": "250%"].merging(state()) { a, _ in a })
+        pick(acc.scale, "Custom"); type(acc, "250"); states.append(["step": "250%"].merging(state()) { a, _ in a })
         pick(acc.area, "What's on screen"); states.append(["step": "screen"].merging(state()) { a, _ in a })
         pick(acc.background, "Transparent"); states.append(["step": "transparent"].merging(state()) { a, _ in a })
         photo("svg-screen")
-        pick(acc.area, "Page"); acc.takePercent("800"); states.append(["step": "800% page"].merging(state()) { a, _ in a })
+        pick(acc.area, "Page"); type(acc, "800"); states.append(["step": "800% page"].merging(state()) { a, _ in a })
         photo("capped")
-        acc.takePercent("40"); states.append(["step": "40% typed"].merging(state()) { a, _ in a })
-        acc.takePercent("250"); pick(acc.area, "What's on screen")
+        type(acc, "40"); states.append(["step": "40% typed"].merging(state()) { a, _ in a })
+        type(acc, "250"); pick(acc.area, "What's on screen")
 
-        // 2. Save through the sheet's own button: SVG, 250%, what's on screen, transparent.
-        panel.directoryURL = URL(fileURLWithPath: out)
-        panel.nameFieldStringValue = "screen-transparent.svg"
+        // 2. Save (the sheet's OK): SVG, 250%, what's on screen, transparent. The sheet opened in `out` (set before it was
+        //    shown) with a .png name; the format was switched to SVG while it was up.
         spin(0.3)
-        panel.ok(nil)
+        app.window.endSheet(panel, returnCode: .OK)   // the sheet's Save (ok(_:) raises on an out-of-process panel)
         var d = Date().addingTimeInterval(5)
         while app.window.attachedSheet != nil && Date() < d { spin(0.05) }
         spin(0.5)
         r["states"] = states
-        r["savedSVG"] = FileManager.default.fileExists(atPath: out + "/screen-transparent.svg")
-        if let svg = try? String(contentsOfFile: out + "/screen-transparent.svg", encoding: .utf8) {
+        /// The files in `out` with that extension, and whether each one's bytes are that format.
+        func saved(_ ext: String) -> [(name: String, isFormat: Bool)] {
+            ((try? FileManager.default.contentsOfDirectory(atPath: out)) ?? []).filter { $0.hasSuffix("." + ext) }.sorted().map { n in
+                let head = (try? FileHandle(forReadingFrom: URL(fileURLWithPath: out + "/" + n)).readData(ofLength: 8)) ?? Data()
+                return (n, ext == "png" ? head.starts(with: [0x89, 0x50, 0x4E, 0x47]) : head.starts(with: Array("<?xml".utf8)))
+            }
+        }
+        let svgFiles = saved("svg")
+        r["svgFiles"] = svgFiles.map { "\($0.name) \($0.isFormat ? "is SVG" : "is NOT SVG")" }
+        r["pngFilesAfterSVG"] = saved("png").map(\.name)
+        r["savedSVG"] = svgFiles.count == 1 && svgFiles[0].isFormat
+        if let f = svgFiles.first, let svg = try? String(contentsOfFile: out + "/" + f.name, encoding: .utf8) {
             r["svgHead"] = String(svg.prefix(400))
             r["svgPaths"] = svg.components(separatedBy: "class=\"stroke").count - 1
         }
@@ -115,16 +134,18 @@ enum TestExport {
         let o2 = acc2.options
         r["reopened"] = ["format": o2.format.rawValue, "scale": o2.scale, "area": o2.area.rawValue, "background": o2.background.rawValue, "name": panel2.nameFieldStringValue]
         let pct = c.ptPerUnit * c.camera.zoom * Double(app.window.backingScaleFactor) * 100
-        pick(acc2.format, "PNG"); pick(acc2.background, "Paper"); acc2.takePercent(String(Int(pct.rounded())))
+        pick(acc2.format, "PNG"); pick(acc2.background, "Paper"); type(acc2, String(Int(pct.rounded())))
         r["screenPercent"] = Int(pct.rounded())
-        panel2.directoryURL = URL(fileURLWithPath: out)
-        panel2.nameFieldStringValue = "screen-paper.png"
         spin(0.3)
-        panel2.ok(nil)
+        app.window.endSheet(panel2, returnCode: .OK)
         d = Date().addingTimeInterval(5)
         while app.window.attachedSheet != nil && Date() < d { spin(0.05) }
         spin(0.5)
-        if let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: out + "/screen-paper.png") as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) {
+        let pngFiles = saved("png")
+        r["pngFiles"] = pngFiles.map { "\($0.name) \($0.isFormat ? "is PNG" : "is NOT PNG")" }
+        r["svgFilesAfterPNG"] = saved("svg").map(\.name)
+        r["savedPNG"] = pngFiles.count == 1 && pngFiles[0].isFormat
+        if let f = pngFiles.first, let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: out + "/" + f.name) as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil) {
             r["pngSize"] = [img.width, img.height]
             // The canvas's own render of the view at the same pixels per page unit.
             let s = Double(Int(pct.rounded())) / 100 / (c.ptPerUnit * c.camera.zoom)
@@ -154,7 +175,7 @@ enum TestExport {
         // 4. Cancel leaves no file and changes nothing.
         if let (p3, _) = openSheet() {
             let before = (try? FileManager.default.contentsOfDirectory(atPath: out)) ?? []
-            p3.cancel(nil); spin(0.4)
+            app.window.endSheet(p3, returnCode: .cancel); spin(0.4)
             r["cancelLeavesNoFile"] = ((try? FileManager.default.contentsOfDirectory(atPath: out)) ?? []).count == before.count && app.window.attachedSheet == nil
         }
         finish()

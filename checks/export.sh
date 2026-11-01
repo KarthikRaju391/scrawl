@@ -25,7 +25,8 @@ for _ in $(seq 1 400); do
     done
     sleep 0.1
 done
-kill -TERM $P 2>/dev/null; wait $P 2>/dev/null
+kill -TERM $P 2>/dev/null; for _ in $(seq 1 20); do kill -0 $P 2>/dev/null || break; sleep 0.25; done; kill -9 $P 2>/dev/null; wait $P 2>/dev/null
+dlg=$(build/crashdialogs --close); [ -n "$dlg" ] && echo "FAIL the test left a crash dialog (closed it: pid $dlg)" && bad=1
 python3 -I - "$D" "$OUT" <<'PY'
 import json, sys, os, re
 d, out = sys.argv[1], sys.argv[2]
@@ -54,7 +55,10 @@ chk(abs(screen[2] / screen[3] - bw / bh) < 0.002 and screen[0] <= vis[0] + 0.01 
 s = st["transparent"]; chk(s["background"] == "transparent", "background: Transparent")
 s = st["800% page"]; chk(s["orange"] and "too large at 800%" in s["label"], f"800% of the page warns and is capped: {s['label']!r}")
 s = st["40% typed"]; chk(s["scale"] == 0.5 and not s["orange"], f"40% typed is held at the 50% minimum ({s['scale']}, {s['label']!r})")
-chk(r.get("savedSVG") and r.get("svgPaths") == r.get("svgWantPaths"), f"Save wrote the SVG: {r.get('svgPaths')} stroke paths for {r.get('svgWantPaths')} strokes in view")
+chk(r.get("savedSVG") and r.get("pngFilesAfterSVG") == [] and r.get("svgPaths") == r.get("svgWantPaths"),
+    f"Save after switching PNG → SVG wrote one .svg file holding SVG ({r.get('svgFiles')}, .png files: {r.get('pngFilesAfterSVG')}): {r.get('svgPaths')} stroke paths for {r.get('svgWantPaths')} strokes in view")
+chk(r.get("savedPNG") and len(r.get("svgFilesAfterPNG", [])) == 1,
+    f"Save after switching SVG → PNG wrote one .png file holding PNG ({r.get('pngFiles')}); the SVG is untouched")
 m = re.search(r'viewBox="([^"]+)"', r.get("svgHead", "")); vb = [float(x) for x in m.group(1).split()] if m else []
 want = [screen[0], r["pageTop"] - (screen[1] + screen[3]), screen[2], screen[3]]
 chk(len(vb) == 4 and all(abs(a - b) < 0.01 for a, b in zip(vb, want)), f"its viewBox is the view: {vb} = {[round(x, 2) for x in want]}")

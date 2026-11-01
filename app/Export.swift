@@ -36,6 +36,17 @@ struct ExportOptions: Equatable {
         return Size(width: w, height: h, scale: s, capped: capped)
     }
 
+    /// The file the sheet chose, with the format's extension. The out-of-process save panel can keep the name it had
+    /// when the format was switched (a test run saved SVG into "….png"), so the extension is set here; if that name
+    /// is another file that exists, a number is added rather than overwriting what the panel never asked about.
+    static func url(_ chosen: URL, for f: Format) -> URL {
+        guard chosen.pathExtension.lowercased() != f.rawValue else { return chosen }
+        let base = chosen.deletingPathExtension()
+        var u = base.appendingPathExtension(f.rawValue), n = 2
+        while FileManager.default.fileExists(atPath: u.path) { u = URL(fileURLWithPath: base.path + " \(n)").appendingPathExtension(f.rawValue); n += 1 }
+        return u
+    }
+
     // The last choices, kept in defaults ("exportOptions"). Test runs keep them in memory only.
     nonisolated(unsafe) static var testStore: [String: Any]?
     static func load() -> ExportOptions {
