@@ -58,7 +58,7 @@ if let n = arg("--fuzz").flatMap(Int.init) {
             let start = WFuzz.Start(widthIdx: Int(fz.rng.next() * 3), zoom: [1, 2, 3, 4, 5][Int(fz.rng.next() * 5)], viewX: [0, 0.3, 0.5, 1][Int(fz.rng.next() * 4)])
             let evs = (0..<len).map { _ in fz.randomEvent() }
             steps += evs.count
-            if let (k, p, m) = WFuzz.run(start, evs, waitMs: w), fails[p] == nil || fails[p]!.1.count > k + 1 { fails[p] = (start, Array(evs.prefix(k + 1)), m) }
+            if let (k, p, m) = WFuzz.run(start, evs, waitMs: w, differential: !args.contains("--no-diff")), fails[p] == nil || fails[p]!.1.count > k + 1 { fails[p] = (start, Array(evs.prefix(k + 1)), m) }
         }
         out(String(format: "FUZZ wait %.0f ms: %d runs x %d events (%d steps) on the real CanvasView, %.0f s", w, n, len, steps, Date().timeIntervalSince(t0)))
         out("  reached: " + WFuzz.stats.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))
@@ -67,7 +67,7 @@ if let n = arg("--fuzz").flatMap(Int.init) {
             guard let (start, evs, _) = fails[p] else { out("  \(p): no failure"); continue }
             failures += 1
             let small = WFuzz.shrink(start, evs, waitMs: w, prop: p)
-            let res = WFuzz.run(start, small, waitMs: w)
+            let res = WFuzz.run(start, small, waitMs: w, differential: !args.contains("--no-diff"))
             out(String(format: "  %@: FAIL, shrunk to %d events from width %.0f%%, zoom %.0f, view x %.1f: %@", p, small.count, ToolState.lineWidths[start.widthIdx] * 100, start.zoom, start.viewX,
                        small.map(wName).joined(separator: ", ")))
             out("      -> \(res.map { "\($0.1): \($0.2)" } ?? "(did not reproduce after shrinking)")")
@@ -108,6 +108,10 @@ if args.contains("--targeted") {
         out(String(format: "TARGETED wait %.0f ms: page switch during the new-line slide: %@", w, bad.isEmpty ? "PASS" : "FAIL"))
         for b in bad { out("  " + b) }
         if !bad.isEmpty { failures += 1 }
+        let ab = wArrowChecks(waitMs: w)
+        out(String(format: "TARGETED wait %.0f ms: one arrow press counts as a deliberate move: %@", w, ab.isEmpty ? "PASS" : "FAIL"))
+        for b in ab { out("  " + b) }
+        if !ab.isEmpty { failures += 1 }
     }
 }
 

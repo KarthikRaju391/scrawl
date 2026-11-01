@@ -508,6 +508,8 @@ struct WFuzz {
     }
 
     static func shrink(_ start: Start, _ events: [WEv], waitMs: Double, prop: String) -> [WEv] {
+        let diff = !CommandLine.arguments.contains("--no-diff")
+        func run(_ s: Start, _ e: [WEv], waitMs: Double) -> (Int, String, String)? { WFuzz.run(s, e, waitMs: waitMs, differential: diff) }
         var p = events
         if let (k, _, _) = run(start, p, waitMs: waitMs) { p = Array(p.prefix(k + 1)) }
         var changed = true
@@ -720,4 +722,31 @@ func wSlideChecks(waitMs: Double) -> [String] {
         }
     }
     return bad
+}
+
+/// One arrow press (10% of the view) then writing well away from the line: a deliberate move, so a new block starts
+/// there (P6: "arrows count"). Over a grid of zooms and view positions. Returns failures.
+func wArrowChecks(waitMs: Double) -> [String] {
+    var missed = 0, total = 0, example = ""
+    for wi in 0..<3 { for z in stride(from: 1.5, through: 5.0, by: 0.25) { for vx in stride(from: 0.0, through: 0.6, by: 0.05) {
+        let r = WReal(waitMs: waitMs, widthIdx: wi, zoom: z, viewX: vx)
+        guard let p = wPlace(.at(0.1), r.obs) else { continue }
+        _ = r.apply(.write(.at(0.1)), place: p)
+        let before = r.canvas.camera.center.x
+        _ = r.apply(.arrow(1), place: nil)
+        guard abs(r.canvas.camera.center.x - before - 0.1 * r.canvas.camera.visible.width) < 1e-6 else { continue }   // a full press (not clamped)
+        let o = r.obs
+        guard let line = o.lineInk else { continue }
+        let x = line.maxX + 0.12 * wPage.width
+        let v = o.cam.visible, h = min(max(v.height * 0.06, 6), 60)
+        guard x + 3 * h < v.maxX else { continue }
+        let (_, c) = r.apply(.write(.next), place: CGRect(x: x, y: line.midY - h / 2, width: 3 * h, height: h))
+        guard let s = c else { continue }
+        total += 1
+        if r.obs.runStart.map({ abs($0 - s.minX) > 1e-6 }) ?? true {
+            missed += 1
+            if example.isEmpty { example = String(format: "width %.0f%%, zoom %.2f, view x %.0f: block start stayed at %.1f, want %.1f", ToolState.lineWidths[wi] * 100, z, before - v.width / 2, r.obs.runStart ?? -1, s.minX) }
+        }
+    } } }
+    return missed == 0 ? [] : ["one arrow press didn't count as a deliberate move in \(missed) of \(total) cases, e.g. \(example)"]
 }
