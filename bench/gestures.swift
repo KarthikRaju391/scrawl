@@ -35,8 +35,15 @@ func gestureChecks(_ check: (Bool, String) -> Void) {
     f.append([])
     r = run(f, length: 0.5)
     check(r.commits == 0 && r.discards == 1 && r.navs.count > 40, "two fingers 40 ms apart: no ink, navigation (commits \(r.commits), discards \(r.discards), nav frames \(r.navs.count))")
-    let zoom = r.navs.reduce(1, *), expected = (0.2 + 0.004 * 49) / 0.2
-    check(abs(zoom - expected) < 0.01, String(format: "spreading fingers zooms by the distance ratio (%.3f, expected %.3f)", zoom, expected))
+    // The zoom follows the distance once it has changed more than the dead zone (the frame that crosses it is the start).
+    let cross = (1...49).first { Double($0) * 0.004 * 124.8 > GestureEngine.deadZoneMM }!
+    let zoom = r.navs.reduce(1, *), expected = (0.2 + 0.004 * 49) / (0.2 + 0.004 * Double(cross))
+    check(abs(zoom - expected) < 0.01, String(format: "spreading fingers zooms by the distance ratio from where it left the dead zone (%.3f, expected %.3f)", zoom, expected))
+    // Dead zone (Karthik, 1 Nov): two fingers that jitter less than it, as in a tap, move nothing.
+    f = (0..<30).map { i in let j = Double(i % 3) * 0.003; return [finger(1, 0.4 + j, 0.5 - j), finger(2, 0.55 - j, 0.5 + j / 2)] }
+    f.append([])
+    r = run(f, length: 0)
+    check(r.navs.isEmpty, "two fingers jittering ~1.5 mm (a tap's worth): no pan or zoom at all (\(r.navs.count) navigation frames)")
 
     // 3. A palm resting while one finger draws: palm never starts or interrupts a stroke.
     f = (0..<60).map { i in [finger(9, 0.8, 0.1, major: 16, size: 2.1), finger(1, 0.3 + Double(i) * 0.005, 0.6)] }

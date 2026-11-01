@@ -66,7 +66,9 @@ enum TestPan {
                 let p0 = v.minX
                 twoFingerPan(-20); let p1 = canvas.camera.visible.minX     // fingers left: view moves right
                 twoFingerPan(20); let p2 = canvas.camera.visible.minX      // fingers right: view moves left
-                s["twoFinger"] = ["start": p0, "afterFingersLeft": p1, "afterFingersRight": p2, "want": 20 * perMM, "zoom": canvas.camera.zoom]
+                s["twoFinger"] = ["start": p0, "afterFingersLeft": p1, "afterFingersRight": p2,
+                                   // 1:1 from the frame that leaves the dead zone (24 steps of 20/24 mm)
+                                   "want": (20 - (floor(GestureEngine.deadZoneMM / (20.0 / 24)) + 1) * 20.0 / 24) * perMM, "zoom": canvas.camera.zoom]
                 // Karthik's case: start a line at the left, pan right by hand, keep writing there, pause.
                 canvas.clearPage()
                 canvas.setVisibleForReplay(x: 0, y: canvas.camera.page.height - canvas.camera.page.height / 2, w: pw / 2, z: 2)

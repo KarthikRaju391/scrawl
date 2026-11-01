@@ -8,6 +8,8 @@
   search field.
 - Writing mode: the pause before the page moves to the next line is a setting, **Settings › Wait before next
   line**, from 0.2 s to 1 s (0.4 s by default, as before). A change applies from your next lift.
+- A two-finger double tap (undo) or three-finger double tap (redo) no longer nudges the page: two fingers pan or
+  zoom only once they've moved about 2 mm.
 
 ## 0.1.3 (2026-10-31, build 6)
 

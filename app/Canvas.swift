@@ -274,6 +274,14 @@ final class GestureEngine {
     private var drewIds = Set<Int32>()
     private var seen = Set<Int32>()
     private var navPrev: (ids: [Int32], centroid: CGPoint, dist: Double)?
+    /// Dead zone (Karthik, 1 Nov: a two- or three-finger double tap nudged the view): two or more fingers move nothing
+    /// until their centroid has moved `deadZoneMM` or the distance between them has changed `deadZoneMM` (pad mm),
+    /// from where the pair landed. In 35 recorded sessions (4,676 episodes, tools/tap_analysis.py) no tap-shaped
+    /// episode got there (most: centroid 1.41 mm, distance 1.67 mm; 1,140 taps), and pans and pinches got there
+    /// 25 ms after they began moving (median; p95 158 ms, slow drifts). A 4% distance rule caught 23 taps.
+    static let deadZoneMM = 2.0
+    private var navStart: (ids: [Int32], centroidMM: CGPoint, dist: Double)?
+    private var navLive = false
     var settings = Settings()
     lazy var inkThreshold = settings.inkThreshold
 
@@ -285,7 +293,7 @@ final class GestureEngine {
 
     func reset() {
         if case .drawing = mode { onEnd?(false) }
-        mode = .idle; palm.removeAll(); edgeIgnored.removeAll(); navPrev = nil; drewIds.removeAll(); seen.removeAll()
+        mode = .idle; palm.removeAll(); edgeIgnored.removeAll(); navPrev = nil; navStart = nil; navLive = false; drewIds.removeAll(); seen.removeAll()
     }
 
     /// Click to draw: false while it's off, so a finger only aims (hovers) and never inks by touch.
@@ -349,7 +357,7 @@ final class GestureEngine {
                 mode = fingers.isEmpty ? .idle : .waitLift
             }
         case .navigating:
-            if fingers.count >= 2 { navigate(fingers) } else { navPrev = nil; mode = fingers.isEmpty ? .idle : .waitLift }
+            if fingers.count >= 2 { navigate(fingers) } else { navPrev = nil; navStart = nil; navLive = false; mode = fingers.isEmpty ? .idle : .waitLift }
         case .waitLift:
             if fingers.isEmpty { mode = .idle }
         }
@@ -368,6 +376,14 @@ final class GestureEngine {
         let c = CGPoint(x: (a.norm.x + b.norm.x) / 2, y: (a.norm.y + b.norm.y) / 2)
         let d = hypot(a.mm.x - b.mm.x, a.mm.y - b.mm.y)
         defer { navPrev = ([a.id, b.id], c, Double(d)) }
+        if !navLive {
+            // In the dead zone: measured from where this pair landed; a new pair starts it again.
+            let cmm = CGPoint(x: (a.mm.x + b.mm.x) / 2, y: (a.mm.y + b.mm.y) / 2)
+            guard let s = navStart, s.ids == [a.id, b.id] else { navStart = ([a.id, b.id], cmm, Double(d)); return }
+            guard hypot(cmm.x - s.centroidMM.x, cmm.y - s.centroidMM.y) > Self.deadZoneMM || abs(Double(d) - s.dist) > Self.deadZoneMM else { return }
+            navLive = true
+            return   // out of it: moves count from here (navPrev = now), no jump
+        }
         guard let p = navPrev, p.ids == [a.id, b.id] else { return }
         let ratio = p.dist > 5 && d > 5 ? Double(d) / p.dist : 1
         onNavigate?(p.centroid, c, ratio)

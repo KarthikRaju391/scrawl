@@ -15,7 +15,7 @@ chk(abs(r["guard"] - 0.05) < 1e-9, f"default edge guard 5% ({r['guard'] * r['pad
 s = r["strokeStartingInBand"]; chk(s["strokes"] == 0 and still(s), "strokes starting in the side or bottom band: no ink, no pan")
 s = r["palmOnSideThenStroke"]; chk(s["strokes"] == 1 and s["points"][0] > 300 and still(s), f"palm resting on the side, then a stroke: one full stroke ({s['points']} pts), view unchanged")
 s = r["palmLandsMidStroke"]; chk(s["strokes"] == 1 and s["points"][0] > 250 and still(s), f"palm lands on the side mid-stroke: the stroke carries on ({s['points']} pts), no pan or zoom")
-s = r["pinchWithThumbOnBottom"]; chk(s["strokes"] == 0 and abs(s["zoom"] - 9) < 0.01, f"thumb resting on the bottom during a real pinch: the pinch zooms 3 -> {s['zoom']:.2f} (fingers spread 3x)")
+s = r["pinchWithThumbOnBottom"]; chk(s["strokes"] == 0 and abs(s["zoom"] - s["want"]) < 0.03 * s["want"], f"thumb resting on the bottom during a real pinch: the pinch zooms 3 -> {s['zoom']:.2f} (fingers spread 3x; want {s['want']:.2f}, from where it left the dead zone; a pinch snaps near whole zooms)")
 s = r["panWithOneFingerInBand"]; chk(still(s), f"two fingers, one in the band: no pan or zoom (the inner finger alone draws: {s['strokes']} stroke)")
 s = r["strokeIntoBand"]; chk(s["strokes"] == 1 and s["lastInk"][0] < 0 and s["firstInk"][0] > 0.25, f"stroke starting inside and running into the band: kept, ink reaches the edge (ends at {s['lastInk'][0]:+.3f} of the view)")
 for c in r["cornerStrokes"]:
