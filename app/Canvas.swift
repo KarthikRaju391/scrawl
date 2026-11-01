@@ -458,7 +458,9 @@ final class CanvasView: MTKView {
             if tools.tool != oldValue.tool || tools.zoomLocked != oldValue.zoomLocked || tools.lineWidthIndex != oldValue.lineWidthIndex {
                 act("tools", ["tool": tools.tool.rawValue, "zoomLocked": tools.zoomLocked, "lineWidth": tools.lineWidthIndex])
             }
-            if tools.lineWidthIndex != oldValue.lineWidthIndex { endWritingLine() }
+            // A new width keeps the block and the line (widths count from the block's start); a waiting move is decided
+            // again at the next lift, with the new width.
+            if tools.lineWidthIndex != oldValue.lineWidthIndex { cancelPendingMove() }
             if !testMode { tools.save() }
             needsRender = true
         }
@@ -586,6 +588,9 @@ final class CanvasView: MTKView {
         didSet {
             if drawMode != oldValue { act("drawMode", ["on": drawMode]) }
             if !drawMode { clickDrawOff() }
+            // Frames are only handled in draw mode: a finger that lifts outside it would leave the count stale, and a
+            // waiting move would never fire (nothing touching means no frames). The next frame recounts.
+            if countedContacts > 0 { countedContacts = 0; onTouching?(false) }
             gestures.reset(); contacts = []; needsRender = true
             if drawMode { gestures.ignoreUntilLifted(downIds) }
             // No App Nap / timer coalescing while drawing: input and frames must not be throttled.
@@ -652,7 +657,7 @@ final class CanvasView: MTKView {
 
     func newPage() {
         act("newPage", ["pages": pages.count + 1])
-        endWritingLine()
+        endWritingLine(); finishSlide()   // a new-line slide still running belongs to this page, not the next
         if pageCameras.count < pages.count { pageCameras.append(camera) } else { pageCameras[pageIndex] = camera }
         pages.append(Document.new())
         pageIndex = pages.count - 1
@@ -723,7 +728,7 @@ final class CanvasView: MTKView {
     func goToPage(_ i: Int) {
         act("goToPage", ["page": i])
         guard pages.indices.contains(i), i != pageIndex else { return }
-        endWritingLine()
+        endWritingLine(); finishSlide()   // a new-line slide still running belongs to this page, not the next
         while pageCameras.count < pages.count { pageCameras.append(camera) }
         pageCameras[pageIndex] = camera
         pageIndex = i
@@ -742,6 +747,18 @@ final class CanvasView: MTKView {
         lineInk = nil; lineStrokes = []; pendingMove = nil; legacyLineLeft = nil; handPanX = 0
         if !keepRun { runStart = nil }
         segmentStart = runStart; prevLine = nil; lineHeld = false
+    }
+    /// After the eraser or a scratch-out: the line is what's left of it (as after an undo), so erased ink can't call for
+    /// the next line, or be carried on.
+    private func pruneWritingLine() {
+        func alive(_ rs: [CGRect]) -> [CGRect] { rs.filter { r in doc.strokes.contains { $0.bounds == r } } }
+        let left = alive(lineStrokes)
+        if left.count != lineStrokes.count { lineStrokes = left; lineInk = left.first.map { f in left.dropFirst().reduce(f) { $0.union($1) } } }
+        if lineInk == nil { lineHeld = false }   // nothing left to finish (a held empty line never moved again)
+        if let p = prevLine {
+            let pl = alive(p.strokes)
+            if pl.count != p.strokes.count { prevLine = pl.first.map { f in (pl.dropFirst().reduce(f) { $0.union($1) }, pl) } }
+        }
     }
     /// Where the current line started (WritingLayout.segmentStart): the writing run's start.
     private var segmentStart: Double?
@@ -802,6 +819,16 @@ final class CanvasView: MTKView {
     /// move for it then: you're finishing it by hand).
     private var prevLine: (ink: CGRect, strokes: [CGRect])?
     private var lineHeld = false
+    /// Test hook (bench/writingVerify.swift): the writing-mode state, read only.
+    struct WritingStateForTest { var runStart, segmentStart: Double?; var lineInk: CGRect?; var lineStrokes: [CGRect]; var prevLine: CGRect?
+                                 var lineHeld: Bool; var handPanX: Double; var handRef: CGPoint?; var pending: (target: CGPoint, liftAt: Double)?
+                                 var countedContacts: Int; var sliding: Bool }
+    var writingStateForTest: WritingStateForTest {
+        var p: (target: CGPoint, liftAt: Double)?
+        if let m = pendingMove, case .newLine(let c) = m.move { p = (c, m.liftAt) }
+        return WritingStateForTest(runStart: runStart, segmentStart: segmentStart, lineInk: lineInk, lineStrokes: lineStrokes, prevLine: prevLine?.ink,
+                                   lineHeld: lineHeld, handPanX: handPanX, handRef: handRef, pending: p, countedContacts: countedContacts, sliding: camAnim != nil)
+    }
 
     /// Return in writing mode: next line now (one line down, back to the line start).
     func newLineByHand() {
@@ -1151,12 +1178,14 @@ final class CanvasView: MTKView {
     // In draw mode the same gestures come from MultitouchSupport instead, and these are ignored.
     override func scrollWheel(with e: NSEvent) {
         guard !drawMode else { return }
+        cancelPendingMove(); finishSlide()   // moved by hand: a waiting next-line move is dropped (as for arrows and the map)
         let k = 1 / (ptPerUnit * camera.zoom)
         changing("scroll") { camera.center.x -= e.scrollingDeltaX * k; camera.center.y += e.scrollingDeltaY * k; camera.clamp() }
         needsRender = true
     }
     override func magnify(with e: NSEvent) {
         guard !drawMode, !tools.zoomLocked else { return }
+        cancelPendingMove(); finishSlide()
         let p = convert(e.locationInWindow, from: nil)
         let anchor = canvasPoint(fromView: p), r = padRect
         changing("magnify") {   // the page point under the pointer stays under it
@@ -1309,7 +1338,7 @@ final class CanvasView: MTKView {
         act("strokeEnd", ["committed": commit, "index": commit ? doc.strokes.count : -1, "snapX": strokeOffset.x, "snapY": strokeOffset.y])
         if liveTool == .eraser {
             // Cancelled (it became a two- or three-finger gesture: a pan, pinch or tap): nothing it erased stays erased.
-            if commit { doc.dropEmptyUndo() } else { doc.rollbackLastSnapshot(); markDirty() }
+            if commit { doc.dropEmptyUndo(); pruneWritingLine() } else { doc.rollbackLastSnapshot(); markDirty() }
             return
         }
         guard commit, !b.points.isEmpty else { return }
@@ -1328,6 +1357,7 @@ final class CanvasView: MTKView {
             let unitsPerMM = camera.visible.width / (Multitouch.padMM.width * (1 - 2 * Camera.margin))
             if let gone = ScratchOut.covered(scratch: b.points.map(\.p), in: doc.strokes, reach: ScratchOut.reachMM * unitsPerMM) {
                 doc.scratchOut(erasing: gone)
+                pruneWritingLine()
                 fadeOut(gone)
                 act("scratchOut", ["ids": gone.map(\.id)])
                 markDirty()
@@ -1359,7 +1389,10 @@ final class CanvasView: MTKView {
             if lineInk == nil { prevLine = nil }
             // A stroke well above or below the current line (you moved there yourself): a new line there. Just below it
             // and near the block's start, it's the block's next line; anywhere else, a new block.
-            if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 {
+            // A line you went back to finish (held): anything written under its ink is a new line too. Written where the
+            // move put you (one line down: 0.12 of the view when that's more than 1.35 line heights), the next line was
+            // within the usual 1.2x and joined the held line, which then took every line below it, with no move again.
+            if let line = lineInk, abs(s.bounds.midY - line.midY) > max(line.height, vh * 0.12) * 1.2 || (lineHeld && s.bounds.midY < line.minY) {
                 let nextOfBlock = s.bounds.midY < line.midY && line.midY - s.bounds.midY < max(line.height, vh * 0.12) * 3.5 &&
                     runStart.map { abs(s.bounds.minX - $0) < camera.page.width * WritingLayout.newRunAway } == true
                 lineInk = nil; lineStrokes = []; legacyLineLeft = s.bounds.minX; lineHeld = false; prevLine = nil
@@ -1372,7 +1405,8 @@ final class CanvasView: MTKView {
             // the page after the line's end, past the old 8%-of-the-view gap, and started a block there).
             let vw = camera.visible.width
             let movedByHand = continued ? 0 : max(handPanX, handRef.map { abs(camera.center.x - $0.x) } ?? 0)
-            if movedByHand >= vw * WritingLayout.deliberatePan {
+            // (1 - 1e-9): one arrow press moves exactly 10% of the view; rounding left it just short in 39% of positions.
+            if movedByHand >= vw * WritingLayout.deliberatePan * (1 - 1e-9) {
                 if let line = lineInk {
                     let gap = max(line.height * 1.5, vw * 0.08)
                     if s.bounds.minX > line.maxX + max(gap, camera.page.width * WritingLayout.newRunAway) || s.bounds.maxX < line.minX - gap {

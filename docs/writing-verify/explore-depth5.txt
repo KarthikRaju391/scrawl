@@ -1,0 +1,92 @@
+app/TestReplay.swift:169:29: warning: main actor-isolated property 'perf' can not be referenced from a Sendable function
+167 |         func report() {
+168 |             func q(_ v: [Double], _ p: Double) -> Double { let s = v.sorted(); return s.isEmpty ? 0 : s[min(s.count - 1, Int(p * Double(s.count - 1)))] }
+169 |             let pf = canvas.perf
+    |                             `- warning: main actor-isolated property 'perf' can not be referenced from a Sendable function
+170 |             let r: [String: Any] = [
+171 |                 "strokes": canvas.doc.strokes.count,
+
+app/Canvas.swift:606:9: note: property declared here
+ 604 |     /// Frame timing for tests: CPU ms in render(), GPU ms, gaps between presented frames (ms), vertices.
+ 605 |     struct Perf { var cpu: [Double] = []; var build: [Double] = []; var drawableWait: [Double] = []; var gpu: [Double] = []; var gaps: [Double] = []; var verts: [Int] = []; var ticks = 0; var ticksIdle = 0; var tickMaxGap = 0.0; var lastTick = 0.0; var inputsPerTick: [Int] = []; var inputsSinceTick = 0 }
+ 606 |     var perf = Perf()
+     |         `- note: property declared here
+ 607 |     private var lastPresented = 0.0
+ 608 | 
+
+app/TestReplay.swift:171:35: warning: main actor-isolated property 'doc' can not be referenced from a Sendable function
+169 |             let pf = canvas.perf
+170 |             let r: [String: Any] = [
+171 |                 "strokes": canvas.doc.strokes.count,
+    |                                   `- warning: main actor-isolated property 'doc' can not be referenced from a Sendable function
+172 |                 "vertsP50": q(pf.verts.map(Double.init), 0.5), "vertsMax": pf.verts.max() ?? 0,
+173 |                 "cpuP50": q(pf.cpu, 0.5), "cpuP95": q(pf.cpu, 0.95), "cpuMax": pf.cpu.max() ?? 0,
+
+app/Canvas.swift:429:9: note: property declared here
+ 427 |     }
+ 428 |     private(set) var pageIndex = 0
+ 429 |     var doc: Document { pages[pageIndex] }
+     |         `- note: property declared here
+ 430 |     /// Called when page, hint or mode status changes (the window updates its labels).
+ 431 |     var onStatus: (() -> Void)?
+tools/writing-verify/main.swift:21:40: warning: 'starts' mutated after capture by sendable closure
+ 18 |         var total = (states: 0, transitions: 0, recoveries: 0)
+ 19 |         var found: [String: (WModel, [WEv], String)] = [:]
+ 20 |         var starts = WExplore.starts(waitMs: w)
+    |             `- note: variable defined here
+ 21 |         if let n = onlyStarts { starts = Array(starts.prefix(n)) }
+    |                                        `- warning: 'starts' mutated after capture by sendable closure
+ 22 |         let lock = NSLock()
+ 23 |         let q = OperationQueue(); q.maxConcurrentOperationCount = Int(arg("--workers") ?? "4") ?? 4   // leave cores for the other checks on this Mac
+ 24 |         let core = args.contains("--core")
+ 25 |         for i in starts.indices { q.addOperation {
+    |                                                  `- note: variable captured by sendable closure
+ 26 |             var x = WExplore(waitMs: w, depth: d, alphabet: core ? WExplore.coreAlphabet(w / 1000) : nil)
+ 27 |             x.checkRecovery = !args.contains("--no-recovery")
+ 28 |             x.run(from: starts[i])
+    |                               `- note: capturing use
+ 29 |             lock.lock()
+ 30 |             total.states += x.states; total.transitions += x.transitions; total.recoveries += x.recoveries
+EXPLORE wait 200 ms, depth 5, 30 starts, 36 events: 21088334 distinct states, 40961413 transitions, 21088334 recovery runs, 29 s
+  P1: holds within the bound
+  P2: holds within the bound
+  P3: holds within the bound
+  P4: holds within the bound
+  P5: holds within the bound
+  P6: holds within the bound
+  P7: holds within the bound
+  P8a: holds within the bound
+  P8b: holds within the bound
+  P8c: holds within the bound
+EXPLORE wait 400 ms, depth 5, 30 starts, 36 events: 21085372 distinct states, 40949982 transitions, 21085372 recovery runs, 30 s
+  P1: holds within the bound
+  P2: holds within the bound
+  P3: holds within the bound
+  P4: holds within the bound
+  P5: holds within the bound
+  P6: holds within the bound
+  P7: holds within the bound
+  P8a: holds within the bound
+  P8b: holds within the bound
+  P8c: holds within the bound
+EXPLORE wait 1000 ms, depth 5, 30 starts, 36 events: 21082360 distinct states, 40961413 transitions, 21082360 recovery runs, 30 s
+  P1: holds within the bound
+  P2: holds within the bound
+  P3: holds within the bound
+  P4: holds within the bound
+  P5: holds within the bound
+  P6: holds within the bound
+  P7: holds within the bound
+  P8a: holds within the bound
+  P8b: holds within the bound
+  P8c: holds within the bound
+TARGETED wait 200 ms: page switch during the new-line slide: PASS
+TARGETED wait 200 ms: draw mode left between a commit and the next frame: PASS
+TARGETED wait 200 ms: one arrow press counts as a deliberate move: PASS
+TARGETED wait 400 ms: page switch during the new-line slide: PASS
+TARGETED wait 400 ms: draw mode left between a commit and the next frame: PASS
+TARGETED wait 400 ms: one arrow press counts as a deliberate move: PASS
+TARGETED wait 1000 ms: page switch during the new-line slide: PASS
+TARGETED wait 1000 ms: draw mode left between a commit and the next frame: PASS
+TARGETED wait 1000 ms: one arrow press counts as a deliberate move: PASS
+RESULT: PASS

@@ -1,0 +1,14 @@
+FUZZ wait 400 ms: 3000 runs x 60 events (180000 steps) on the real CanvasView, 14 s
+  reached: Return moves 3151, automatic moves 671, block start moved 1727, commits 27668, commits that scheduled a move 5097, lines continued (held) 148, pending moves dropped 2116, pending with an edge contact down 1694, steps 107683
+  P1: no failure
+  P2: no failure
+  P3: no failure
+  P4: no failure
+  P5: no failure
+  P6: no failure
+  P7: no failure
+  P8a: no failure
+  P8b: no failure
+  P8c: no failure
+  model: no failure
+RESULT: PASS

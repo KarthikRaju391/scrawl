@@ -1,0 +1,41 @@
+AGX: exceeded compiled variants footprint limit
+FUZZ wait 200 ms: 5000 runs x 60 events (300000 steps) on the real CanvasView, 28 s
+  reached: Return moves 5439, automatic moves 1063, block start moved 2848, commits 46472, commits that scheduled a move 8484, lines continued (held) 193, pending moves dropped 3512, pending with an edge contact down 2829, steps 179401
+  P1: no failure
+  P2: no failure
+  P3: no failure
+  P4: no failure
+  P5: no failure
+  P6: no failure
+  P7: no failure
+  P8a: no failure
+  P8b: no failure
+  P8c: no failure
+  model: no failure
+FUZZ wait 400 ms: 5000 runs x 60 events (300000 steps) on the real CanvasView, 44 s
+  reached: Return moves 5188, automatic moves 1080, block start moved 2826, commits 46490, commits that scheduled a move 8192, lines continued (held) 231, pending moves dropped 3389, pending with an edge contact down 2814, steps 179392
+  P1: no failure
+  P2: no failure
+  P3: no failure
+  P4: no failure
+  P5: no failure
+  P6: no failure
+  P7: no failure
+  P8a: no failure
+  P8b: no failure
+  P8c: no failure
+  model: no failure
+FUZZ wait 1000 ms: 5000 runs x 60 events (300000 steps) on the real CanvasView, 63 s
+  reached: Return moves 5323, automatic moves 1136, block start moved 2968, commits 47251, commits that scheduled a move 8778, lines continued (held) 243, pending moves dropped 3684, pending with an edge contact down 3137, steps 180191
+  P1: no failure
+  P2: no failure
+  P3: no failure
+  P4: no failure
+  P5: no failure
+  P6: no failure
+  P7: no failure
+  P8a: no failure
+  P8b: no failure
+  P8c: no failure
+  model: no failure
+RESULT: PASS
