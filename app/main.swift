@@ -569,7 +569,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if a.contains("--test-jitter") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestJitter.run(app: self) } }
         if a.contains("--test-gallerykeys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryKeys.run(app: self) } }
         if a.contains("--test-galleryflow") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestGalleryFlow.run(app: self) } }
-        if a.contains("--test-select") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestSelect.run(app: self) } }
+        if a.contains("--test-selectbar") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestSelectBar.run(app: self) } }
+        else if a.contains("--test-select") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestSelect.run(app: self) } }
         if a.contains("--test-export") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestExport.run(app: self) } }
         if a.contains("--test-menus") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestMenus.run(app: self) } }
         if a.contains("--test-a11y") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestAccessibility.run(app: self) } }
