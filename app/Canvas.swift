@@ -1313,7 +1313,10 @@ final class CanvasView: MTKView {
         guard selectDrag != nil else { return }
         selectDrag = nil
         let k = ptPerUnit * camera.zoom   // view points per page unit
-        if let s = selection, max(s.width, s.height) * k < Self.selectTapPt { setSelection(nil, "tap") }   // a click: clears
+        if let s = selection, max(s.width, s.height) * k < Self.selectTapPt { setSelection(nil, "tap"); return }   // a click: clears
+        // The rectangle is the one the last drag event set, so setSelection wouldn't announce it again; the drag's end must
+        // be announced itself, or the bar (hidden while dragging) waited for an unrelated layout to appear (Karthik: late).
+        onSelectionChange?(selection)
     }
     func setSelectionForTest(_ r: CGRect?) { setSelection(r, "test") }
     /// Tests: a next-line move waiting for its pause (choosing Select drops it).

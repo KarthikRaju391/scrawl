@@ -54,6 +54,7 @@ enum TestSelectBar {
             var shownAt: Double?, committedAt: Double?
             let tUp = CACurrentMediaTime()
             mouse(.leftMouseUp, p1)
+            try? JSONSerialization.data(withJSONObject: ["run": k, "tUp": tUp]).write(to: URL(fileURLWithPath: dir + "/released-\(k).json"))   // for a recorder
             let timer = Timer(timeInterval: 0.001, repeats: true) { _ in
                 let now = CACurrentMediaTime()
                 if shownAt == nil, !bar.isHidden, bar.window != nil { shownAt = now }
@@ -65,7 +66,7 @@ enum TestSelectBar {
             runs.append(["run": k, "tUp": tUp, "hiddenDuringDrag": hiddenDuringDrag,
                          "shownMs": shownAt.map { ($0 - tUp) * 1000 } ?? NSNull(), "committedMs": committedAt.map { ($0 - tUp) * 1000 } ?? NSNull(),
                          "barFrame": [bar.frame.minX, bar.frame.minY, bar.frame.width, bar.frame.height], "expected": [barInView.minX, barInView.minY, barInView.width, barInView.height]])
-            try? JSONSerialization.data(withJSONObject: ["run": k, "tUp": tUp]).write(to: URL(fileURLWithPath: dir + "/released-\(k).json"))
+            try? "1".write(toFile: dir + "/watched-\(k)", atomically: true, encoding: .utf8)
             spin(0.3)
         }
         r["runs"] = runs
