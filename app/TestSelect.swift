@@ -117,7 +117,7 @@ enum TestSelect {
         r["bar"] = bar()
         r["barNextTo"] = { () -> Bool in
             guard let s = c.selection else { return false }
-            let vr = viewRect(s), f = app.container.selectionBar.frame
+            let vr = viewRect(s), f = app.container.selectionBar.capsuleFrame
             return abs(f.maxX - vr.maxX) < 1.5 && (abs(f.maxY - (vr.minY - 8)) < 1.5 || abs(f.minY - (vr.maxY + 8)) < 1.5)
         }()
         r["menuWith"] = ["copyTitle": menuItem(#selector(AppDelegate.copyPageAction))?.title ?? "", "exportSelectionEnabled": menuItem(#selector(AppDelegate.exportSelectionAction))?.isEnabled ?? false]
@@ -126,7 +126,7 @@ enum TestSelect {
         // 2. ⌘C: PNG at 2x, PDF and SVG on the pasteboard; "Copied".
         pb.clearContents()
         let copied = perform(#selector(AppDelegate.copyPageAction))
-        r["copy"] = ["performed": copied, "pasteboard": pasteboard(), "toast": toast(), "want": [Int(((c.selection?.width ?? 0) * 2).rounded()), Int(((c.selection?.height ?? 0) * 2).rounded())]]
+        r["copy"] = ["performed": copied, "pasteboard": pasteboard(), "toast": toast(), "barCopy": app.container.selectionBar.copy.title, "want": [Int(((c.selection?.width ?? 0) * 2).rounded()), Int(((c.selection?.height ?? 0) * 2).rounded())]]
 
         photo("2-select-bar-copied")
         // 3. A new drag replaces it.

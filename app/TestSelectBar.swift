@@ -65,12 +65,74 @@ enum TestSelectBar {
             timer.invalidate()
             runs.append(["run": k, "tUp": tUp, "hiddenDuringDrag": hiddenDuringDrag,
                          "shownMs": shownAt.map { ($0 - tUp) * 1000 } ?? NSNull(), "committedMs": committedAt.map { ($0 - tUp) * 1000 } ?? NSNull(),
-                         "barFrame": [bar.frame.minX, bar.frame.minY, bar.frame.width, bar.frame.height], "expected": [barInView.minX, barInView.minY, barInView.width, barInView.height]])
+                         "barFrame": [bar.capsuleFrame.minX, bar.capsuleFrame.minY, bar.capsuleFrame.width, bar.capsuleFrame.height], "expected": [barInView.minX, barInView.minY, barInView.width, barInView.height]])
             try? "1".write(toFile: dir + "/watched-\(k)", atomically: true, encoding: .utf8)
             spin(0.3)
         }
         r["runs"] = runs
         r["refreshHz"] = app.window.screen?.maximumFramesPerSecond ?? 60
+
+        // Placement: never over the box while there's room outside it; inside the usable area; 8 pt away, aligned.
+        let b = app.container.bounds, w = bar.fittingWidth
+        var placement: [[String: Any]] = []
+        for (name, box) in [("room below", CGRect(x: 300, y: 300, width: 300, height: 200)),
+                            ("near the bottom", CGRect(x: 300, y: 70, width: 300, height: 200)),
+                            ("tall", CGRect(x: 300, y: 40, width: 300, height: b.height - 60)),
+                            ("tall at the right edge", CGRect(x: b.width - 320, y: 40, width: 310, height: b.height - 60)),
+                            ("near the left edge", CGRect(x: 2, y: 300, width: 60, height: 200)),
+                            ("the whole view", CGRect(x: -10, y: -10, width: b.width + 20, height: b.height + 20))] {
+            guard let f = AppDelegate.barFrame(box: box, in: b, width: w) else { placement.append(["case": name, "frame": []]); continue }
+            let gapUnder = box.minY - f.maxY, gapOver = f.minY - box.maxY, gapRight = f.minX - box.maxX, gapLeft = box.minX - f.maxX
+            placement.append(["case": name, "frame": [f.minX, f.minY, f.width, f.height], "overBox": f.intersects(box),
+                              "inside": f.minX >= 8 && f.maxX <= b.width - 8 && f.minY >= ToolbarView.height + 10 && f.maxY <= b.height - 34,
+                              "gap": [gapUnder, gapOver, gapRight, gapLeft].filter { abs($0 - 8) < 0.01 }.count == 1,
+                              "aligned": abs(f.maxX - box.maxX) < 0.01 || abs(f.minY - max(box.minY, ToolbarView.height + 10)) < 0.01 || f.minX == 8 || f.maxX == b.width - 8])
+        }
+        r["placement"] = placement
+        r["barHeight"] = SelectionBar.height
+        r["segments"] = [bar.copy.frame.height, bar.export.frame.height]
+
+        // The look, with screenshots: ink nearby on grid, dots and ruled paper; after Copy; flipped above near the bottom;
+        // with the system in dark mode (the app draws its page and chrome light either way).
+        func photo(_ name: String) {
+            c.setNeedsRender(); spin(0.3)
+            FileManager.default.createFile(atPath: dir + "/shot-\(name).req", contents: nil)
+            let d = Date().addingTimeInterval(10)
+            while !FileManager.default.fileExists(atPath: dir + "/shot-\(name).done") && Date() < d { spin(0.1) }
+        }
+        func wave(_ x: Double, _ y: Double) -> [StrokePoint] {
+            (0..<110).map { StrokePoint(p: CGPoint(x: x + Double($0) * 8, y: y + sin(Double($0) / 5) * 26), pressure: 0.3 + 0.4 * abs(sin(Double($0) / 7))) }
+        }
+        for k in 0..<6 { c.testAddStroke(wave(120, 900 - Double(k) * 95)) }
+        c.testAddStroke(wave(220, 620), tool: .highlighter, color: SIMD4(0xFD / 255, 0xD6 / 255, 0x63 / 255, 0.35), sizePt: 24)
+        let W = Double(c.bounds.width), H = Double(c.bounds.height)
+        func drag(_ a: CGPoint, _ z: CGPoint) {
+            mouse(.leftMouseDown, a); for i in 1...6 { let f = Double(i) / 6; mouse(.leftMouseDragged, CGPoint(x: a.x + (z.x - a.x) * f, y: a.y + (z.y - a.y) * f)) }; mouse(.leftMouseUp, z); spin(0.15)
+        }
+        var looks: [[String: Any]] = []
+        for (paper, name) in [(1, "grid"), (2, "dots"), (3, "ruled")] {
+            var tt = c.tools; tt.background = paper; c.tools = tt; app.container.toolbar.state = tt
+            drag(CGPoint(x: W * 0.3, y: H * 0.72), CGPoint(x: W * 0.62, y: H * 0.42))
+            looks.append(["paper": name, "shown": !bar.isHidden, "copy": bar.copy.title])
+            photo("bar-\(name)")
+        }
+        app.copySelectionAction(); spin(0.05)
+        r["afterCopy"] = ["copy": bar.copy.title, "toast": app.container.toast.isHidden ? "" : app.container.toast.stringValue]
+        photo("bar-copied")
+        spin(1.4)
+        r["afterCopyLater"] = bar.copy.title
+        drag(CGPoint(x: W * 0.3, y: H * 0.35), CGPoint(x: W * 0.6, y: H * 0.1))   // near the bottom: the bar goes over the box
+        let s = c.selection ?? .zero
+        let lo = c.viewPoint(fromCanvas: CGPoint(x: s.minX, y: s.minY)), hi = c.viewPoint(fromCanvas: CGPoint(x: s.maxX, y: s.maxY))
+        let vbox = CGRect(x: lo.x, y: lo.y, width: hi.x - lo.x, height: hi.y - lo.y)
+        r["flipped"] = ["over": bar.capsuleFrame.minY >= vbox.maxY + 7.9, "overBox": bar.capsuleFrame.intersects(vbox), "shown": !bar.isHidden]
+        photo("bar-flipped-above")
+        NSApp.appearance = NSAppearance(named: .darkAqua)
+        drag(CGPoint(x: W * 0.3, y: H * 0.72), CGPoint(x: W * 0.62, y: H * 0.42))
+        r["dark"] = ["barAppearance": bar.effectiveAppearance.name.rawValue, "shown": !bar.isHidden]
+        photo("bar-dark-mode")
+        NSApp.appearance = nil
+        r["looks"] = looks
         finish()
     }
 }

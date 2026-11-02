@@ -52,8 +52,8 @@ chk(near(r["drawn"], g["selection"]), "the canvas draws it (dashed outline and t
 b = r["bar"]; chk(b["shown"] and r["barNextTo"] and b["copy"] == "Copy" and b["export"] == "Export…", f"the bar shows next to it with plain labels ({b['copy']}, {b['export']})")
 mw = r["menuWith"]; chk(mw["copyTitle"] == "Copy Selection as Image" and mw["exportSelectionEnabled"], f"with a selection ⌘C reads Copy Selection as Image; Export Selection… is enabled {mw}")
 cp = r["copy"]; pb = cp["pasteboard"]
-chk(cp["performed"] and {"public.png", "com.adobe.pdf", "public.svg-image"} <= set(pb["types"]) and pb.get("png") == cp["want"] and pb["pdfBytes"] > 1000 and pb["svgHasViewBox"] and cp["toast"] == "Copied",
-    f"⌘C puts PNG {pb.get('png')} (= box x 2: {cp['want']}), PDF ({pb['pdfBytes']} bytes) and SVG on the pasteboard; the toast says {cp['toast']!r}")
+chk(cp["performed"] and {"public.png", "com.adobe.pdf", "public.svg-image"} <= set(pb["types"]) and pb.get("png") == cp["want"] and pb["pdfBytes"] > 1000 and pb["svgHasViewBox"] and cp["barCopy"] == "Copied" and cp["toast"] == "",
+    f"⌘C puts PNG {pb.get('png')} (= box x 2: {cp['want']}), PDF ({pb['pdfBytes']} bytes) and SVG on the pasteboard; the bar says {cp['barCopy']!r} (no toast: {cp['toast']!r})")
 rp = r["replaced"]; chk(near(rp["selection"], rp["want"]) and rp["bar"]["shown"], f"a new drag replaces it: {[round(x, 1) for x in rp['selection']]}")
 bc = r["barCopy"]; chk(bc["changed"] and bc["pasteboard"].get("png"), f"the bar's Copy copies it ({bc['pasteboard'].get('png')})")
 sh = r["sheet"]
