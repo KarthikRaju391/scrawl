@@ -79,7 +79,8 @@ func selectionChecks(_ check: (Bool, String) -> Void) {
     // 2. It stays on the page when the view moves: same page rect after a pan and a zoom; on screen it moves with the page.
     c.setVisibleForReplay(x: 400, y: 300, w: 0, z: 2)
     drag(CGPoint(x: 0.3, y: 0.3), CGPoint(x: 0.6, y: 0.7))
-    let sel = c.selection!, v0 = c.viewPoint(fromCanvas: CGPoint(x: sel.minX, y: sel.minY))
+    guard let sel = c.selection else { check(false, "a drag with Select makes a selection (none: the rest of the selection checks can't run)"); return }
+    let v0 = c.viewPoint(fromCanvas: CGPoint(x: sel.minX, y: sel.minY))
     c.setVisibleForReplay(x: 450, y: 250, w: 0, z: 2)                          // pan 50 right, 50 down
     let afterPan = c.selection, v1 = c.viewPoint(fromCanvas: CGPoint(x: sel.minX, y: sel.minY))
     let k = c.ptPerUnit * c.camera.zoom
