@@ -86,14 +86,17 @@ final class ThumbnailCache {
         lock.lock(); let have = cache[key]; lock.unlock()
         if let have, have.version == version { return have.image }   // rendered meanwhile
         let rect = Self.region(strokes, page: page)
-        guard let img = PageImage.render(strokes, rect: rect, pageWidth: page.width, pageTop: page.height,
+        guard var img = PageImage.render(strokes, rect: rect, pageWidth: page.width, pageTop: page.height,
                                          px: CGSize(width: Self.pixelWidth, height: Self.pixelWidth * page.height / page.width), fast: true) else { return nil }
+        if Self.continuesBelow(strokes, rect), let faded = Self.fadeBottom(img) { img = faded }
         lock.lock(); renderCount += 1; if (cache[key]?.version ?? -1) <= version { cache[key] = (version, img) }; lock.unlock()
         return img
     }
     /// The part of the page a thumbnail shows: the ink with a margin, in the tile's shape (at least a third of
     /// the page wide, so a dot isn't blown up), inside the page; the top screen when there's no ink. A few
-    /// lines at the top used to make a near-blank card.
+    /// lines at the top used to make a near-blank card. Ink taller than the tile at the page's full width (a long
+    /// page) shows from its top, as the page reads and as it usually opens (18 of 24 pages in Karthik's notebook open
+    /// at the top); it was centred on the ink, a middle slice matching neither (Karthik, 2 Nov: page 22).
     static func region(_ strokes: [Stroke], page: CGSize) -> CGRect {
         let top = CGRect(x: 0, y: 0, width: page.width, height: page.height)
         guard var ink = strokes.first?.bounds else { return top }
@@ -104,8 +107,24 @@ final class ThumbnailCache {
         if w < page.width / 3 { w = page.width / 3; h = w / a }
         if w > page.width { w = page.width; h = w / a }
         let x = min(max(ink.midX - w / 2, 0), page.width - w)
-        let maxY = min(ink.midY + h / 2, page.height)
+        let tall = ink.height + 2 * m > h + 0.5
+        let maxY = tall ? min(ink.maxY + page.width * 0.02, page.height) : min(ink.midY + h / 2, page.height)
         return CGRect(x: x, y: maxY - h, width: w, height: h)
+    }
+    /// The bottom 14% of a thumbnail fading into the paper (white), so a long page reads as "more below".
+    static func fadeBottom(_ img: CGImage) -> CGImage? {
+        let w = img.width, h = img.height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.draw(img, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let band = Double(h) * 0.14
+        let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: [CGColor(gray: 1, alpha: 0.92), CGColor(gray: 1, alpha: 0)] as CFArray, locations: [0, 1])!
+        ctx.drawLinearGradient(g, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: band), options: [])
+        return ctx.makeImage()
+    }
+    /// Whether there's ink below a thumbnail's region (it fades out at the bottom: more below).
+    static func continuesBelow(_ strokes: [Stroke], _ region: CGRect) -> Bool {
+        strokes.contains { $0.bounds.minY < region.minY - 1 && $0.bounds.maxX > region.minX && $0.bounds.minX < region.maxX }
     }
     /// The cached image and whether it is up to date (no rendering).
     func cached(_ doc: Document) -> (image: CGImage?, fresh: Bool) {

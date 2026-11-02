@@ -24,7 +24,6 @@ enum TestSelectBar {
         if c.drawMode { app.exitDrawMode("test") }
         var t = c.tools; t.tool = .select; t.background = 1; c.tools = t; app.container.toolbar.state = t
         c.setVisibleForReplay(x: 150, y: 420, w: 0, z: 2.5)
-        app.window.orderFrontRegardless()   // on screen (behind other apps' windows is fine) for an outside recorder
         spin(0.5)
         var runs: [[String: Any]] = []
         for k in 0..<3 {

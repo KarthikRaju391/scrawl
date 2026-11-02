@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Pages overview: a long page's tile shows the page from its top, as it reads and as it usually opens, fading out at
+  the bottom when there's more below. It showed a slice from the middle of the ink (page 22: "I want to work on
+  something useful…" while the page opens at "Lol, I hope…"). Short pages keep the tight crop.
+
 - **File › Export Page…** (⇧⌘E, replacing Export Page as PNG…): one sheet with the options under the file browser.
   - **Format:** PNG or SVG. SVG is vector: one path per stroke, the same shapes as the PDF, highlighter at 35%,
     paper patterns as lines and dots. It opens in Figma, Illustrator, Inkscape and browsers.
