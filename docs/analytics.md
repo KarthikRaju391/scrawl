@@ -51,7 +51,7 @@ where they give up. It never records ink, page images, handwriting text or file 
 | `overview` | `pages` | Do people navigate by the overview? |
 | `overview_search` | `result` (found, none) | Is handwriting search useful? |
 | `export` | `format` (pdf, png, svg) | Do people take their pages out? |
-| `share` / `copy_page` | - | Sharing, the other way out |
+| `share` / `copy_page` / `copy_selection` | - | Sharing, the other way out |
 | `tip_shown` | `tip` | Which tips fire, and how often |
 | `practice` | `step` (started, write, undo, scratch, overview, finished) | **Onboarding funnel:** where people stop |
 | `settings_changed` | `key` (the setting's name only, never its value) | Which settings matter |

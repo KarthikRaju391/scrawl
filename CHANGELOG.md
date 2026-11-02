@@ -11,6 +11,12 @@
     current zoom.
   - **Background:** Paper (the page with its grid, dots or lines, as on screen), White or Transparent.
   - It remembers your last choices. Export All Pages as PDF… (⌘E) is unchanged.
+- **Select tool** (S, the dashed-rectangle button, Tools › Select): drag a rectangle on the page, with one finger in
+  draw mode or with the pointer outside it. It stays on the page as you pan and zoom; a new drag replaces it; Esc
+  (outside draw mode), another tool or another page clears it. Selecting never changes the page or its undo.
+  - **Copy as Image** (⌘C with a selection, or Copy on the small bar next to it): the rectangle, with strokes cut at
+    its edges, at 2×, on the paper you last exported with (never transparent). Apps get a PNG, a vector PDF and SVG.
+  - **Export Selection…** (⌥⌘E, or Export… on the bar): the export sheet with Area set to Selection.
 
 ## 0.1.4 (2026-11-01, build 7)
 

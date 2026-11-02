@@ -24,6 +24,7 @@ suites=(
   "voiceover-toolbar|checks/a11y.sh"
   "menus|checks/menus.sh"
   "export-sheet|NO_BENCH=1 checks/export.sh"
+  "select-tool|NO_BENCH=1 checks/select.sh"
   "pill-labels|checks/toast.sh"
   "newline|checks/newline.sh"
   "page-edges|checks/page.sh"
