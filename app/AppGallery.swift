@@ -277,6 +277,7 @@ extension AppDelegate {
     static let pasteboard = Launch.testing ? NSPasteboard(name: NSPasteboard.Name("scrawl.test")) : NSPasteboard.general
     @objc func copyPageAction() {
         if textFocused { NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: self); return }   // ⌘C in a text field: its text
+        if canvas.selection != nil && !galleryShown { copySelectionAction(); return }   // ⌘C with a selection: the selection
         guard let url = pagePNG(actionPageIndex), let data = try? Data(contentsOf: url) else { return }
         let pb = Self.pasteboard
         pb.clearContents(); pb.setData(data, forType: .png)

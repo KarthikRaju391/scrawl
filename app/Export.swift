@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 
 struct ExportOptions: Equatable {
     enum Format: String, CaseIterable { case png, svg }
-    enum Area: String, CaseIterable { case page, screen }
+    enum Area: String, CaseIterable { case page, screen, selection }
     enum Background: String, CaseIterable { case paper, white, transparent }
     var format = Format.png
     /// Output pixels per page unit (the page is 1,600 units wide: 2 = 3,200 px, the old PNG export's size). For SVG it sets
@@ -54,12 +54,15 @@ struct ExportOptions: Equatable {
         guard let d = Launch.testing ? testStore : UserDefaults.standard.dictionary(forKey: "exportOptions") else { return o }
         if let v = d["format"] as? String, let f = Format(rawValue: v) { o.format = f }
         if let v = d["scale"] as? Double, customRange.contains(v) { o.scale = v }
-        if let v = d["area"] as? String, let a = Area(rawValue: v) { o.area = a }
+        if let v = d["area"] as? String, let a = Area(rawValue: v), a != .selection { o.area = a }   // Selection is per use
         if let v = d["background"] as? String, let b = Background(rawValue: v) { o.background = b }
         return o
     }
+    /// Remembers these choices. Area Selection isn't kept (there may be none next time): the area saved before stays.
     func save() {
-        let d: [String: Any] = ["format": format.rawValue, "scale": scale, "area": area.rawValue, "background": background.rawValue]
+        var o = self
+        if area == .selection { o.area = Self.load().area }
+        let d: [String: Any] = ["format": o.format.rawValue, "scale": o.scale, "area": o.area.rawValue, "background": o.background.rawValue]
         if Launch.testing { Self.testStore = d } else { UserDefaults.standard.set(d, forKey: "exportOptions") }
     }
 }
@@ -102,6 +105,27 @@ struct PageExport {
         let sx = Double(sz.width) / rect.width, sy = Double(sz.height) / rect.height
         ctx.scaleBy(x: sx, y: sy)
         ctx.translateBy(x: -rect.minX, y: -rect.minY)
+        draw(in: ctx, sx: sx)
+        return ctx.makeImage()
+    }
+
+    /// The area as vector PDF, one page `size / pdfPixelsPerPoint` points (2x: the page's points, as the PNG pastes).
+    func pdfData(pixelsPerPoint: Double = 2) -> Data? {
+        let sz = size, sx = Double(sz.width) / rect.width
+        var box = CGRect(x: 0, y: 0, width: Double(sz.width) / pixelsPerPoint, height: Double(sz.height) / pixelsPerPoint)
+        let data = NSMutableData()
+        guard let consumer = CGDataConsumer(data: data as CFMutableData), let ctx = CGContext(consumer: consumer, mediaBox: &box, nil) else { return nil }
+        ctx.beginPage(mediaBox: &box)
+        ctx.scaleBy(x: box.width / rect.width, y: box.height / rect.height)
+        ctx.translateBy(x: -rect.minX, y: -rect.minY)
+        ctx.clip(to: rect)
+        draw(in: ctx, sx: sx)   // hairlines and dots sized as in the PNG at this scale
+        ctx.endPage(); ctx.closePDF()
+        return data as Data
+    }
+
+    /// Background, paper and ink in page units (the context is already mapped); `sx` = output pixels per page unit.
+    private func draw(in ctx: CGContext, sx: Double) {
         func rgb(_ c: (Double, Double, Double), _ a: Double = 1) -> CGColor { CGColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: a) }
         switch options.background {
         case .transparent: ctx.clear(rect)
@@ -143,7 +167,6 @@ struct PageExport {
             }
         }
         for s in visibleStrokes { Self.fill(s, in: ctx) }
-        return ctx.makeImage()
     }
 
     /// Points per piece when a stroke is filled (PNG) or written as a group (SVG). CoreGraphics' fill time grows much
@@ -188,11 +211,14 @@ struct PageExport {
         ctx.restoreGState()
     }
 
-    func pngData() -> Data? {
+    /// `dpi`: nil leaves the PNG at 72 dpi (files, as before); the pasteboard gets 72 x scale so a 2x copy pastes at the
+    /// page's size in points, not twice it.
+    func pngData(dpi: Double? = nil) -> Data? {
         guard let img = image() else { return nil }
         let data = NSMutableData()
         guard let dest = CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil) else { return nil }
-        CGImageDestinationAddImage(dest, img, nil)
+        let props = dpi.map { [kCGImagePropertyDPIWidth: $0, kCGImagePropertyDPIHeight: $0] as CFDictionary }
+        CGImageDestinationAddImage(dest, img, props)
         return CGImageDestinationFinalize(dest) ? data as Data : nil
     }
 
@@ -380,7 +406,13 @@ extension CanvasView {
     }
 
     /// The area an export of the current page covers.
-    func exportArea(_ a: ExportOptions.Area) -> CGRect { a == .screen ? renderRect : exportRect(doc) }
+    func exportArea(_ a: ExportOptions.Area) -> CGRect {
+        switch a {
+        case .page: return exportRect(doc)
+        case .screen: return renderRect
+        case .selection: return selection ?? renderRect
+        }
+    }
 
     /// The current page (or page `index`, whole page only) exported with `options`.
     func pageExport(_ options: ExportOptions, page index: Int? = nil) -> PageExport {
@@ -399,6 +431,21 @@ extension CanvasView {
         }
         guard let data else { throw CocoaError(.fileWriteUnknown) }
         try data.write(to: url, options: .atomic)
+    }
+
+    /// What Copy puts on the pasteboard for the selection: PNG at 2x (marked 144 dpi, so it pastes at the page's size), and
+    /// the same region as PDF (vector, in points) and SVG. The background is the export sheet's last choice, but never
+    /// Transparent (pasted transparent ink can't be read on a dark background): Paper instead.
+    static let copyScale = 2.0
+    func selectionClip(_ remembered: ExportOptions) -> (png: Data, pdf: Data, svg: Data, options: ExportOptions)? {
+        guard selection != nil else { return nil }
+        var o = remembered
+        o.format = .png; o.scale = Self.copyScale; o.area = .selection
+        if o.background == .transparent { o.background = .paper }
+        let e = pageExport(o)
+        guard let png = e.pngData(dpi: 72 * o.scale), let pdf = e.pdfData(pixelsPerPoint: o.scale),
+              let svg = e.svg(title: "\(AppInfo.name) selection").data(using: .utf8) else { return nil }
+        return (png, pdf, svg, o)
     }
 
     /// The current page (or page `index`) as a PNG on white, `pxPerUnit` pixels per page unit (page is 1,600 units

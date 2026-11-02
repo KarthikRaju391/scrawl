@@ -32,6 +32,6 @@ struct ModeState: Equatable {
 
 extension ToolKind {
     var title: String {
-        switch self { case .pen: return "Pen"; case .marker: return "Marker"; case .highlighter: return "Highlighter"; case .eraser: return "Eraser" }
+        switch self { case .pen: return "Pen"; case .marker: return "Marker"; case .highlighter: return "Highlighter"; case .eraser: return "Eraser"; case .select: return "Select" }
     }
 }

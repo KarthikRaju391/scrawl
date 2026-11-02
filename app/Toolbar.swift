@@ -27,8 +27,8 @@ final class ToolbarView: NSView {
 
     // Grouped by what you do: Draw first (the main action, labelled), then the tools and paper, writing and
     // the zoom lock, undo/redo, and pages. The tuning sliders live in Settings (⌘,).
-    private let items: [Item] = [.draw, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .background, .writing, .zoomLock, .zoom, .undo, .redo, .gallery, .prevPage, .nextPage, .newPage]
-    private let separatorsAfter = [0, 5, 8, 10]
+    private let items: [Item] = [.draw, .tool(.pen), .tool(.marker), .tool(.highlighter), .tool(.eraser), .tool(.select), .background, .writing, .zoomLock, .zoom, .undo, .redo, .gallery, .prevPage, .nextPage, .newPage]
+    private let separatorsAfter = [0, 6, 9, 11]
     /// The zoom as text ("300%"); a click opens presets and a field to type one.
     var zoomText = "100%" { didSet { if zoomText != oldValue { needsDisplay = true } } }
     var onZoomMenu: ((NSView, CGRect) -> Void)?
@@ -78,6 +78,7 @@ final class ToolbarView: NSView {
         case .tool(.marker): return "paintbrush.pointed.fill"
         case .tool(.highlighter): return "highlighter"
         case .tool(.eraser): return "eraser"
+        case .tool(.select): return "rectangle.dashed"
         case .background: return "square.grid.3x3"
         case .writing: return "character.cursor.ibeam"
         case .zoomLock: return state.zoomLocked ? "lock.fill" : "lock.open"
@@ -102,7 +103,7 @@ final class ToolbarView: NSView {
             var tint = NSColor(srgbRed: 0.27, green: 0.28, blue: 0.30, alpha: 1)
             let selected: Bool
             switch item {
-            case .tool(let k): selected = state.tool == k; if k != .eraser { tint = ToolState.colors[state.colorIndex[k] ?? 0] }
+            case .tool(let k): selected = state.tool == k; if k != .eraser && k != .select { tint = ToolState.colors[state.colorIndex[k] ?? 0] }
             case .draw: selected = drawMode
             case .writing: selected = writingMode
             case .zoomLock: selected = state.zoomLocked
@@ -156,7 +157,7 @@ final class ToolbarView: NSView {
 
     /// The tools and writing mode have a panel (sizes and colours; line width and panning). A click toggles
     /// them; the small chevron, a right-click or a Control-click opens the panel.
-    private func hasPanel(_ item: Item) -> Bool { if case .tool = item { return true }; return item == .writing }
+    private func hasPanel(_ item: Item) -> Bool { if case .tool(let k) = item { return k != .select }; return item == .writing }
     private func chevronRect(of i: Int) -> CGRect { let r = rect(of: i); return CGRect(x: r.maxX - 13, y: r.maxY - 15, width: 13, height: 13) }
 
     override func mouseDown(with e: NSEvent) {
@@ -280,6 +281,7 @@ final class ToolbarView: NSView {
         case .tool(.marker): return "Marker (M) · ⌃ or right-click: size and colour"
         case .tool(.highlighter): return "Highlighter (H) · ⌃ or right-click: size and colour"
         case .tool(.eraser): return "Eraser (E) · or scratch out with a quick zig-zag · ⌃: size"
+        case .tool(.select): return "Select (S) · drag a rectangle, then ⌘C to copy it as an image"
         case .background: return "Paper: plain, grid, dots or lines"
         case .writing: return "Writing mode (W): the next line when a line reaches its width · ⌃: line width"
         case .zoomLock: return state.zoomLocked ? "Zoom locked (L): two fingers only pan" : "Lock the zoom (L)"

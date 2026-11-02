@@ -132,7 +132,7 @@ func makeWidthModel(_ name: String) -> WidthModel {
 
 // MARK: - Tools
 
-enum ToolKind: String, CaseIterable { case pen, marker, highlighter, eraser }
+enum ToolKind: String, CaseIterable { case pen, marker, highlighter, eraser, select }
 
 struct Brush {
     var thinning: Double   // perfect-freehand: how much pressure changes width
@@ -146,6 +146,7 @@ struct Brush {
         case .marker: return Brush(thinning: 0.2, alpha: 1, taperStart: 0, taperEnd: 0)
         case .highlighter: return Brush(thinning: 0, alpha: 0.35, taperStart: 0, taperEnd: 0)
         case .eraser: return Brush(thinning: 0, alpha: 1, taperStart: 0, taperEnd: 0)
+        case .select: return Brush(thinning: 0, alpha: 1, taperStart: 0, taperEnd: 0)   // draws no ink
         }
     }
 }

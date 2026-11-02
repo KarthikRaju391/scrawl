@@ -219,6 +219,7 @@ struct ToolState {
     /// keeps the same on-screen width, which is the point of zooming in to write small).
     static let sizes: [ToolKind: [Double]] = [
         .pen: [1.5, 2.5, 4, 6, 9], .marker: [4, 6, 9, 13, 18], .highlighter: [10, 14, 20, 28, 36], .eraser: [8, 14, 22, 32, 44],
+        .select: [1, 1, 1, 1, 1],   // no ink: unused
     ]
     var tool: ToolKind = .pen
     var colorIndex: [ToolKind: Int] = [.pen: 0, .marker: 7, .highlighter: 4]
@@ -239,7 +240,7 @@ struct ToolState {
     static func load(from defaults: UserDefaults = .standard) -> ToolState {
         var t = ToolState()
         guard let d = defaults.dictionary(forKey: "toolState") else { return t }
-        if let v = d["tool"] as? String, let k = ToolKind(rawValue: v) { t.tool = k }
+        if let v = d["tool"] as? String, let k = ToolKind(rawValue: v), k != .select { t.tool = k }   // a launch never starts on Select
         if let v = d["background"] as? Int, (0...3).contains(v) { t.background = v }
         if let v = d["lineWidthIndex"] as? Int, ToolState.lineWidths.indices.contains(v) { t.lineWidthIndex = v }
         if let v = d["zoomLocked"] as? Bool { t.zoomLocked = v }
@@ -441,13 +442,14 @@ final class CanvasView: MTKView {
     private var tapViewAnchor: Camera?
 
     func restorePages(_ docs: [Document], cameras: [Camera], index: Int, nextStrokeId: Int) {
+        setSelection(nil, "page")
         pages = docs; pageCameras = cameras; pageIndex = index
         if index < cameras.count { camera = cameras[index] }
         nextStrokeIdValue = nextStrokeId
         endWritingLine(); screensFilled = 0; hintDismissedAt = 0; updateScreensFilled()
         needsRender = true; onStatus?()
     }
-    private(set) var pageIndex = 0
+    private(set) var pageIndex = 0 { didSet { if pageIndex != oldValue { setSelection(nil, "page") } } }
     var doc: Document { pages[pageIndex] }
     /// Called when page, hint or mode status changes (the window updates its labels).
     var onStatus: (() -> Void)?
@@ -461,6 +463,7 @@ final class CanvasView: MTKView {
             // A new width keeps the block and the line (widths count from the block's start); a waiting move is decided
             // again at the next lift, with the new width.
             if tools.lineWidthIndex != oldValue.lineWidthIndex { cancelPendingMove() }
+            if tools.tool != oldValue.tool { setSelection(nil, "tool") }   // switching tool clears the selection
             if !testMode { tools.save() }
             needsRender = true
         }
@@ -680,6 +683,7 @@ final class CanvasView: MTKView {
         while pageCameras.count < pages.count { pageCameras.append(camera) }
         pageCameras[pageIndex] = camera
         let doc = pages[i], cam = pageCameras[i], wasCurrent = i == pageIndex
+        if wasCurrent { setSelection(nil, "page") }
         if pages.count == 1 {
             let blank = Document.new()
             pages = [blank]; pageIndex = 0
@@ -1167,7 +1171,21 @@ final class CanvasView: MTKView {
     override func touchesEnded(with e: NSEvent) { nsTouchFrame(e) }
     override func touchesCancelled(with e: NSEvent) { nsTouchFrame(e) }
     // In draw mode physical clicks land on the frozen cursor over this view: swallow them.
-    override func mouseDown(with e: NSEvent) { if drawMode { clickDown() } else { onBackgroundClick?(); super.mouseDown(with: e) } }
+    override func mouseDown(with e: NSEvent) {
+        if drawMode { clickDown(); return }
+        onBackgroundClick?()
+        // Select, outside draw mode: a pointer drag on the page makes the rectangle.
+        if tools.tool == .select { selectBegin(at: canvasPoint(fromView: convert(e.locationInWindow, from: nil))); return }
+        super.mouseDown(with: e)
+    }
+    override func mouseDragged(with e: NSEvent) {
+        if !drawMode, selectDrag != nil { selectMove(to: canvasPoint(fromView: convert(e.locationInWindow, from: nil))); return }
+        super.mouseDragged(with: e)
+    }
+    override func mouseUp(with e: NSEvent) {
+        if !drawMode, selectDrag != nil { selectMove(to: canvasPoint(fromView: convert(e.locationInWindow, from: nil))); selectEnd(true); return }
+        super.mouseUp(with: e)
+    }
     /// A click on the page outside draw mode (closes an open toolbar panel; the width picked there stays).
     var onBackgroundClick: (() -> Void)?
     /// In draw mode a click draws (click to draw), even if it's the click that brings the window forward.
@@ -1228,7 +1246,7 @@ final class CanvasView: MTKView {
             self.logger.contact(["id": Int(id), "maxSize": st.maxSize, "maxMajor": st.maxMajor, "appleResting": st.resting,
                                  "palm": palm, "drew": drew, "durationS": CACurrentMediaTime() - st.start])
         }
-        gestures.strokeLengthMM = { [weak self] in self?.builder?.lengthMM ?? 0 }
+        gestures.strokeLengthMM = { [weak self] in self?.builder?.lengthMM ?? self?.selectDrag?.lengthMM ?? 0 }
         gestures.onBegin = { [weak self] c, t in self?.beginStroke(c, t) }
         gestures.canInk = { [weak self] in guard let self else { return true }; return !Self.clickToDraw || self.clickDrawOn || CACurrentMediaTime() - self.clickAt < 0.15 }
         gestures.bridgesLift = { [weak self] in Self.clickToDraw && self?.clickDrawOn == true }
@@ -1262,6 +1280,51 @@ final class CanvasView: MTKView {
     /// Where the last stroke lifted (pad mm, after any snap) and when (sensor clock).
     private var lastLift: (mm: CGPoint, t: Double, dir: CGPoint)?
     /// Raw (unshifted) samples of the current stroke, and a pending rejoin waiting for the direction check.
+    // MARK: selection (the Select tool)
+
+    /// The selected rectangle, in page units (y up): it stays on the page through pans and zooms. Never an edit: no undo
+    /// step, nothing saved. Cleared by Esc (outside draw mode), another tool, another page, or a tap with Select.
+    private(set) var selection: CGRect?
+    /// Called when the selection appears, changes or goes (the floating bar follows it).
+    var onSelectionChange: ((CGRect?) -> Void)?
+    /// The drag making a new selection: its first corner, and the selection it replaces (put back if the drag turns into
+    /// a pan or pinch).
+    private var selectDrag: (anchor: CGPoint, before: CGRect?, startMM: CGPoint, lengthMM: Double)?
+    var selectionDragging: Bool { selectDrag != nil }
+    /// A drag shorter than this (view points) is a tap: it clears the selection.
+    static let selectTapPt = 4.0
+    func setSelection(_ r: CGRect?, _ why: String) {
+        guard r != selection else { return }
+        selection = r
+        act("selection", r.map { ["why": why, "x": $0.minX, "y": $0.minY, "w": $0.width, "h": $0.height] } ?? ["why": why, "cleared": true])
+        needsRender = true
+        onSelectionChange?(r)
+    }
+    private func selectBegin(at p: CGPoint, mm: CGPoint = .zero) {
+        selectDrag = (p, selection, mm, 0)
+        setSelection(CGRect(origin: p, size: .zero), "drag")
+    }
+    private func selectMove(to p: CGPoint, mm: CGPoint = .zero) {
+        guard let d = selectDrag else { return }
+        selectDrag?.lengthMM = max(d.lengthMM, hypot(mm.x - d.startMM.x, mm.y - d.startMM.y))
+        setSelection(CGRect(x: min(d.anchor.x, p.x), y: min(d.anchor.y, p.y), width: abs(p.x - d.anchor.x), height: abs(p.y - d.anchor.y)), "drag")
+    }
+    private func selectEnd(_ commit: Bool) {
+        guard let d = selectDrag else { return }
+        selectDrag = nil
+        if !commit { setSelection(d.before, "cancelled"); return }   // it became a pan or pinch: the old selection stays
+        let k = ptPerUnit * camera.zoom   // view points per page unit
+        if let s = selection, max(s.width, s.height) * k < Self.selectTapPt { setSelection(nil, "tap") }
+    }
+    /// The page point under a pad position: the absolute mapping ink uses (the whole pad onto the view).
+    private func pagePoint(_ c: Contact) -> CGPoint {
+        let pad = Multitouch.padMM
+        return camera.canvas(fromPad: CGPoint(x: c.mm.x / pad.width, y: c.mm.y / pad.height))
+    }
+    /// Test: the page point a pad contact maps to (the selection's corner).
+    func pagePointForTest(_ c: Contact) -> CGPoint { pagePoint(c) }
+    func setSelectionForTest(_ r: CGRect?) { setSelection(r, "test") }
+
     private var rawSamples: [InputSample] = []
     private var pendingSnap: CGPoint?
     private var makeBuilder: (() -> StrokeBuilder)?
@@ -1274,6 +1337,7 @@ final class CanvasView: MTKView {
     private func beginStroke(_ c: Contact, _ t: Double) {
         clickAt = -1
         finishSlide()
+        if tools.tool == .select { selectBegin(at: pagePoint(c), mm: c.mm); return }   // a rectangle, no ink
         strokeOffset = .zero; pendingSnap = nil; rawSamples = []
         if settings.rejoinSnap, tools.tool != .eraser, let l = lastLift,
            (frameSensorT - l.t) * 1000 < settings.rejoinWindowMs, hypot(c.mm.x - l.mm.x, c.mm.y - l.mm.y) < settings.rejoinRadiusMM {
@@ -1300,6 +1364,7 @@ final class CanvasView: MTKView {
     }
 
     private func moveStroke(_ c: Contact, _ t: Double) {
+        if selectDrag != nil { selectMove(to: pagePoint(c), mm: c.mm); return }
         guard builder != nil else { return }
         let raw = InputSample(mm: c.mm, t: frameSensorT, pressure: c.pressure, size: c.size)
         rawSamples.append(raw)
@@ -1328,6 +1393,7 @@ final class CanvasView: MTKView {
     }
 
     private func endStroke(_ commit: Bool) {
+        if selectDrag != nil { selectEnd(commit); return }
         defer {
             builder = nil; needsRender = true; clickDrawLastLift = CACurrentMediaTime()
             if Self.clickDrawTimeout == 0 { clickDrawOff() }   // 0 s: every lift turns drawing off
@@ -1502,6 +1568,9 @@ final class CanvasView: MTKView {
     /// Interpolation step: 1.5 screen points at the zoom the stroke is drawn at.
     private var smoothStep: Double { 1.5 / (ptPerUnit * camera.zoom) }
 
+    static let selectionTint = SIMD4<Float>(0.10, 0.45, 0.91, 0.08), selectionLine = SIMD4<Float>(0.10, 0.45, 0.91, 0.9)
+    /// Test hook: the selection rectangle the last frame drew (page units), if any.
+    private(set) var selectionDrawnForTest: CGRect?
     private func premul(_ c: SIMD4<Float>) -> SIMD4<Float> { SIMD4(c.x * c.w, c.y * c.w, c.z * c.w, c.w) }
 
     private func render(predictAhead: Double) {
@@ -1545,6 +1614,30 @@ final class CanvasView: MTKView {
             guard s.bounds.intersects(vis) else { return nil }  // off-screen (most of the page when zoomed in)
             if s.mesh.buffer == nil { s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit)) }
             return .init(mesh: s.mesh, verts: nil, color: premul(s.color))
+        }
+        // The selection: a light tint and a dashed outline, 1 pt at any zoom. The live view only (exports never show it).
+        selectionDrawnForTest = nil
+        if let s = selection, s.intersects(vis) {
+            let k = 1 / (ptPerUnit * camera.zoom)   // page units per view point
+            func quad(_ r: CGRect) -> [SIMD2<Float>] {
+                let a = SIMD2<Float>(Float(r.minX), Float(r.minY)), b = SIMD2<Float>(Float(r.maxX), Float(r.minY))
+                let c = SIMD2<Float>(Float(r.maxX), Float(r.maxY)), d = SIMD2<Float>(Float(r.minX), Float(r.maxY))
+                return [a, b, c, a, c, d]
+            }
+            items.append(.init(mesh: Mesh(), verts: quad(s), color: premul(Self.selectionTint)))
+            var dash: [SIMD2<Float>] = []
+            let on = 5 * k, step = 9 * k, w = 1 * k
+            for (a, b, horizontal) in [(s.minX, s.maxX, true), (s.minY, s.maxY, false)] {
+                var x = a
+                while x < b {
+                    let e = min(x + on, b)
+                    if horizontal { dash += quad(CGRect(x: x, y: s.minY - w / 2, width: e - x, height: w)) + quad(CGRect(x: x, y: s.maxY - w / 2, width: e - x, height: w)) }
+                    else { dash += quad(CGRect(x: s.minX - w / 2, y: x, width: w, height: e - x)) + quad(CGRect(x: s.maxX - w / 2, y: x, width: w, height: e - x)) }
+                    x += step
+                }
+            }
+            items.append(.init(mesh: Mesh(), verts: dash, color: premul(Self.selectionLine)))
+            selectionDrawnForTest = s
         }
         if !ghosts.isEmpty {
             let t = CACurrentMediaTime()

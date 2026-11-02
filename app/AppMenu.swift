@@ -38,6 +38,7 @@ extension AppDelegate {
             .separator(),
             item("Export All Pages as PDF…", #selector(exportPDF), "e"),
             item("Export Page…", #selector(exportPage), "e", [.command, .shift]),
+            item("Export Selection…", #selector(exportSelectionAction), "e", [.command, .option]),
             item("Share Page…", #selector(sharePageAction)),
         ])
         menu("Edit", [
@@ -79,6 +80,7 @@ extension AppDelegate {
             item("Marker  (M)", #selector(markerAction)),
             item("Highlighter  (H)", #selector(highlighterAction)),
             item("Eraser  (E)", #selector(eraserAction)),
+            item("Select  (S)", #selector(selectAction)),
         ])
         menu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m", target: window),
@@ -160,10 +162,13 @@ extension AppDelegate {
         if item.action == #selector(toggleWritingAction) { item.state = canvas.writingMode ? .on : .off }
         if item.action == #selector(toggleZoomLockAction) { item.state = canvas.tools.zoomLocked ? .on : .off }
         if item.action == #selector(togglePageMapAction) { item.state = PageMapView.enabled ? .on : .off }
-        let tools: [Selector: ToolKind] = [#selector(penAction): .pen, #selector(markerAction): .marker, #selector(highlighterAction): .highlighter, #selector(eraserAction): .eraser]
+        let tools: [Selector: ToolKind] = [#selector(penAction): .pen, #selector(markerAction): .marker, #selector(highlighterAction): .highlighter, #selector(eraserAction): .eraser, #selector(selectAction): .select]
         if let a = item.action, let k = tools[a] { item.state = canvas.tools.tool == k ? .on : .off }
         // ⌘C in a text field copies its text (the item says so); elsewhere it copies the page.
-        if item.action == #selector(copyPageAction) { item.title = textFocused ? "Copy" : "Copy Page as Image" }
+        // With a selection (and the page open), ⌘C copies the selection.
+        let hasSelection = canvas.selection != nil && !galleryShown
+        if item.action == #selector(copyPageAction) { item.title = textFocused ? "Copy" : hasSelection ? "Copy Selection as Image" : "Copy Page as Image" }
+        if item.action == #selector(exportSelectionAction) { return hasSelection }
         if item.action == #selector(prevPageAction) { return canvas.pageIndex > 0 && !galleryShown }
         if item.action == #selector(nextPageAction) { return canvas.pageIndex < canvas.pages.count - 1 && !galleryShown }
         return true

@@ -13,16 +13,18 @@ final class ExportAccessory: NSView, NSTextFieldDelegate {
     var onChange: ((ExportOptions) -> Void)?
     private var customScale: Double
 
-    init(options: ExportOptions, areaRect: @escaping (ExportOptions.Area) -> CGRect) {
+    /// `hasSelection`: the Select tool has a rectangle on this page, so Area offers "Selection".
+    init(options: ExportOptions, hasSelection: Bool = false, areaRect: @escaping (ExportOptions.Area) -> CGRect) {
         self.areaRect = areaRect
         customScale = options.scale
         super.init(frame: NSRect(x: 0, y: 0, width: 420, height: 170))
         format.addItems(withTitles: ["PNG", "SVG"])
         scale.addItems(withTitles: ExportOptions.presets.map { "\(Int($0))×" } + ["Custom"])
-        area.addItems(withTitles: ["Page", "What's on screen"])
+        area.addItems(withTitles: ["Page", "What's on screen"] + (hasSelection ? ["Selection"] : []))
         background.addItems(withTitles: ["Paper", "White", "Transparent"])
         area.item(at: 0)?.toolTip = "The page's full width, from its top to just below the lowest ink"
         area.item(at: 1)?.toolTip = "Exactly what the window shows, at its current zoom"
+        area.item(at: 2)?.toolTip = "The rectangle you selected, with any strokes cut at its edges"
         background.item(at: 0)?.toolTip = "The page as the canvas shows it: white with its grid, dots or lines"
         for p in [format, scale, area, background] { p.target = self; p.action = #selector(changed(_:)) }
         let f = NumberFormatter(); f.numberStyle = .none; f.allowsFloats = false   // no min/max: out of range is clamped (takePercent), not refused
@@ -67,12 +69,12 @@ final class ExportAccessory: NSView, NSTextFieldDelegate {
     var options: ExportOptions {
         get {
             ExportOptions(format: ExportOptions.Format.allCases[max(format.indexOfSelectedItem, 0)], scale: currentScale,
-                          area: ExportOptions.Area.allCases[max(area.indexOfSelectedItem, 0)],
+                          area: ExportOptions.Area.allCases[min(max(area.indexOfSelectedItem, 0), ExportOptions.Area.allCases.count - 1)],
                           background: ExportOptions.Background.allCases[max(background.indexOfSelectedItem, 0)])
         }
         set {
             format.selectItem(at: ExportOptions.Format.allCases.firstIndex(of: newValue.format) ?? 0)
-            area.selectItem(at: ExportOptions.Area.allCases.firstIndex(of: newValue.area) ?? 0)
+            area.selectItem(at: min(ExportOptions.Area.allCases.firstIndex(of: newValue.area) ?? 0, area.numberOfItems - 1))
             background.selectItem(at: ExportOptions.Background.allCases.firstIndex(of: newValue.background) ?? 0)
             customScale = newValue.scale
             scale.selectItem(at: ExportOptions.presets.firstIndex(of: newValue.scale) ?? ExportOptions.presets.count)

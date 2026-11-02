@@ -19,6 +19,9 @@ final class ContainerView: NSView {
     let practice = PracticeView()
     let pendingMove = PendingMoveView()
     let zoomBadge = PillLabel()
+    let selectionBar = SelectionBar(frame: .zero)
+    /// After each layout (the selection bar follows the selection).
+    var onLayout: (() -> Void)?
 
     init(frame: NSRect, canvas: CanvasView) {
         self.canvas = canvas
@@ -55,6 +58,7 @@ final class ContainerView: NSView {
         pendingMove.isHidden = true; addSubview(pendingMove)
         zoomBadge.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold); zoomBadge.textColor = .white
         zoomBadge.fillColor = NSColor(white: 0.15, alpha: 0.8); zoomBadge.isHidden = true; addSubview(zoomBadge)
+        selectionBar.isHidden = true; addSubview(selectionBar, positioned: .below, relativeTo: toast)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -88,6 +92,7 @@ final class ContainerView: NSView {
         pendingMove.frame = pendingMove.kind == .newLine ? CGRect(x: 14, y: bounds.height * 0.3, width: 40, height: 40)
                                                          : CGRect(x: bounds.width - 46, y: bounds.midY - 20, width: 40, height: 40)
         hint.frame = CGRect(x: bounds.midX - hint.fittingWidth / 2, y: bounds.height - 27, width: hint.fittingWidth, height: 18)
+        onLayout?()
         canvas.setNeedsRender()
     }
 }
@@ -199,7 +204,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         cv.onStatus = { [weak self] in self?.updateBanner() }
         cv.onBackgroundClick = { [weak self] in self?.container.toolbar.hidePanel() }
         cv.onDocChanged = { [weak self] in self?.updateUndoState(); self?.container.pageMap.refresh(); self?.warmThumbnailSoon() }
-        cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source); self?.zoomChanged(source: source) }
+        cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source); self?.zoomChanged(source: source); self?.updateSelectionBar() }
+        cv.onSelectionChange = { [weak self] _ in self?.selectionChanged() }
+        container.onLayout = { [weak self] in self?.updateSelectionBar() }
+        container.selectionBar.onCopy = { [weak self] in self?.copySelectionAction() }
+        container.selectionBar.onExport = { [weak self] in self?.exportSelectionAction() }
         tb.onZoomMenu = { [weak self] view, r in self?.zoomMenu().popUp(positioning: nil, at: CGPoint(x: r.minX, y: r.maxY + 4), in: view) }
         cv.onTouching = { [weak self] down in if !down { self?.container.pageMap.refresh() } }
         cv.onTapCommand = { [weak self] text in self?.updateUndoState(); self?.showToast(text) }
@@ -445,12 +454,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return e.modifierFlags.intersection([.command, .control, .option]).isEmpty
         }
         if e.keyCode == 36 || e.keyCode == 76, canvas.writingMode { canvas.newLineByHand(); return true }   // Return: next line
-        if e.keyCode == 53 { if canvas.drawMode { exitDrawMode(); return true }; container.toolbar.hidePanel(); return true }  // Esc
+        // Esc: leaves draw mode (the selection stays, so its bar can be clicked); outside draw mode it clears the selection.
+        if e.keyCode == 53 {
+            if canvas.drawMode { exitDrawMode(); return true }
+            if canvas.selection != nil { canvas.setSelection(nil, "esc"); return true }
+            container.toolbar.hidePanel(); return true
+        }
         // Single-letter shortcuts work in and out of draw mode. D, W, L/Z and the tool keys go through the
         // same rules as the toolbar and the menu (see Modes.swift).
         guard e.modifierFlags.intersection([.command, .control, .option]).isEmpty, let ch = e.charactersIgnoringModifiers?.lowercased() else { return false }
         let modeKeys: [String: ModeInput] = ["d": .draw, "w": .writing, "l": .zoomLock, "z": .zoomLock,
-                                             "p": .tool(.pen), "m": .tool(.marker), "h": .tool(.highlighter), "e": .tool(.eraser)]
+                                             "p": .tool(.pen), "m": .tool(.marker), "h": .tool(.highlighter), "e": .tool(.eraser), "s": .tool(.select)]
         if let i = modeKeys[ch] { apply(i, from: "key"); return true }
         var s = canvas.tools
         switch ch {
@@ -859,15 +873,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
     /// File › Export Page… (⇧⌘E): the current page as PNG or SVG, with the options under the save panel's browser.
-    @objc func exportPage() {
+    @objc func exportPage() { openExportSheet(area: nil) }
+    /// `area`: the area to start on (Export Selection… starts on Selection); nil keeps the last choice.
+    func openExportSheet(area: ExportOptions.Area?) {
         exitDrawMode("export")
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH.mm"
         let panel = NSSavePanel()
-        let opts = ExportOptions.load()
+        var opts = ExportOptions.load()
+        if let area { opts.area = area }
         let canvas = self.canvas
-        let acc = ExportAccessory(options: opts) { canvas.exportArea($0) }
+        let acc = ExportAccessory(options: opts, hasSelection: canvas.selection != nil) { canvas.exportArea($0) }
         panel.accessoryView = acc
-        panel.nameFieldStringValue = "Page \(canvas.pageIndex + 1) \(f.string(from: Date())).\(opts.format.rawValue)"
+        let what = opts.area == .selection ? "Selection, page" : "Page"
+        panel.nameFieldStringValue = "\(what) \(canvas.pageIndex + 1) \(f.string(from: Date())).\(opts.format.rawValue)"
         panel.useFormat(opts.format)
         acc.onChange = { [weak panel] o in
             guard let panel, panel.allowedContentTypes.first?.preferredFilenameExtension != o.format.rawValue else { return }
