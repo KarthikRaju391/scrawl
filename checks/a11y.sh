@@ -16,7 +16,7 @@ def chk(ok, msg):
     global bad; bad += 0 if ok else 1; print("PASS" if ok else "FAIL", msg)
 E = r.get("elements") or []
 labels = [e["label"] for e in E]
-chk(len(E) == 15, f"VoiceOver finds 15 toolbar buttons: {labels}")
+chk(len(E) == 16, f"VoiceOver finds 16 toolbar buttons: {labels}")
 chk(len(set(labels)) == len(E) and all(labels), "each has its own name")
 chk(all(e["help"] for e in E), "each has help (the tooltip, with its shortcut)")
 toggles = {"Draw", "Pen", "Marker", "Highlighter", "Eraser", "Writing mode", "Zoom lock"}
@@ -34,6 +34,6 @@ chk(p["prevOnFirstPage"] is False and [e["enabled"] for e in E if e["label"] == 
 chk(p["writingOn"] and p["writingValue"] == 1 and p["writingOffAgain"], "pressing Writing mode turns it on (and reads as on), again turns it off")
 chk(p["newPage"] == 2, "pressing New page adds a page")
 chk(p["eraserAndDraw"], "pressing Eraser picks it and turns draw mode on, like a click")
-chk(p["childrenInDrawMode"] == 0 and p["childrenAfter"] == 15, "in draw mode (toolbar hidden) there's nothing to reach; after, all 15 again")
+chk(p["childrenInDrawMode"] == 0 and p["childrenAfter"] == 16, "in draw mode (toolbar hidden) there's nothing to reach; after, all 16 again")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 PY

@@ -53,20 +53,21 @@ enum TestModes {
             case "key M", "button marker", "menu marker": tool(.marker)
             case "key H", "button highlighter", "menu highlighter": tool(.highlighter)
             case "key E", "button eraser", "menu eraser": tool(.eraser)
+            case "key S", "button select", "menu select": tool(.select)
             default: break
             }
             return e
         }
         let keys: [(String, String, UInt16)] = [("key D", "d", 2), ("key W", "w", 13), ("key L", "l", 37), ("key Z", "z", 6),
-                                                ("key P", "p", 35), ("key M", "m", 46), ("key H", "h", 4), ("key E", "e", 14)]
+                                                ("key P", "p", 35), ("key M", "m", 46), ("key H", "h", 4), ("key E", "e", 14), ("key S", "s", 1)]
         let buttons: [(String, ToolbarView.Item)] = [("button draw", .draw), ("button writing", .writing), ("button zoomLock", .zoomLock),
                                                      ("button pen", .tool(.pen)), ("button marker", .tool(.marker)), ("button highlighter", .tool(.highlighter)),
-                                                     ("button eraser", .tool(.eraser))]
+                                                     ("button eraser", .tool(.eraser)), ("button select", .tool(.select))]
         let menus: [(String, String)] = [("menu draw", "toggleDrawModeAction"), ("menu writing", "toggleWritingAction"), ("menu zoomLock", "toggleZoomLockAction"),
-                                         ("menu pen", "penAction"), ("menu marker", "markerAction"), ("menu highlighter", "highlighterAction"), ("menu eraser", "eraserAction")]
+                                         ("menu pen", "penAction"), ("menu marker", "markerAction"), ("menu highlighter", "highlighterAction"), ("menu eraser", "eraserAction"), ("menu select", "selectAction")]
         var failures: [[String: Any]] = [], cases = 0
         var missingMenus = Set<String>()
-        for draw in [false, true] { for writing in [false, true] { for tool in [ToolKind.pen, .marker, .highlighter, .eraser] { for locked in [false, true] {
+        for draw in [false, true] { for writing in [false, true] { for tool in [ToolKind.pen, .marker, .highlighter, .eraser, .select] { for locked in [false, true] {
             let s = S(draw: draw, writing: writing, tool: tool, locked: locked)
             var inputs: [(String, () -> Void)] = keys.map { k in (k.0, { key(k.1, k.2) }) }
             if !draw { inputs += buttons.map { b in (b.0, { click(b.1) }) } }   // the toolbar is hidden in draw mode
