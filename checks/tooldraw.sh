@@ -2,7 +2,7 @@
 # Picking a tool outside draw mode turns draw mode on with that tool, ready to use (background).
 cd "$(dirname "$0")/.."
 D=$(mktemp -d /tmp/td-tool.XXXX)
-TRACKPAD_DRAW_DATA=$D "build/Scrawl.app/Contents/MacOS/TrackpadDraw" --test-tooldraw >/dev/null 2>&1 &
+TRACKPAD_DRAW_DRYLOCK=1 TRACKPAD_DRAW_DATA=$D "build/Scrawl.app/Contents/MacOS/TrackpadDraw" --test-tooldraw >/dev/null 2>&1 &
 P=$!; for _ in $(seq 1 60); do [ -f "$D/ui-step.txt" ] && break; sleep 0.25; done; kill -TERM $P 2>/dev/null; wait $P 2>/dev/null
 python3 -I - "$D/test-tooldraw.json" <<'PY'
 import json, sys

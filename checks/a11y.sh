@@ -19,7 +19,7 @@ labels = [e["label"] for e in E]
 chk(len(E) == 16, f"VoiceOver finds 16 toolbar buttons: {labels}")
 chk(len(set(labels)) == len(E) and all(labels), "each has its own name")
 chk(all(e["help"] for e in E), "each has help (the tooltip, with its shortcut)")
-toggles = {"Draw", "Pen", "Marker", "Highlighter", "Eraser", "Writing mode", "Zoom lock"}
+toggles = {"Draw", "Pen", "Marker", "Highlighter", "Eraser", "Select", "Writing mode", "Zoom lock"}
 chk(all((e["role"] == "AXCheckBox") == (e["label"] in toggles) for e in E) and all(e["role"] in ("AXCheckBox", "AXButton") for e in E),
     "buttons that toggle are checkboxes (on / off), the rest buttons")
 chk([e["label"] for e in E if e["role"] == "AXCheckBox" and e["value"] == 1] == ["Pen"], "at launch only the pen is on")
