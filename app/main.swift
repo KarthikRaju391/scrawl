@@ -305,6 +305,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func enterDrawMode(lock: Bool = true) {
         guard !canvas.drawMode else { return }
         container.toolbar.hidePanel()
+        // Select is a pointer tool: any way into draw mode (D, ⌃⌥D, the overview, practice) draws with the pen.
+        if canvas.tools.tool == .select { var t = canvas.tools; t.tool = .pen; canvas.changing("draw mode") { canvas.tools = t }; container.toolbar.state = t }
         if lock {
             if !Launch.background {   // dry-run lock tests stay in the background
                 NSApp.activate(ignoringOtherApps: true)
@@ -454,7 +456,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             return e.modifierFlags.intersection([.command, .control, .option]).isEmpty
         }
         if e.keyCode == 36 || e.keyCode == 76, canvas.writingMode { canvas.newLineByHand(); return true }   // Return: next line
-        // Esc: leaves draw mode (the selection stays, so its bar can be clicked); outside draw mode it clears the selection.
+        // Esc: clears the selection (Select is never on in draw mode, where Esc leaves draw mode above).
         if e.keyCode == 53 {
             if canvas.drawMode { exitDrawMode(); return true }
             if canvas.selection != nil { canvas.setSelection(nil, "esc"); return true }
@@ -485,7 +487,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// A mode or tool input from a key, the toolbar or the menu (the rules are in Modes.swift). In draw mode,
     /// where the toolbar is hidden, a short note says what changed.
     func apply(_ input: ModeInput, from source: String) {
-        let old = modeState, new = old.after(input, lastOther: lastOtherTool)
+        let old = modeState, new = old.after(input, lastOther: lastOtherTool, drawBeforeSelect: drawBeforeSelect)
+        if new.tool == .select && old.tool != .select { drawBeforeSelect = old.draw }
         usageMode(old: old, new: new, source: source)
         if new.tool != old.tool || new.locked != old.locked {
             var t = canvas.tools; t.tool = new.tool; t.zoomLocked = new.locked
@@ -504,6 +507,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     /// The last tool other than the pen (marker, highlighter or eraser), for P on the pen.
     private(set) var lastOtherTool: ToolKind?
+    /// Whether draw mode was on when Select was picked: S again goes back to it.
+    var drawBeforeSelect = false
     let tips = Tips()
     let usageState = UsageState()
     /// Pages deleted since the last ink change: ⌘Z puts them back, newest first.
@@ -516,7 +521,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     var badgeFade: DispatchWorkItem?
     weak var zoomField: NSTextField?
     var robot: AnyObject?   // the robot user's hook (Robot.swift, dev builds only)
-    func noteTool(_ t: ToolKind) { if t != .pen { lastOtherTool = t } }
+    func noteTool(_ t: ToolKind) { if t != .pen && t != .select { lastOtherTool = t } }   // P toggles between drawing tools
 
     // MARK: test mode (see TestReplay.swift)
 

@@ -15,8 +15,8 @@ want = [  # step, field, value
     ("W", "writing", True), ("W again", "writing", False),
     ("L", "zoomLocked", True), ("L again", "zoomLocked", False), ("Z", "zoomLocked", True), ("Z again", "zoomLocked", False),
     ("M", "tool", "marker"), ("M again", "tool", "pen"), ("H", "tool", "highlighter"), ("H again", "tool", "pen"),
-    ("E", "tool", "eraser"), ("E again", "tool", "pen"), ("S", "tool", "select"), ("S again", "tool", "pen"),
-    ("P on pen (last other tool: select)", "tool", "select"), ("P again", "tool", "pen"),
+    ("E", "tool", "eraser"), ("E again", "tool", "pen"), ("S", "tool", "select"), ("S", "draw", False), ("S again", "tool", "pen"), ("S again", "draw", True),
+    ("P on pen (last other tool: eraser)", "tool", "eraser"), ("P again", "tool", "pen"),
     ("P (from highlighter)", "tool", "pen"), ("P again (back to highlighter)", "tool", "highlighter"),
     ("D (enter)", "draw", True), ("Esc", "draw", False),
 ]

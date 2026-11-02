@@ -1,6 +1,5 @@
-// The Select tool: a one-finger drag in draw mode (the real input path) makes a rectangle in page units at the ink's
-// absolute mapping, under pan and zoom; a second finger turns it into a pan/pinch and the old selection stays; a tap
-// clears it; another tool or page clears it; nothing is an edit. Copy's pasteboard data (PNG at 2x, PDF, SVG) is exactly
+// The Select tool, a pointer tool: a pointer drag makes a rectangle in page units under pan and zoom; finger touches with
+// Select active draw neither a box nor ink; a click clears it; another tool or page clears it; nothing is an edit. Copy's pasteboard data (PNG at 2x, PDF, SVG) is exactly
 // the region, matching the canvas's own render of it; Export with Area = Selection writes the region.
 import AppKit
 import PDFKit
@@ -36,50 +35,58 @@ func selectionChecks(_ check: (Bool, String) -> Void) {
     for k in 0..<5 { c.testAddStroke(wave(80, 880 - Double(k) * 110, 150)) }
     c.testAddStroke(wave(200, 420, 90), tool: .highlighter, color: SIMD4(0xFD / 255, 0xD6 / 255, 0x63 / 255, 0.35), sizePt: 24)
     var tools = c.tools; tools.background = 1; tools.tool = .select; c.tools = tools
-    c.drawMode = true
     var t = 0.0, nextId: Int32 = 1
     func frame(_ cs: [(Int32, CGPoint)]) {   // pad positions as fractions of the pad
         t += 0.008
         c.handle(cs.map { Contact(id: $0.0, state: 4, norm: $0.1, mm: CGPoint(x: $0.1.x * pad.width, y: $0.1.y * pad.height), pressure: 30, size: 0.5, major: 7.5) },
                  arrival: t + 1000, sensorT: t)
     }
-    func lift() { for _ in 0..<3 { frame([]) } }
-    /// One finger from `a` to `b` (fractions of the pad), in `n` frames, then up.
-    func drag(_ a: CGPoint, _ b: CGPoint, n: Int = 30) {
+    /// One finger from `a` to `b` (fractions of the pad), then up.
+    func fingerDrag(_ a: CGPoint, _ b: CGPoint) {
         nextId += 1; let id = nextId
-        for k in 0...n { let f = Double(k) / Double(n); frame([(id, CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f))]) }
-        lift()
+        for k in 0...30 { let f = Double(k) / 30; frame([(id, CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f))]) }
+        for _ in 0..<3 { frame([]) }
     }
-    /// Where a pad position lands on the page, worked out from the view alone: the pad inside the edge guard's band
-    /// (Camera.margin of each side) maps onto camera.visible, as for ink.
+    /// The pointer from `a` to `b` (view points), button down, through the canvas's own handlers.
+    func pointerDrag(_ a: CGPoint, _ b: CGPoint) {
+        func ev(_ type: NSEvent.EventType, _ p: CGPoint) -> NSEvent {
+            NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+        }
+        c.mouseDown(with: ev(.leftMouseDown, a))
+        for k in 1...10 { let f = Double(k) / 10; c.mouseDragged(with: ev(.leftMouseDragged, CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f))) }
+        c.mouseUp(with: ev(.leftMouseUp, b))
+    }
+    /// Where a view point lands on the page, worked out from the view alone: the view shows renderRect.
     func expected(_ p: CGPoint) -> CGPoint {
-        let v = c.camera.visible, m = Camera.margin, k = 1 / (1 - 2 * m)
-        return CGPoint(x: v.minX + (p.x - m) * k * v.width, y: v.minY + (p.y - m) * k * v.height)
+        let rr = c.renderRect
+        return CGPoint(x: rr.minX + p.x / c.bounds.width * rr.width, y: rr.minY + p.y / c.bounds.height * rr.height)
     }
     func near(_ a: CGRect?, _ b: CGRect, _ tol: Double = 0.01) -> Bool {
         guard let a else { return false }
         return abs(a.minX - b.minX) < tol && abs(a.minY - b.minY) < tol && abs(a.width - b.width) < tol && abs(a.height - b.height) < tol
     }
     let doc = c.doc, strokes0 = doc.strokes.count, version0 = doc.version, undo0 = doc.canUndo
+    let W = Double(c.bounds.width), H = Double(c.bounds.height)
 
-    // 1. The rectangle is where the finger went, at three views (home; 250% panned; 370% near the page's edge).
+    // 1. A pointer drag makes the box under the pointer, at three views (home; 250% panned, dragged up-left; 370% near
+    //    the page's edge).
     var geo: [String] = []
-    for (z, x, y, a, b) in [(1.0, 0.0, 0.0, CGPoint(x: 0.2, y: 0.3), CGPoint(x: 0.7, y: 0.8)),
-                            (2.5, 300.0, 200.0, CGPoint(x: 0.8, y: 0.75), CGPoint(x: 0.15, y: 0.1)),   // dragged up-left
-                            (3.7, 1150.0, 500.0, CGPoint(x: 0.05, y: 0.5), CGPoint(x: 0.95, y: 0.55))] {
+    for (z, x, y, a, b) in [(1.0, 0.0, 0.0, CGPoint(x: W * 0.2, y: H * 0.3), CGPoint(x: W * 0.7, y: H * 0.8)),
+                            (2.5, 300.0, 200.0, CGPoint(x: W * 0.8, y: H * 0.75), CGPoint(x: W * 0.15, y: H * 0.1)),
+                            (3.7, 1150.0, 500.0, CGPoint(x: W * 0.05, y: H * 0.5), CGPoint(x: W * 0.95, y: H * 0.55))] {
         c.setVisibleForReplay(x: x, y: y, w: 0, z: z)
-        drag(a, b)
+        pointerDrag(a, b)
         let pa = expected(a), pb = expected(b)
         let want = CGRect(x: min(pa.x, pb.x), y: min(pa.y, pb.y), width: abs(pb.x - pa.x), height: abs(pb.y - pa.y))
         if !near(c.selection, want) { geo.append("zoom \(z): got \(String(describing: c.selection)), want \(want)") }
     }
     check(geo.isEmpty && c.doc.strokes.count == strokes0,
-          "a one-finger drag with Select makes the rectangle where the finger went (the ink's absolute mapping) at 100%, 250% panned and 370% near the edge, and draws no ink \(geo)")
+          "a pointer drag with Select makes the box under the pointer at 100%, 250% panned and 370% near the edge, and draws no ink \(geo)")
 
     // 2. It stays on the page when the view moves: same page rect after a pan and a zoom; on screen it moves with the page.
     c.setVisibleForReplay(x: 400, y: 300, w: 0, z: 2)
-    drag(CGPoint(x: 0.3, y: 0.3), CGPoint(x: 0.6, y: 0.7))
-    guard let sel = c.selection else { check(false, "a drag with Select makes a selection (none: the rest of the selection checks can't run)"); return }
+    pointerDrag(CGPoint(x: W * 0.3, y: H * 0.3), CGPoint(x: W * 0.6, y: H * 0.7))
+    guard let sel = c.selection else { check(false, "a pointer drag with Select makes a selection (none: the rest of the selection checks can't run)"); return }
     let v0 = c.viewPoint(fromCanvas: CGPoint(x: sel.minX, y: sel.minY))
     c.setVisibleForReplay(x: 450, y: 250, w: 0, z: 2)                          // pan 50 right, 50 down
     let afterPan = c.selection, v1 = c.viewPoint(fromCanvas: CGPoint(x: sel.minX, y: sel.minY))
@@ -89,21 +96,29 @@ func selectionChecks(_ check: (Bool, String) -> Void) {
           String(format: "the selection stays on the page through a pan and a zoom (page rect unchanged); on screen it moved %.1f, %.1f pt with the page (want %.1f, %.1f)",
                  v0.x - v1.x, v1.y - v0.y, 50 * k, 50 * k))
 
-    // 3. A second finger during a selection drag pans/pinches: the view moves, and the previous selection stays.
-    let before = c.selection, zoom0 = c.camera.zoom
-    nextId += 2; let f1 = nextId - 1, f2 = nextId
-    for k in 0...6 { frame([(f1, CGPoint(x: 0.5 + Double(k) * 0.004, y: 0.5))]) }   // the first finger starts a drag
-    for k in 0...30 {                                                             // a second finger lands; both spread
-        let d = Double(k) * 0.004
-        frame([(f1, CGPoint(x: 0.45 - d, y: 0.5)), (f2, CGPoint(x: 0.6 + d, y: 0.5))])
-    }
-    lift()
-    check(c.selection == before && abs(c.camera.zoom - zoom0) > 0.05 && c.doc.strokes.count == strokes0,
-          String(format: "a second finger turns a selection drag into a pinch (zoom %.2f -> %.2f); the selection is the one before, no ink", zoom0, c.camera.zoom))
+    // 3. Finger touches with Select active draw neither a box nor ink, even with the canvas in draw mode (the app never
+    //    puts Select in draw mode; the canvas holds the line anyway).
+    let held = c.selection
+    c.drawMode = true
+    fingerDrag(CGPoint(x: 0.3, y: 0.3), CGPoint(x: 0.6, y: 0.7))
+    fingerDrag(CGPoint(x: 0.7, y: 0.2), CGPoint(x: 0.2, y: 0.6))
+    let afterFingers = c.selection, inkAfterFingers = c.doc.strokes.count
+    c.drawMode = false
+    check(afterFingers == held && inkAfterFingers == strokes0, "finger drags with Select active draw neither a box (selection unchanged) nor ink (\(inkAfterFingers) strokes, was \(strokes0))")
 
-    // 4. A tap (no drag) clears it.
-    drag(CGPoint(x: 0.4, y: 0.4), CGPoint(x: 0.4005, y: 0.4), n: 4)
-    check(c.selection == nil, "a tap with Select clears the selection")
+    // 3b. Choosing Select drops a next-line move that was waiting for its pause (the page never moves under the pointer),
+    //     and leaves the ink as it is.
+    var tp = c.tools; tp.tool = .pen; c.tools = tp
+    c.setPendingMoveForTest()
+    let waiting = c.hasPendingMoveForTest, cam0 = c.camera.center
+    tp.tool = .select; c.tools = tp
+    c.advanceClock()
+    check(waiting && !c.hasPendingMoveForTest && c.camera.center == cam0 && c.doc.strokes.count == strokes0,
+          "choosing Select drops the waiting next-line move (was waiting: \(waiting); now: \(c.hasPendingMoveForTest)); the view and the ink stay as they were")
+
+    // 4. A click (no drag) clears it.
+    pointerDrag(CGPoint(x: W * 0.4, y: H * 0.4), CGPoint(x: W * 0.4 + 1, y: H * 0.4))
+    check(c.selection == nil, "a click with Select clears the selection")
 
     // 5. Copy's data: exactly the region, matching the canvas's Metal render of it; partial strokes cut at the edges.
     c.setVisibleForReplay(x: 100, y: 450, w: 0, z: 2.5)

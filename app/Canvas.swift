@@ -464,6 +464,7 @@ final class CanvasView: MTKView {
             // again at the next lift, with the new width.
             if tools.lineWidthIndex != oldValue.lineWidthIndex { cancelPendingMove() }
             if tools.tool != oldValue.tool { setSelection(nil, "tool") }   // switching tool clears the selection
+            if tools.tool == .select && oldValue.tool != .select { cancelPendingMove() }   // the page never moves under the pointer
             if !testMode { tools.save() }
             needsRender = true
         }
@@ -1174,7 +1175,7 @@ final class CanvasView: MTKView {
     override func mouseDown(with e: NSEvent) {
         if drawMode { clickDown(); return }
         onBackgroundClick?()
-        // Select, outside draw mode: a pointer drag on the page makes the rectangle.
+        // Select (never in draw mode: picking it leaves draw mode): a pointer drag on the page makes the rectangle.
         if tools.tool == .select { selectBegin(at: canvasPoint(fromView: convert(e.locationInWindow, from: nil))); return }
         super.mouseDown(with: e)
     }
@@ -1183,7 +1184,7 @@ final class CanvasView: MTKView {
         super.mouseDragged(with: e)
     }
     override func mouseUp(with e: NSEvent) {
-        if !drawMode, selectDrag != nil { selectMove(to: canvasPoint(fromView: convert(e.locationInWindow, from: nil))); selectEnd(true); return }
+        if !drawMode, selectDrag != nil { selectMove(to: canvasPoint(fromView: convert(e.locationInWindow, from: nil))); selectEnd(); return }
         super.mouseUp(with: e)
     }
     /// A click on the page outside draw mode (closes an open toolbar panel; the width picked there stays).
@@ -1246,7 +1247,7 @@ final class CanvasView: MTKView {
             self.logger.contact(["id": Int(id), "maxSize": st.maxSize, "maxMajor": st.maxMajor, "appleResting": st.resting,
                                  "palm": palm, "drew": drew, "durationS": CACurrentMediaTime() - st.start])
         }
-        gestures.strokeLengthMM = { [weak self] in self?.builder?.lengthMM ?? self?.selectDrag?.lengthMM ?? 0 }
+        gestures.strokeLengthMM = { [weak self] in self?.builder?.lengthMM ?? 0 }
         gestures.onBegin = { [weak self] c, t in self?.beginStroke(c, t) }
         gestures.canInk = { [weak self] in guard let self else { return true }; return !Self.clickToDraw || self.clickDrawOn || CACurrentMediaTime() - self.clickAt < 0.15 }
         gestures.bridgesLift = { [weak self] in Self.clickToDraw && self?.clickDrawOn == true }
@@ -1282,14 +1283,14 @@ final class CanvasView: MTKView {
     /// Raw (unshifted) samples of the current stroke, and a pending rejoin waiting for the direction check.
     // MARK: selection (the Select tool)
 
-    /// The selected rectangle, in page units (y up): it stays on the page through pans and zooms. Never an edit: no undo
-    /// step, nothing saved. Cleared by Esc (outside draw mode), another tool, another page, or a tap with Select.
+    /// The selected rectangle, in page units (y up): it stays on the page through pans and zooms. Made by a pointer drag
+    /// with the Select tool (never by a finger). Never an edit: no undo step, nothing saved. Cleared by Esc, another tool,
+    /// another page, or a click with Select.
     private(set) var selection: CGRect?
     /// Called when the selection appears, changes or goes (the floating bar follows it).
     var onSelectionChange: ((CGRect?) -> Void)?
-    /// The drag making a new selection: its first corner, and the selection it replaces (put back if the drag turns into
-    /// a pan or pinch).
-    private var selectDrag: (anchor: CGPoint, before: CGRect?, startMM: CGPoint, lengthMM: Double)?
+    /// The pointer drag making a new selection: its first corner.
+    private var selectDrag: CGPoint?
     var selectionDragging: Bool { selectDrag != nil }
     /// A drag shorter than this (view points) is a tap: it clears the selection.
     static let selectTapPt = 4.0
@@ -1300,30 +1301,24 @@ final class CanvasView: MTKView {
         needsRender = true
         onSelectionChange?(r)
     }
-    private func selectBegin(at p: CGPoint, mm: CGPoint = .zero) {
-        selectDrag = (p, selection, mm, 0)
+    private func selectBegin(at p: CGPoint) {
+        selectDrag = p
         setSelection(CGRect(origin: p, size: .zero), "drag")
     }
-    private func selectMove(to p: CGPoint, mm: CGPoint = .zero) {
-        guard let d = selectDrag else { return }
-        selectDrag?.lengthMM = max(d.lengthMM, hypot(mm.x - d.startMM.x, mm.y - d.startMM.y))
-        setSelection(CGRect(x: min(d.anchor.x, p.x), y: min(d.anchor.y, p.y), width: abs(p.x - d.anchor.x), height: abs(p.y - d.anchor.y)), "drag")
+    private func selectMove(to p: CGPoint) {
+        guard let a = selectDrag else { return }
+        setSelection(CGRect(x: min(a.x, p.x), y: min(a.y, p.y), width: abs(p.x - a.x), height: abs(p.y - a.y)), "drag")
     }
-    private func selectEnd(_ commit: Bool) {
-        guard let d = selectDrag else { return }
+    private func selectEnd() {
+        guard selectDrag != nil else { return }
         selectDrag = nil
-        if !commit { setSelection(d.before, "cancelled"); return }   // it became a pan or pinch: the old selection stays
         let k = ptPerUnit * camera.zoom   // view points per page unit
-        if let s = selection, max(s.width, s.height) * k < Self.selectTapPt { setSelection(nil, "tap") }
+        if let s = selection, max(s.width, s.height) * k < Self.selectTapPt { setSelection(nil, "tap") }   // a click: clears
     }
-    /// The page point under a pad position: the absolute mapping ink uses (the whole pad onto the view).
-    private func pagePoint(_ c: Contact) -> CGPoint {
-        let pad = Multitouch.padMM
-        return camera.canvas(fromPad: CGPoint(x: c.mm.x / pad.width, y: c.mm.y / pad.height))
-    }
-    /// Test: the page point a pad contact maps to (the selection's corner).
-    func pagePointForTest(_ c: Contact) -> CGPoint { pagePoint(c) }
     func setSelectionForTest(_ r: CGRect?) { setSelection(r, "test") }
+    /// Tests: a next-line move waiting for its pause (choosing Select drops it).
+    var hasPendingMoveForTest: Bool { pendingMove != nil }
+    func setPendingMoveForTest() { pendingMove = (.newLine(CGPoint(x: 120, y: camera.page.height / 2)), now(), 400) }
 
     private var rawSamples: [InputSample] = []
     private var pendingSnap: CGPoint?
@@ -1337,7 +1332,7 @@ final class CanvasView: MTKView {
     private func beginStroke(_ c: Contact, _ t: Double) {
         clickAt = -1
         finishSlide()
-        if tools.tool == .select { selectBegin(at: pagePoint(c), mm: c.mm); return }   // a rectangle, no ink
+        if tools.tool == .select { return }   // Select is a pointer tool: a finger draws neither a box nor ink
         strokeOffset = .zero; pendingSnap = nil; rawSamples = []
         if settings.rejoinSnap, tools.tool != .eraser, let l = lastLift,
            (frameSensorT - l.t) * 1000 < settings.rejoinWindowMs, hypot(c.mm.x - l.mm.x, c.mm.y - l.mm.y) < settings.rejoinRadiusMM {
@@ -1364,7 +1359,6 @@ final class CanvasView: MTKView {
     }
 
     private func moveStroke(_ c: Contact, _ t: Double) {
-        if selectDrag != nil { selectMove(to: pagePoint(c), mm: c.mm); return }
         guard builder != nil else { return }
         let raw = InputSample(mm: c.mm, t: frameSensorT, pressure: c.pressure, size: c.size)
         rawSamples.append(raw)
@@ -1393,7 +1387,6 @@ final class CanvasView: MTKView {
     }
 
     private func endStroke(_ commit: Bool) {
-        if selectDrag != nil { selectEnd(commit); return }
         defer {
             builder = nil; needsRender = true; clickDrawLastLift = CACurrentMediaTime()
             if Self.clickDrawTimeout == 0 { clickDrawOff() }   // 0 s: every lift turns drawing off

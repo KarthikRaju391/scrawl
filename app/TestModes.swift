@@ -2,6 +2,7 @@
 //   D, W, L/Z (and their toolbar buttons and menu items) toggle draw mode, writing mode, zoom lock.
 //   A tool (P M H E, or its toolbar button): if it's the active tool, it turns off (M H E -> pen, P -> the last
 //   other tool), draw mode unchanged; otherwise it becomes active, and from outside draw mode draw mode turns on.
+//   Select (S) is a pointer tool: picking it leaves draw mode; S again -> pen; D with Select on draws with the pen.
 //   A toggle never opens a panel; the toolbar shows the result. A secondary click opens a button's panel.
 // checks/modes.sh reads test-modes.json.
 import AppKit
@@ -36,17 +37,21 @@ enum TestModes {
             app.noteTool(.marker)                                          // last other tool: marker (or the tool itself)
             var t = canvas.tools; t.tool = s.tool; t.zoomLocked = s.locked; canvas.tools = t; tb.state = t
             app.noteTool(s.tool)
+            app.drawBeforeSelect = false
             tb.hidePanel()
         }
         func now() -> S { S(draw: canvas.drawMode, writing: canvas.writingMode, tool: canvas.tools.tool, locked: canvas.tools.zoomLocked) }
         func expect(_ s: S, _ input: String) -> S {
             var e = s
             func tool(_ k: ToolKind) {
+                // Select is a pointer tool: picking it leaves draw mode; S again goes back to the pen and to draw mode if it
+                // was on when Select was picked (never, in these states: set() picks it directly).
+                if k == .select { e.tool = s.tool == .select ? .pen : .select; e.draw = false; return }
                 if s.tool == k { e.tool = k == .pen ? (s.tool == .pen ? .marker : .pen) : .pen }   // last other = marker
                 else { e.tool = k; if !s.draw { e.draw = true } }
             }
             switch input {
-            case "key D", "button draw", "menu draw": e.draw.toggle()
+            case "key D", "button draw", "menu draw": e.draw.toggle(); if e.draw && s.tool == .select { e.tool = .pen }   // draws with the pen
             case "key W", "button writing", "menu writing": e.writing.toggle()
             case "key L", "key Z", "button zoomLock", "menu zoomLock": e.locked.toggle()
             case "key P", "button pen", "menu pen": tool(.pen)
@@ -67,7 +72,7 @@ enum TestModes {
                                          ("menu pen", "penAction"), ("menu marker", "markerAction"), ("menu highlighter", "highlighterAction"), ("menu eraser", "eraserAction"), ("menu select", "selectAction")]
         var failures: [[String: Any]] = [], cases = 0
         var missingMenus = Set<String>()
-        for draw in [false, true] { for writing in [false, true] { for tool in [ToolKind.pen, .marker, .highlighter, .eraser, .select] { for locked in [false, true] {
+        for draw in [false, true] { for writing in [false, true] { for tool in [ToolKind.pen, .marker, .highlighter, .eraser, .select] { for locked in [false, true] where !(draw && tool == .select) {   // never both
             let s = S(draw: draw, writing: writing, tool: tool, locked: locked)
             var inputs: [(String, () -> Void)] = keys.map { k in (k.0, { key(k.1, k.2) }) }
             if !draw { inputs += buttons.map { b in (b.0, { click(b.1) }) } }   // the toolbar is hidden in draw mode

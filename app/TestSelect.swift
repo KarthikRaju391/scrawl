@@ -1,9 +1,10 @@
-// --test-select: the Select tool end to end in the real app, in the background, with a dry pointer lock (it refuses to
-// run otherwise). S picks it (and draw mode); a one-finger drag through the trackpad path makes the rectangle; the bar
-// shows next to it; ⌘C (the menu item) puts PNG, PDF and SVG on the test pasteboard and shows "Copied"; Esc leaves draw
-// mode and keeps the selection; a pointer drag replaces it; the bar's Copy and Export… work; Export Selection… opens the
-// sheet on Selection and saves the region; Esc, another tool and another page clear it; nothing is an edit.
-// checks/select.sh photographs the window when asked (shot-<name>.req) and reads test-select.json.
+// --test-select: the Select tool (a pointer tool) end to end in the real app, in the background, with a dry pointer lock (it
+// refuses to run otherwise). From draw mode, S gives the pointer back (draw mode off); finger touches then draw nothing; a
+// pointer drag makes the box; the bar shows next to it; Cmd-C (the menu item) puts PNG, PDF and SVG on the test pasteboard
+// and shows "Copied"; a new drag replaces it; the bar's Copy and Export... work; Export Selection... opens the sheet on
+// Selection and saves the region; Esc clears it; S again, P and D go back to drawing; a waiting next-line move is dropped;
+// another tool or page clears it; nothing is an edit. checks/select.sh photographs the window when asked and reads
+// test-select.json.
 import AppKit
 
 enum TestSelect {
@@ -55,6 +56,11 @@ enum TestSelect {
                                              context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return }
             switch type { case .leftMouseDown: c.mouseDown(with: e); case .leftMouseDragged: c.mouseDragged(with: e); default: c.mouseUp(with: e) }
         }
+        func pointerDrag(_ a: CGPoint, _ b: CGPoint) {
+            mouse(.leftMouseDown, a)
+            for k in 1...10 { let f = Double(k) / 10; mouse(.leftMouseDragged, CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f)) }
+            mouse(.leftMouseUp, b); spin(0.2)
+        }
         func rect(_ s: CGRect?) -> [Double] { s.map { [$0.minX, $0.minY, $0.width, $0.height] } ?? [] }
         func viewRect(_ s: CGRect) -> CGRect {
             let lo = c.viewPoint(fromCanvas: CGPoint(x: s.minX, y: s.minY)), hi = c.viewPoint(fromCanvas: CGPoint(x: s.maxX, y: s.maxY))
@@ -90,45 +96,44 @@ enum TestSelect {
                      "exportSelectionEnabledWithout": menuItem(#selector(AppDelegate.exportSelectionAction))?.isEnabled ?? true,
                      "copyTitleWithout": menuItem(#selector(AppDelegate.copyPageAction))?.title ?? ""]
 
-        // 1. S: Select, in draw mode (dry lock). A one-finger drag makes the rectangle.
+        // 1. From draw mode (dry lock), S: Select, and the pointer back (draw mode off, the toolbar showing).
+        key("d", 2)
+        let drawBefore = c.drawMode
         key("s", 1)
-        r["afterS"] = ["tool": c.tools.tool.rawValue, "draw": c.drawMode, "toolbarTool": app.container.toolbar.state.tool.rawValue]
-        let a = CGPoint(x: 0.25, y: 0.35), b = CGPoint(x: 0.6, y: 0.75)
-        drag(a, b)
-        let ca = c.pagePointForTest(Contact(id: 0, state: 4, norm: a, mm: CGPoint(x: a.x * pad.width, y: a.y * pad.height), pressure: 30, size: 0.5, major: 7.5))
-        let cb = c.pagePointForTest(Contact(id: 0, state: 4, norm: b, mm: CGPoint(x: b.x * pad.width, y: b.y * pad.height), pressure: 30, size: 0.5, major: 7.5))
-        let v = c.camera.visible, m = Camera.margin, kk = 1 / (1 - 2 * m)
-        func exp(_ p: CGPoint) -> CGPoint { CGPoint(x: v.minX + (p.x - m) * kk * v.width, y: v.minY + (p.y - m) * kk * v.height) }
-        let want = CGRect(x: exp(a).x, y: exp(a).y, width: exp(b).x - exp(a).x, height: exp(b).y - exp(a).y)
-        r["drag"] = ["selection": rect(c.selection), "want": rect(want), "mapping": [ca.x, ca.y, cb.x, cb.y], "strokes": c.doc.strokes.count]
+        r["afterS"] = ["tool": c.tools.tool.rawValue, "draw": c.drawMode, "drawBefore": drawBefore, "pointerLocked": CursorLock.locked,
+                       "toolbarShown": !app.container.toolbar.isHidden, "toolbarTool": app.container.toolbar.state.tool.rawValue]
+        // Finger touches with Select draw nothing: no box, no ink.
+        drag(CGPoint(x: 0.25, y: 0.35), CGPoint(x: 0.6, y: 0.75))
+        r["fingers"] = ["selection": rect(c.selection), "strokes": c.doc.strokes.count, "strokes0": strokes0]
+        // A pointer drag makes the box.
+        let W = Double(c.bounds.width), H = Double(c.bounds.height)
+        let p0 = CGPoint(x: W * 0.28, y: H * 0.68), p1 = CGPoint(x: W * 0.6, y: H * 0.38)
+        pointerDrag(p0, p1)
+        let q0 = c.canvasPoint(fromView: p0), q1 = c.canvasPoint(fromView: p1)
+        let want = CGRect(x: min(q0.x, q1.x), y: min(q0.y, q1.y), width: abs(q1.x - q0.x), height: abs(q1.y - q0.y))
+        r["drag"] = ["selection": rect(c.selection), "want": rect(want), "strokes": c.doc.strokes.count]
         c.setNeedsRender(); spin(0.3)
         r["drawn"] = rect(c.selectionDrawnForTest)
-        r["barDrawMode"] = bar()
+        r["bar"] = bar()
         r["barNextTo"] = { () -> Bool in
             guard let s = c.selection else { return false }
             let vr = viewRect(s), f = app.container.selectionBar.frame
             return abs(f.maxX - vr.maxX) < 1.5 && (abs(f.maxY - (vr.minY - 8)) < 1.5 || abs(f.minY - (vr.maxY + 8)) < 1.5)
         }()
         r["menuWith"] = ["copyTitle": menuItem(#selector(AppDelegate.copyPageAction))?.title ?? "", "exportSelectionEnabled": menuItem(#selector(AppDelegate.exportSelectionAction))?.isEnabled ?? false]
-        photo("1-select-drawmode")
+        photo("1-select-pointer-box")
 
         // 2. ⌘C: PNG at 2x, PDF and SVG on the pasteboard; "Copied".
         pb.clearContents()
         let copied = perform(#selector(AppDelegate.copyPageAction))
         r["copy"] = ["performed": copied, "pasteboard": pasteboard(), "toast": toast(), "want": [Int(((c.selection?.width ?? 0) * 2).rounded()), Int(((c.selection?.height ?? 0) * 2).rounded())]]
 
-        // 3. Esc leaves draw mode and keeps the selection; the bar's buttons are for the pointer now.
-        let kept = c.selection
-        key("\u{1b}", 53); spin(0.3)
-        r["escInDraw"] = ["draw": c.drawMode, "kept": c.selection == kept && kept != nil, "bar": bar()]
-        photo("2-select-bar")
-
-        // 4. A pointer drag outside draw mode replaces it.
-        let p0 = CGPoint(x: c.bounds.width * 0.3, y: c.bounds.height * 0.6), p1 = CGPoint(x: c.bounds.width * 0.55, y: c.bounds.height * 0.35)
-        mouse(.leftMouseDown, p0); for k in 1...10 { let f = Double(k) / 10; mouse(.leftMouseDragged, CGPoint(x: p0.x + (p1.x - p0.x) * f, y: p0.y + (p1.y - p0.y) * f)) }
-        mouse(.leftMouseUp, p1); spin(0.2)
-        let q0 = c.canvasPoint(fromView: p0), q1 = c.canvasPoint(fromView: p1)
-        r["pointer"] = ["selection": rect(c.selection), "want": rect(CGRect(x: min(q0.x, q1.x), y: min(q0.y, q1.y), width: abs(q1.x - q0.x), height: abs(q1.y - q0.y))), "bar": bar()]
+        photo("2-select-bar-copied")
+        // 3. A new drag replaces it.
+        let p2 = CGPoint(x: W * 0.35, y: H * 0.6), p3 = CGPoint(x: W * 0.52, y: H * 0.42)
+        pointerDrag(p2, p3)
+        let q2 = c.canvasPoint(fromView: p2), q3 = c.canvasPoint(fromView: p3)
+        r["replaced"] = ["selection": rect(c.selection), "want": rect(CGRect(x: min(q2.x, q3.x), y: min(q2.y, q3.y), width: abs(q3.x - q2.x), height: abs(q3.y - q2.y))), "bar": bar()]
 
         // 5. The bar's Copy button.
         let ch0 = pb.changeCount
@@ -169,15 +174,30 @@ enum TestSelect {
         if let p = app.exportPanel { app.window.endSheet(p, returnCode: .cancel) }
         d = Date().addingTimeInterval(5)
         while app.window.attachedSheet != nil && Date() < d { spin(0.05) }
-        // 8. Another tool clears it (P: S again goes back to the pen); another page clears it.
-        c.setSelectionForTest(CGRect(x: 300, y: 600, width: 200, height: 100)); spin(0.1)
-        key("s", 1)   // Select again: back to the pen
-        r["toolSwitch"] = ["tool": c.tools.tool.rawValue, "cleared": c.selection == nil]
+        // 8. Back to drawing: S again -> pen, and draw mode again (it was on when Select was picked).
+        key("s", 1)
+        r["sAgain"] = ["tool": c.tools.tool.rawValue, "draw": c.drawMode]
+        // P from Select: the pen, drawing. D from Select: draw mode with the pen.
+        key("s", 1); let pFrom = c.tools.tool.rawValue; key("p", 35)
+        r["pFromSelect"] = ["from": pFrom, "tool": c.tools.tool.rawValue, "draw": c.drawMode]
+        key("s", 1); let dFrom = c.tools.tool.rawValue; key("d", 2)
+        r["dFromSelect"] = ["from": dFrom, "tool": c.tools.tool.rawValue, "draw": c.drawMode]
+        // 9. A next-line move waiting for its pause when Select is picked is dropped; the view stays put.
+        if !c.drawMode { key("d", 2) }
+        c.setPendingMoveForTest()
+        let waiting = c.hasPendingMoveForTest, center0 = c.camera.center
+        key("s", 1); spin(0.6)
+        r["pendingMove"] = ["waitingBefore": waiting, "waitingAfter": c.hasPendingMoveForTest, "viewMoved": c.camera.center != center0, "draw": c.drawMode]
+        // 10. Another tool clears the selection; so does another page.
+        pointerDrag(p2, p3)
+        let hadOne = c.selection != nil
+        key("h", 4)
+        r["toolSwitch"] = ["had": hadOne, "tool": c.tools.tool.rawValue, "cleared": c.selection == nil, "draw": c.drawMode]
         if c.drawMode { app.exitDrawMode("test") }
-        var t3 = c.tools; t3.tool = .select; c.tools = t3; app.container.toolbar.state = t3
-        c.setSelectionForTest(CGRect(x: 300, y: 600, width: 200, height: 100)); spin(0.1)
+        key("s", 1); pointerDrag(p2, p3)
+        let hadTwo = c.selection != nil
         app.page(0)   // a new page
-        r["pageSwitch"] = ["cleared": c.selection == nil, "bar": bar()]
+        r["pageSwitch"] = ["had": hadTwo, "cleared": c.selection == nil, "bar": bar()]
         app.page(-1)
         r["notAnEdit"] = ["sameDoc": c.doc === doc, "strokes": doc.strokes.count, "strokes0": strokes0, "version": doc.version, "version0": version0, "canUndo": doc.canUndo, "canUndo0": undo0]
         finish()

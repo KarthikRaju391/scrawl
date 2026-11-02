@@ -1,10 +1,10 @@
-// The Select tool's actions: a small floating bar next to the selected rectangle (Copy, Export…), Copy as Image (⌘C with a
+// The Select tool's actions (a pointer tool: picking it leaves draw mode, Modes.swift): a small floating bar next to the
+// selected rectangle (Copy, Export…), Copy as Image (⌘C with a
 // selection: PNG at 2x, plus PDF and SVG, on the pasteboard) and Export Selection… (⌥⌘E: the export sheet with Area set to
 // Selection). The rectangle itself, and how a drag makes it, is in Canvas.swift. Selecting is never an edit: no undo step.
 import AppKit
 
-/// The bar under (or over) the selection. Its buttons are clicked with the pointer outside draw mode; in draw mode, where
-/// the pointer is frozen, it shows the keys instead.
+/// The bar under (or over) the selection, clicked with the pointer (Select is never on in draw mode).
 final class SelectionBar: NSView {
     let copy = NSButton(title: "Copy", target: nil, action: nil)
     let export = NSButton(title: "Export…", target: nil, action: nil)
@@ -27,8 +27,6 @@ final class SelectionBar: NSView {
     required init?(coder: NSCoder) { fatalError() }
     @objc private func copyPressed() { onCopy?() }
     @objc private func exportPressed() { onExport?() }
-    /// In draw mode the labels name the keys (the pointer can't reach the bar there).
-    var drawMode = false { didSet { copy.title = drawMode ? "Copy ⌘C" : "Copy"; export.title = drawMode ? "Export ⌥⌘E" : "Export…"; needsLayout = true } }
     var fittingWidth: CGFloat { copy.fittingSize.width + export.fittingSize.width + 4 * 6 }
     static let height: CGFloat = 30
     override func layout() {
@@ -54,7 +52,7 @@ extension AppDelegate {
         let r = CGRect(x: lo.x, y: lo.y, width: hi.x - lo.x, height: hi.y - lo.y)
         guard r.intersects(b) else { return nil }
         let w = bar.fittingWidth, h = SelectionBar.height, gap: CGFloat = 8
-        let floor = canvas.drawMode ? 48 : ToolbarView.height + 10   // above the toolbar (or the draw-mode capsule)
+        let floor = ToolbarView.height + 10   // above the toolbar
         var y = r.minY - gap - h
         if y < floor { y = r.maxY + gap }
         if y + h > b.height - 8 { y = min(max(r.minY + gap, floor), b.height - 8 - h) }   // tall selection: inside its bottom
@@ -68,7 +66,6 @@ extension AppDelegate {
     }
     func updateSelectionBar() {
         let bar = container.selectionBar
-        bar.drawMode = canvas.drawMode
         if let f = selectionBarFrame() { bar.frame = f; bar.isHidden = false } else { bar.isHidden = true }
     }
 

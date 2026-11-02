@@ -281,7 +281,7 @@ final class ToolbarView: NSView {
         case .tool(.marker): return "Marker (M) · ⌃ or right-click: size and colour"
         case .tool(.highlighter): return "Highlighter (H) · ⌃ or right-click: size and colour"
         case .tool(.eraser): return "Eraser (E) · or scratch out with a quick zig-zag · ⌃: size"
-        case .tool(.select): return "Select (S) · drag a rectangle, then ⌘C to copy it as an image"
+        case .tool(.select): return "Select (S) · drag a box with the pointer, then ⌘C to copy it as an image"
         case .background: return "Paper: plain, grid, dots or lines"
         case .writing: return "Writing mode (W): the next line when a line reaches its width · ⌃: line width"
         case .zoomLock: return state.zoomLocked ? "Zoom locked (L): two fingers only pan" : "Lock the zoom (L)"

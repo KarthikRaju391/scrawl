@@ -17,7 +17,7 @@ def chk(ok, msg):
     global bad; bad += 0 if ok else 1; print("PASS" if ok else "FAIL", msg)
 f = r["failures"]
 by = collections.Counter(x["input"] for x in f)
-chk(not f, f"state x input matrix: {r['cases'] - len(f)}/{r['cases']} cases follow the rules (40 states x keys, toolbar buttons, menu items)")
+chk(not f, f"state x input matrix: {r['cases'] - len(f)}/{r['cases']} cases follow the rules (36 states x keys, toolbar buttons, menu items; draw mode and Select are never on together)")
 for name, n in by.most_common():
     ex = next(x for x in f if x["input"] == name)
     why = "opened a panel" if ex["panelOpened"] else ("toolbar out of sync" if not ex["toolbarShowsIt"] else "")

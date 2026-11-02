@@ -3,17 +3,23 @@
 ///   draw, writing, zoom lock: toggle.
 ///   a tool: if it's the active tool it turns off (marker, highlighter, eraser -> pen; pen -> the last other
 ///   tool), and draw mode stays as it is; otherwise it becomes active, and turns draw mode on so it's ready to use.
+///   Select is a pointer tool: picking it leaves draw mode (the pointer comes back); S again goes back to the pen and to
+///   draw mode if it was on when Select was picked. Draw mode and Select are never on together: D with Select active
+///   draws with the pen.
 enum ModeInput: Equatable { case draw, writing, zoomLock, tool(ToolKind) }
 
 struct ModeState: Equatable {
     var draw: Bool, writing: Bool, locked: Bool, tool: ToolKind
 
-    func after(_ input: ModeInput, lastOther: ToolKind?) -> ModeState {
+    /// `drawBeforeSelect`: whether draw mode was on when Select was picked (S again goes back to it).
+    func after(_ input: ModeInput, lastOther: ToolKind?, drawBeforeSelect: Bool = false) -> ModeState {
         var s = self
         switch input {
-        case .draw: s.draw.toggle()
+        case .draw: s.draw.toggle(); if s.draw && tool == .select { s.tool = .pen }
         case .writing: s.writing.toggle()
         case .zoomLock: s.locked.toggle()
+        case .tool(.select) where tool == .select: s.tool = .pen; s.draw = drawBeforeSelect
+        case .tool(.select): s.tool = .select; s.draw = false
         case .tool(let k) where k == tool: s.tool = k == .pen ? (lastOther ?? .pen) : .pen
         case .tool(let k): s.tool = k; s.draw = true
         }

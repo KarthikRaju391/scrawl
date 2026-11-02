@@ -24,7 +24,7 @@ enum TestKeys {
         // checked in draw mode: D first.
         for (k, label) in [("d", "D"), ("p", "P on pen, no other tool used yet"), ("d", "D again"), ("d", "D (back on)"), ("w", "W"), ("w", "W again"), ("l", "L"), ("l", "L again"), ("z", "Z"), ("z", "Z again"),
                            ("m", "M"), ("m", "M again"), ("h", "H"), ("h", "H again"), ("e", "E"), ("e", "E again"), ("s", "S"), ("s", "S again"),
-                           ("p", "P on pen (last other tool: select)"), ("p", "P again")] {
+                           ("p", "P on pen (last other tool: eraser)"), ("p", "P again")] {
             press(k); snap(label)
         }
         // P with a tool picked in the toolbar, and P with no other tool ever used (fresh state).

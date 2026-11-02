@@ -1,14 +1,15 @@
 #!/bin/bash
-# The Select tool: the bench's selection checks (the rectangle through the real input path under pan, zoom and a pinch;
-# Copy's PNG/PDF/SVG against the canvas's render; Export Selection; clearing; never an edit), then the tool in the app
-# (background, dry pointer lock): S, a finger drag, the bar, ⌘C, Esc, a pointer drag, the bar's Copy and Export…, the
-# sheet on Selection, Esc / another tool / another page clearing it. Screenshots go to $OUT.
+# The Select tool (a pointer tool): the bench's selection checks (a pointer drag under pan and zoom; finger touches draw
+# nothing; Copy's PNG/PDF/SVG against the canvas's render; Export Selection; clearing; never an edit), then the tool in the
+# app (background, dry pointer lock): S from draw mode gives the pointer back, fingers draw nothing, a pointer drag, the
+# bar, ⌘C, the bar's Copy and Export…, the sheet on Selection, Esc, S / P / D back to drawing, a waiting next-line move
+# dropped, another tool / page clearing it. Screenshots go to $OUT.
 cd "$(dirname "$0")/.."
 APP="${APP:-build/Scrawl.app/Contents/MacOS/TrackpadDraw}"
 bad=0
 if [ -z "$ALLOW_STALE" ] && [ -n "$(find app -name '*.swift' -newer "$APP" | head -1)" ]; then echo "FAIL $APP is older than app/ (build first)"; echo "RESULT: FAIL"; exit 1; fi
 if [ -x build/bench ] && [ -z "$NO_BENCH" ]; then
-    BENCH_ONLY=export build/bench | sed -n '/a one-finger drag with Select/,$p' | tee /tmp/td-select-bench.$$ | grep -E "^(PASS|FAIL)"
+    BENCH_ONLY=export build/bench | sed -n '/a pointer drag with Select/,$p' | tee /tmp/td-select-bench.$$ | grep -E "^(PASS|FAIL)"
     grep -q "^FAIL" /tmp/td-select-bench.$$ && bad=1; [ -s /tmp/td-select-bench.$$ ] || { echo "FAIL no selection checks in the bench"; bad=1; }; rm -f /tmp/td-select-bench.$$
 fi
 D=$(mktemp -d /tmp/td-select.XXXX); OUT="${OUT:-$D}"
@@ -41,28 +42,34 @@ near = lambda a, b, t=0.05: len(a) == len(b) == 4 and all(abs(x - y) < t for x, 
 m = r["menu"]
 chk(m["select"] == "Select  (S)" and m["exportSelection"] == "Export Selection…" and m["exportSelectionKey"].endswith("-e") and not m["exportSelectionEnabledWithout"]
     and m["copyTitleWithout"] == "Copy Page as Image", f"menus: Tools › Select (S); File › Export Selection… ⌥⌘E, dimmed with no selection; ⌘C is Copy Page as Image ({m})")
-s = r["afterS"]; chk(s == {"tool": "select", "draw": True, "toolbarTool": "select"}, f"S picks Select (and draw mode, like every tool); the toolbar shows it {s}")
+s = r["afterS"]
+chk(s["drawBefore"] and s["tool"] == "select" and not s["draw"] and not s["pointerLocked"] and s["toolbarShown"] and s["toolbarTool"] == "select",
+    f"S from draw mode picks Select and gives the pointer back: draw mode off, pointer free, toolbar showing {s}")
+f = r["fingers"]; chk(f["selection"] == [] and f["strokes"] == f["strokes0"], f"finger touches with Select draw neither a box nor ink (selection {f['selection']}, strokes {f['strokes']})")
 g = r["drag"]
-chk(near(g["selection"], g["want"]) and g["strokes"] == 6, f"a one-finger drag makes the rectangle where the finger went: {[round(x, 1) for x in g['selection']]} = {[round(x, 1) for x in g['want']]}; no ink")
-chk(near(r["drawn"], g["selection"]), "the canvas draws it (dashed outline and tint) at that rectangle")
-b = r["barDrawMode"]; chk(b["shown"] and r["barNextTo"] and b["copy"] == "Copy ⌘C", f"the bar shows next to it (under its bottom-right corner, or over it); in draw mode it names the keys ({b['copy']}, {b['export']})")
+chk(near(g["selection"], g["want"]) and g["strokes"] == 6, f"a pointer drag makes the box under the pointer: {[round(x, 1) for x in g['selection']]} = {[round(x, 1) for x in g['want']]}; no ink")
+chk(near(r["drawn"], g["selection"]), "the canvas draws it (dashed outline and tint) at that box")
+b = r["bar"]; chk(b["shown"] and r["barNextTo"] and b["copy"] == "Copy" and b["export"] == "Export…", f"the bar shows next to it with plain labels ({b['copy']}, {b['export']})")
 mw = r["menuWith"]; chk(mw["copyTitle"] == "Copy Selection as Image" and mw["exportSelectionEnabled"], f"with a selection ⌘C reads Copy Selection as Image; Export Selection… is enabled {mw}")
 cp = r["copy"]; pb = cp["pasteboard"]
 chk(cp["performed"] and {"public.png", "com.adobe.pdf", "public.svg-image"} <= set(pb["types"]) and pb.get("png") == cp["want"] and pb["pdfBytes"] > 1000 and pb["svgHasViewBox"] and cp["toast"] == "Copied",
-    f"⌘C puts PNG {pb.get('png')} (= rectangle x 2: {cp['want']}), PDF ({pb['pdfBytes']} bytes) and SVG on the pasteboard; the toast says {cp['toast']!r}")
-e = r["escInDraw"]; chk(not e["draw"] and e["kept"] and e["bar"]["shown"] and e["bar"]["copy"] == "Copy", f"Esc in draw mode leaves it and keeps the selection; the bar's buttons are for the pointer ({e['bar']['copy']}, {e['bar']['export']})")
-p = r["pointer"]; chk(near(p["selection"], p["want"]) and p["bar"]["shown"], f"a pointer drag outside draw mode makes a new rectangle (replacing the old): {[round(x, 1) for x in p['selection']]}")
+    f"⌘C puts PNG {pb.get('png')} (= box x 2: {cp['want']}), PDF ({pb['pdfBytes']} bytes) and SVG on the pasteboard; the toast says {cp['toast']!r}")
+rp = r["replaced"]; chk(near(rp["selection"], rp["want"]) and rp["bar"]["shown"], f"a new drag replaces it: {[round(x, 1) for x in rp['selection']]}")
 bc = r["barCopy"]; chk(bc["changed"] and bc["pasteboard"].get("png"), f"the bar's Copy copies it ({bc['pasteboard'].get('png')})")
 sh = r["sheet"]
 chk(sh["open"] and sh["area"] == "Selection" and sh["areas"] == ["Page", "What's on screen", "Selection"] and sh["label"].startswith(f"{sh['want'][0]:,} × {sh['want'][1]:,} px"),
-    f"the bar's Export… opens the sheet on Area Selection ({sh['areas']}); size shown {sh['label']!r} = rectangle x 3")
+    f"the bar's Export… opens the sheet on Area Selection ({sh['areas']}); size shown {sh['label']!r} = box x 3")
 ex = r.get("exported", {})
 chk(ex.get("size") == sh["want"] and str(ex.get("name", "")).startswith("Selection"), f"saving writes the region: {ex}")
 chk(r["rememberedAreaAfter"] == "screen", f"the sheet remembers its other choices but not Area Selection (area still {r['rememberedAreaAfter']!r})")
-eo = r["escOutside"]; chk(eo["cleared"] and not eo["bar"]["shown"] and not eo["exportSelectionEnabled"] and eo["copyTitle"] == "Copy Page as Image", "Esc outside draw mode clears it; the bar goes; ⌘C copies the page again")
+eo = r["escOutside"]; chk(eo["cleared"] and not eo["bar"]["shown"] and not eo["exportSelectionEnabled"] and eo["copyTitle"] == "Copy Page as Image", "Esc clears it; the bar goes; ⌘C copies the page again")
 sw = r["sheetWithout"]; chk(sw["areas"] == ["Page", "What's on screen"] and sw["area"] == "What's on screen", f"with no selection, Export Page… offers Page and What's on screen only ({sw})")
-ts = r["toolSwitch"]; chk(ts == {"tool": "pen", "cleared": True}, f"S again goes back to the pen and clears the selection {ts}")
-ps = r["pageSwitch"]; chk(ps["cleared"] and not ps["bar"]["shown"], "another page clears it")
+sa = r["sAgain"]; chk(sa == {"tool": "pen", "draw": True}, f"S again goes back to the pen and to draw mode (it was on when Select was picked) {sa}")
+pf = r["pFromSelect"]; chk(pf == {"from": "select", "tool": "pen", "draw": True}, f"P from Select: the pen, drawing {pf}")
+df = r["dFromSelect"]; chk(df == {"from": "select", "tool": "pen", "draw": True}, f"D from Select: draw mode with the pen {df}")
+pm = r["pendingMove"]; chk(pm["waitingBefore"] and not pm["waitingAfter"] and not pm["viewMoved"] and not pm["draw"], f"a waiting next-line move is dropped when Select is picked; the view stays put {pm}")
+ts = r["toolSwitch"]; chk(ts["had"] and ts["cleared"] and ts["tool"] == "highlighter" and ts["draw"], f"another tool (H) clears the selection and draws {ts}")
+ps = r["pageSwitch"]; chk(ps["had"] and ps["cleared"] and not ps["bar"]["shown"], "another page clears it")
 ne = r["notAnEdit"]; chk(ne["sameDoc"] and ne["strokes"] == ne["strokes0"] and ne["version"] == ne["version0"] and ne["canUndo"] == ne["canUndo0"], f"none of it was an edit (strokes {ne['strokes']}, version {ne['version']} was {ne['version0']}, undo unchanged)")
 os.makedirs(out, exist_ok=True)
 shots = []
