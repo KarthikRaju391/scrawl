@@ -24,7 +24,7 @@ final class ExportAccessory: NSView, NSTextFieldDelegate {
         background.addItems(withTitles: ["Paper", "White", "Transparent"])
         area.item(at: 0)?.toolTip = "The page's full width, from its top to just below the lowest ink"
         area.item(at: 1)?.toolTip = "Exactly what the window shows, at its current zoom"
-        area.item(at: 2)?.toolTip = "The rectangle you selected, with any strokes cut at its edges"
+        if hasSelection { area.item(at: 2)?.toolTip = "The rectangle you selected, with any strokes cut at its edges" }   // item(at:) raises past the end
         background.item(at: 0)?.toolTip = "The page as the canvas shows it: white with its grid, dots or lines"
         for p in [format, scale, area, background] { p.target = self; p.action = #selector(changed(_:)) }
         let f = NumberFormatter(); f.numberStyle = .none; f.allowsFloats = false   // no min/max: out of range is clamped (takePercent), not refused
