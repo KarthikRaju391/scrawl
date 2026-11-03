@@ -117,7 +117,7 @@ check_refused() {   # check_refused <name> <expected text>
         || fail "$1: states [$STATES], installed $VERNOW, notebook $NB0 -> $NB1, left [$LEFT]"
 }
 want badsha    && { run badsha '{"dmg":"good","sums":"bad"}';                 check_refused "bad checksum" "checksum"; }
-want badsig    && { run badsig '{"dmg":"good","sig":"bad"}';                  check_refused "bad signature" "signed"; }
+want badsig    && { SHOT=1 run badsig '{"dmg":"good","sig":"bad"}';                  check_refused "bad signature" "signed"; }
 want nosig     && { run nosig '{"dmg":"good","sig":"missing"}';               check_refused "missing signature" "signed"; }
 want truncate  && { run truncate '{"dmg":"good","transfer":"truncate"}';      check_refused "truncated download" "download\|incomplete\|checksum"; }
 want error     && { run error '{"dmg":"good","transfer":"error"}';            check_refused "server error" "500"; }
@@ -139,6 +139,6 @@ if want crash; then run crash '{"dmg":"crash"}' --update-restart
     [ "$VERNOW" = $OLD ] && echo "$R" | grep -q "\"version\" : \"$OLD\"" && grep -q "didn't start; putting the old one back" "$W/crash/data/update.log" && [ "$NB0" = "$NB1" ] \
         && pass "a new version that won't start: the old one is put back and reopened ($R)" || fail "crash: installed $VERNOW, report $R, log $(cat "$W/crash/data/update.log" 2>/dev/null)"
 fi
-[ -f "$W/happy-panel.png" ] && cp "$W/happy-panel.png" /tmp/scrawl-update-panel.png && echo "panel screenshot: /tmp/scrawl-update-panel.png"
+for s in happy badsig; do [ -f "$W/$s-panel.png" ] && cp "$W/$s-panel.png" /tmp/scrawl-update-panel-$s.png && echo "panel screenshot: /tmp/scrawl-update-panel-$s.png"; done
 echo "work: $W"
 echo "RESULT: $([ $BAD = 0 ] && echo PASS || echo "FAIL ($BAD)")"
