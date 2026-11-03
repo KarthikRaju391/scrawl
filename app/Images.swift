@@ -156,6 +156,8 @@ final class ImageAsset: @unchecked Sendable {
         previewRaster = Raster(path: previewPath, width: p.width, height: p.height)
         return previewRaster
     }
+    /// The preview's pixels are mapped (making its texture needs no decode).
+    var previewMapped: Bool { lock.lock(); defer { lock.unlock() }; return tiled ? previewRaster != nil : fullRaster != nil }
     /// Both rasters are ready without decoding.
     var ready: Bool { lock.lock(); defer { lock.unlock() }; return fullRaster != nil && (!tiled || previewRaster != nil) }
     /// Decode (if needed) on the background queue, then `done` on the main queue.

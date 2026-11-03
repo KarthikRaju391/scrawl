@@ -36,8 +36,14 @@ final class ImageTextures {
     /// What to draw for `objects` (bottom first) in `visible` (page units) at `pxPerUnit` device pixels per page unit.
     /// `sync`: everything needed is loaded now, decoding if it has to (snapshots for the overview's transition, exports
     /// of the view, tests); otherwise missing textures load in the background and `onReady` is called.
+    /// At most this many tiles are made synchronously in one call (~5 ms each): the rest load in the background and the
+    /// preview stands in for them, the same in the snapshot and in the frames after it.
+    static let maxSyncTiles = 6
+    private var syncLeft = 0
+
     func draws(_ objects: [ImageObject], visible: CGRect, pxPerUnit: Double, sync: Bool = false) -> Renderer.ImageDraws {
         frame += 1
+        syncLeft = Self.maxSyncTiles
         var out = Renderer.ImageDraws()
         var st = (tiles: 0, previews: 0, loading: 0)
         for o in objects {
@@ -95,6 +101,11 @@ final class ImageTextures {
         e.lastUsed = frame
         if let t = e.texture { return t }
         if e.failed { return nil }
+        // The preview whose pixels are already mapped is made now (a few ms, once): a page never shows white where its
+        // picture is. Tiles beyond the synchronous allowance load in the background.
+        var sync = sync && (tile < 0 || syncLeft > 0)
+        if tile < 0 && a.previewMapped { sync = true }
+        if sync && tile >= 0 { syncLeft -= 1 }
         if sync {
             if let t = make(a, tile: tile, wait: true) { e.texture = t; e.bytes = Self.bytes(t); residentBytes += e.bytes; e.loading = false } else { e.failed = true }
             return e.texture
