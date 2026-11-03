@@ -206,11 +206,19 @@ func imageChecks(_ check: (Bool, String) -> Void) {
         let wo = c.pages[tiled].images[0]
         let k = wo.frame.width / 5000   // page units per picture pixel
         let region = CGRect(x: wo.frame.minX + 900 * k, y: wo.frame.maxY - 2200 * k, width: 1300 * k, height: 1300 * k)
+        ImageTextures.maxSyncTiles = 100   // all of them now (the app makes 6 at most and lets the preview stand in)
         let dt = r.images.draws(c.pages[tiled].images, visible: region, pxPerUnit: 1 / k, sync: true)
+        ImageTextures.maxSyncTiles = 6
         let gt = gpuRender(r, visible: region, w: 1300, h: 1300, images: dt)
         let rt = rasterBytes(wa.full()!, x: 900, y: 900, w: 1300, h: 1300)
         let td = diff(gt, rt)
         check(wa.tiled && r.images.stats.tiles == 9 && td.max <= 1, "GPU, tiled 5000 x 3000 at 1:1 across 9 tiles' edges: exact (largest difference \(td.max), \(r.images.stats.tiles) tiles drawn, \(r.images.stats.previews) previews)")
+        // The app's own synchronous draw (a snapshot): 6 tiles now, the preview for the other 3, the same picture.
+        r.images.dropAll()
+        let d6 = r.images.draws(c.pages[tiled].images, visible: region, pxPerUnit: 1 / k, sync: true)
+        let g6 = gpuRender(r, visible: region, w: 1300, h: 1300, images: d6)
+        let s6 = r.images.stats, m6 = diff(g6, rt)
+        check(s6.tiles == 6 && s6.previews == 3 && m6.mean < 8, "a snapshot makes at most 6 tiles synchronously, the preview stands in for the rest (\(s6.tiles) tiles, \(s6.previews) previews; mean difference from the full picture \(String(format: "%.2f", m6.mean)))")
         // Zoomed out to a quarter: the preview, close to a CoreGraphics reduction of the picture.
         let whole = wo.frame, ow = 1250, oh = 750
         let dz = r.images.draws(c.pages[tiled].images, visible: whole, pxPerUnit: Double(ow) / whole.width, sync: true)

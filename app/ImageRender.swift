@@ -38,7 +38,7 @@ final class ImageTextures {
     /// of the view, tests); otherwise missing textures load in the background and `onReady` is called.
     /// At most this many tiles are made synchronously in one call (~5 ms each): the rest load in the background and the
     /// preview stands in for them, the same in the snapshot and in the frames after it.
-    static let maxSyncTiles = 6
+    nonisolated(unsafe) static var maxSyncTiles = 6
     private var syncLeft = 0
 
     func draws(_ objects: [ImageObject], visible: CGRect, pxPerUnit: Double, sync: Bool = false) -> Renderer.ImageDraws {
