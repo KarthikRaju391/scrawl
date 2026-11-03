@@ -51,6 +51,23 @@ fragment float4 bg_f(VOut in [[stage_in]], constant BG& bg [[buffer(0)]]) {
     }
     return mix(paper, line, a);
 }
+
+// Image objects: one quad per tile, canvas rect (minX, minY, maxX, maxY) and texture rect (u0, v0 top, u1, v1 bottom).
+struct IQuad { float4 rect; float4 uv; };
+struct IOut { float4 pos [[position]]; float2 uv; };
+vertex IOut image_v(uint vid [[vertex_id]], constant Xf& xf [[buffer(1)]], constant IQuad& q [[buffer(0)]]) {
+    const float2 k[6] = { float2(0, 0), float2(1, 0), float2(1, 1), float2(0, 0), float2(1, 1), float2(0, 1) };
+    float2 c = k[vid];
+    float2 p = mix(q.rect.xy, q.rect.zw, c);
+    IOut o; o.pos = float4(p * xf.m.xy + xf.m.zw, 0, 1);
+    o.uv = float2(mix(q.uv.x, q.uv.z, c.x), mix(q.uv.w, q.uv.y, c.y));   // canvas y up, texture rows top down
+    return o;
+}
+fragment float4 image_f(IOut in [[stage_in]], texture2d<float> t [[texture(0)]]) {
+    constexpr sampler s(filter::linear, mip_filter::linear, address::clamp_to_edge, max_anisotropy(8));
+    return t.sample(s, in.uv);   // premultiplied
+}
+fragment float4 paper_f(IOut in [[stage_in]]) { return float4(1, 1, 1, 1); }   // plain paper under a picture
 """
 
 struct Mesh {
@@ -144,7 +161,12 @@ final class Renderer {
     let queue: MTLCommandQueue
     private let strokePSO: MTLRenderPipelineState
     private let bgPSO: MTLRenderPipelineState
+    private let imagePSO: MTLRenderPipelineState
+    private let underPSO: MTLRenderPipelineState
     private let stencilOnce: MTLDepthStencilState
+    private let stencilOff: MTLDepthStencilState
+    /// Pictures' textures (tiles and previews), made as they come into view.
+    private(set) lazy var images = ImageTextures(device: device)
     static let sampleCount = 4
 
     let colorFormat: MTLPixelFormat = .bgra8Unorm
@@ -182,6 +204,8 @@ final class Renderer {
             }
             strokePSO = try pso("stroke_v", "stroke_f", blend: true)
             bgPSO = try pso("bg_v", "bg_f", blend: false)
+            imagePSO = try pso("image_v", "image_f", blend: true)
+            underPSO = try pso("image_v", "paper_f", blend: false)
         } catch {
             NSLog("trackpad-draw: Metal setup failed: \(error)")
             return nil
@@ -192,6 +216,7 @@ final class Renderer {
         let ds = MTLDepthStencilDescriptor()
         ds.frontFaceStencil = s; ds.backFaceStencil = s
         stencilOnce = device.makeDepthStencilState(descriptor: ds)!
+        stencilOff = device.makeDepthStencilState(descriptor: MTLDepthStencilDescriptor())!
     }
 
     func makeMesh(_ verts: [SIMD2<Float>]) -> Mesh {
@@ -200,17 +225,25 @@ final class Renderer {
     }
 
     struct DrawItem { var mesh: Mesh; var verts: [SIMD2<Float>]?; var color: SIMD4<Float> }
+    /// Pictures under the ink: plain paper under each picture's frame (`under`, so a paper pattern never shows through a
+    /// picture's transparent parts), then the textured quads in z-order.
+    struct ImageDraws {
+        struct Quad { var texture: MTLTexture; var rect: CGRect; var uv: CGRect }
+        var under: [CGRect] = []
+        var quads: [Quad] = []
+        var isEmpty: Bool { under.isEmpty && quads.isEmpty }
+    }
 
     /// `items` in paint order. `verts` (instead of a mesh) is for small per-frame geometry.
     /// Time the last frame waited for a drawable from the window server (not our work).
     private(set) var lastDrawableWaitMs = 0.0
     func render(in view: MTKView, visible: CGRect, background: Int, spacing: Double, pxPerUnit: Double, page: CGRect? = nil,
-                items: [DrawItem], presented: ((Double) -> Void)?, gpuMs: ((Double) -> Void)? = nil) {
+                images: ImageDraws = ImageDraws(), items: [DrawItem], presented: ((Double) -> Void)?, gpuMs: ((Double) -> Void)? = nil) {
         let w0 = CACurrentMediaTime()
         guard let rpd = view.currentRenderPassDescriptor, let drawable = view.currentDrawable,
               let cb = queue.makeCommandBuffer() else { return }
         lastDrawableWaitMs = (CACurrentMediaTime() - w0) * 1000
-        encode(cb, rpd, visible: visible, background: background, spacing: spacing, pxPerUnit: pxPerUnit, page: page, items: items)
+        encode(cb, rpd, visible: visible, background: background, spacing: spacing, pxPerUnit: pxPerUnit, page: page, images: images, items: items)
         if let presented { drawable.addPresentedHandler { d in presented(d.presentedTime) } }
         if let gpuMs { cb.addCompletedHandler { cb in gpuMs((cb.gpuEndTime - cb.gpuStartTime) * 1000) } }
         if view.presentsWithTransaction {
@@ -223,7 +256,7 @@ final class Renderer {
     }
 
     func encode(_ cb: MTLCommandBuffer, _ rpd: MTLRenderPassDescriptor, visible: CGRect, background: Int, spacing: Double,
-                pxPerUnit: Double, page: CGRect? = nil, items: [DrawItem]) {
+                pxPerUnit: Double, page: CGRect? = nil, images: ImageDraws = ImageDraws(), items: [DrawItem]) {
         guard let enc = cb.makeRenderCommandEncoder(descriptor: rpd) else { return }
         var xf = SIMD4<Float>(Float(2 / visible.width), Float(2 / visible.height),
                               Float(-1 - 2 * visible.minX / visible.width), Float(-1 - 2 * visible.minY / visible.height))
@@ -232,6 +265,20 @@ final class Renderer {
         enc.setVertexBytes(&xf, length: 16, index: 1)
         enc.setFragmentBytes(&bg, length: 32, index: 0)
         enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
+
+        if !images.isEmpty {
+            enc.setDepthStencilState(stencilOff)
+            func quad(_ r: CGRect, _ uv: CGRect) {
+                var q: [Float] = [Float(r.minX), Float(r.minY), Float(r.maxX), Float(r.maxY), Float(uv.minX), Float(uv.minY), Float(uv.maxX), Float(uv.maxY)]
+                enc.setVertexBytes(&q, length: 32, index: 0)
+                enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6)
+            }
+            enc.setRenderPipelineState(underPSO)
+            enc.setVertexBytes(&xf, length: 16, index: 1)
+            for r in images.under where r.intersects(visible) { quad(r, .zero) }
+            enc.setRenderPipelineState(imagePSO)
+            for q in images.quads where q.rect.intersects(visible) { enc.setFragmentTexture(q.texture, index: 0); quad(q.rect, q.uv) }
+        }
 
         enc.setRenderPipelineState(strokePSO)
         enc.setDepthStencilState(stencilOnce)

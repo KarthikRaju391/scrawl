@@ -35,6 +35,7 @@ extension AppDelegate {
         ])
         menu("File", [
             item("New Page", #selector(newPageAction), "n"),
+            item("New Page from Image…", #selector(newPageFromImageAction), "n", [.command, .shift]),
             .separator(),
             item("Export All Pages as PDF…", #selector(exportPDF), "e"),
             item("Export Page…", #selector(exportPage), "e", [.command, .shift]),
@@ -173,6 +174,7 @@ extension AppDelegate {
         let hasSelection = canvas.selection != nil && !galleryShown
         if item.action == #selector(copyPageAction) { item.title = textFocused ? "Copy" : hasSelection ? "Copy Selection as Image" : "Copy Page as Image" }
         if item.action == #selector(exportSelectionAction) { return hasSelection }
+        if item.action == #selector(paste(_:)) { return textFocused || ImagePages.pasteboardHasImage(Self.pasteboard) }
         if item.action == #selector(prevPageAction) { return canvas.pageIndex > 0 && !galleryShown }
         if item.action == #selector(nextPageAction) { return canvas.pageIndex < canvas.pages.count - 1 && !galleryShown }
         return true

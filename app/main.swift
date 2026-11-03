@@ -59,7 +59,13 @@ final class ContainerView: NSView {
         zoomBadge.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold); zoomBadge.textColor = .white
         zoomBadge.fillColor = NSColor(white: 0.15, alpha: 0.8); zoomBadge.isHidden = true; addSubview(zoomBadge)
         selectionBar.isHidden = true; addSubview(selectionBar, positioned: .below, relativeTo: toast)
+        registerForDraggedTypes([.fileURL] + ImagePages.pasteboardTypes)
     }
+    /// Pictures dropped on the window (files, or images from another app): true if they were taken.
+    var onDropImages: ((NSPasteboard) -> Bool)?
+    override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { ImagePages.pasteboardHasImage(s.draggingPasteboard) && onDropImages != nil ? .copy : [] }
+    override func draggingUpdated(_ s: NSDraggingInfo) -> NSDragOperation { draggingEntered(s) }
+    override func performDragOperation(_ s: NSDraggingInfo) -> Bool { onDropImages?(s.draggingPasteboard) ?? false }
     required init?(coder: NSCoder) { fatalError() }
 
     override func layout() {
@@ -196,7 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         tb.onMode = { [weak self] i in self?.apply(i, from: "toolbar") }
         tb.onUndo = { [weak self] in
-            guard let self, !self.undoPageDelete() else { return }
+            guard let self, !self.undoPageOp() else { return }
             self.tips.undoByKeyOrToolbar(inDrawMode: self.canvas.drawMode); self.usage.record("undo", ["source": "toolbar"]); self.canvas.undo()
         }
         tb.onRedo = { [weak self] in self?.usage.record("redo", ["source": "toolbar"]); self?.canvas.redo() }
@@ -216,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         tips.show = { [weak self] text in self?.showToast(text, seconds: 4) }
         tips.onShown = { t in Analytics.shared.record("tip_shown", ["tip": t.rawValue]) }
         cv.onAct = { [weak self] name, extra in self?.canvasAct(name, extra) }
+        container.onDropImages = { [weak self] pb in self?.dropImages(pb) ?? false }
 
         // Input: MultitouchSupport (pressure) unless turned off (Help menu, or --input-nstouch), else the
         // public NSTouch path. Tests never start MT: real touches would interleave with the test input.
@@ -255,7 +262,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             guard let self, let w = n.object as? NSWindow, w !== self.window, self.canvas.drawMode else { return }
             self.exitDrawMode("another window")
         }
+        canvas.autosaver.extraImageKeys = { [weak self] in Set(self?.pageOps.flatMap(\.imageKeys) ?? []) }
         notebookStatus = canvas.loadNotebookFromDisk()
+        prepareImages()
+        startInbox()
         warmThumbnails()   // every page's thumbnail, in the background, so the overview opens complete
         updateBanner()
         startTestReplayIfAsked()
@@ -414,7 +424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         container.hint.stringValue = previousCrash && notebookStatus.hasPrefix("loaded")
             ? "\(AppInfo.name) closed unexpectedly last time. Your pages were restored from the last autosave."
-            : "\(pageText)  ·  created \(PageDate.short(canvas.doc.created))  ·  ⌃⌥D to draw with the trackpad\(input)"
+            : "\(pageText)  ·  created \(PageDate.short(canvas.doc.created))\(imageSourceNote)  ·  ⌃⌥D to draw with the trackpad\(input)"
         container.hint.isHidden = !container.banner.isHidden
         let t = canvas.tools
         container.capsule.info = StatusCapsule.Info(tool: t.tool, color: t.tool == .eraser ? .gray : ToolState.colors[t.colorIndex[t.tool] ?? 0],
@@ -513,7 +523,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     let tips = Tips()
     let usageState = UsageState()
     /// Pages deleted since the last ink change: ⌘Z puts them back, newest first.
-    var deletedPages: [CanvasView.DeletedPage] = []
+    var pageOps: [PageOp] = []
+    /// The browser extension's snapshots (Inbox.swift), and its items waiting for the save that includes their page.
+    var inbox: Inbox?
+    var inboxWaiting: [(id: String, doc: Document, through: Int)] = []
     var lastBadgeZoom = 1.0
     var warmsThumbnails = !Launch.testing
     var thumbWarm: DispatchWorkItem?
@@ -695,7 +708,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     // MARK: menu
 
     @objc func undo() {
-        if undoPageDelete() { return }
+        if undoPageOp() { return }
         tips.undoByKeyOrToolbar(inDrawMode: canvas.drawMode); usage.record("undo", ["source": "key"]); canvas.undo()
     }
     @objc func redoAction() { usage.record("redo", ["source": "key"]); canvas.redo() }
@@ -826,7 +839,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func canvasAct(_ name: String, _ extra: [String: Any]) {
         usageAct(name, extra)
-        if ["commit", "scratchOut", "erase", "clear", "newPage"].contains(name) { deletedPages = [] }   // ⌘Z is for the ink again
+        if ["commit", "scratchOut", "erase", "clear", "newPage"].contains(name) { pageOps = [] }   // ⌘Z is for the ink again
         switch name {
         case "gestureUndo": tips.gestureUndo(); practiceTick(.undo); Haptics.tick()
         case "gestureRedo", "scrubStep": Haptics.tick()

@@ -72,6 +72,7 @@ final class PageMapView: NSView {
         let page = c.camera.page
         var r = CGRect(x: 0, y: 0, width: page.width, height: page.height).union(c.camera.visible)
         for s in c.doc.strokes { r = r.union(s.bounds) }
+        for i in c.doc.images { r = r.union(i.frame) }
         let m = page.width * 0.02
         r = r.insetBy(dx: -m, dy: -m)
         return CGRect(x: r.minX, y: r.minY, width: r.width, height: min(r.maxY, page.height + m) - r.minY)
@@ -87,10 +88,10 @@ final class PageMapView: NSView {
             return
         }
         rendering = true
-        let strokes = doc.strokes, v = doc.version, page = c.camera.page
+        let strokes = doc.strokes, images = doc.images, v = doc.version, page = c.camera.page
         let px = CGSize(width: Self.width * 2, height: Self.width * 2 * r.height / r.width)
         queue.async { [weak self] in
-            let img = PageImage.render(strokes, rect: r, pageWidth: page.width, pageTop: page.height, px: px, fast: true)
+            let img = PageImage.render(strokes, images: images, rect: r, pageWidth: page.width, pageTop: page.height, px: px, fast: true)
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.image = img; self.region = r; self.renderedVersion = v; self.renderedPage = key

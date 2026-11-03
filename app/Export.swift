@@ -77,6 +77,10 @@ struct PageExport {
     let paper: Int
     var spacing = 48.0
     let options: ExportOptions
+    /// The page's pictures, bottom first, under the ink. With the Paper or White background each sits on plain white
+    /// (a paper pattern stops at a picture's edge, and never shows through its transparent parts); with Transparent, the
+    /// picture's own transparency is kept.
+    var images: [ImageObject] = []
 
     var size: ExportOptions.Size { ExportOptions.size(of: rect, scale: options.scale) }
     var visibleStrokes: [Stroke] { strokes.filter { $0.bounds.intersects(rect) } }
@@ -105,7 +109,7 @@ struct PageExport {
         let sx = Double(sz.width) / rect.width, sy = Double(sz.height) / rect.height
         ctx.scaleBy(x: sx, y: sy)
         ctx.translateBy(x: -rect.minX, y: -rect.minY)
-        draw(in: ctx, sx: sx)
+        draw(in: ctx, sx: sx, vector: false)
         return ctx.makeImage()
     }
 
@@ -119,13 +123,14 @@ struct PageExport {
         ctx.scaleBy(x: box.width / rect.width, y: box.height / rect.height)
         ctx.translateBy(x: -rect.minX, y: -rect.minY)
         ctx.clip(to: rect)
-        draw(in: ctx, sx: sx)   // hairlines and dots sized as in the PNG at this scale
+        draw(in: ctx, sx: sx, vector: true)   // hairlines and dots sized as in the PNG at this scale
         ctx.endPage(); ctx.closePDF()
         return data as Data
     }
 
-    /// Background, paper and ink in page units (the context is already mapped); `sx` = output pixels per page unit.
-    private func draw(in ctx: CGContext, sx: Double) {
+    /// Background, paper, pictures and ink in page units (the context is already mapped); `sx` = output pixels per page
+    /// unit; `vector`: a PDF (a JPEG picture goes in as its own data, a PDF one as vectors).
+    private func draw(in ctx: CGContext, sx: Double, vector: Bool) {
         func rgb(_ c: (Double, Double, Double), _ a: Double = 1) -> CGColor { CGColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: a) }
         switch options.background {
         case .transparent: ctx.clear(rect)
@@ -166,8 +171,14 @@ struct PageExport {
                 ctx.restoreGState()
             }
         }
+        let shown = visibleImages
+        if !shown.isEmpty {
+            if options.background != .transparent { ctx.setFillColor(.white); for i in shown { ctx.fill(i.frame) } }
+            for i in shown { i.asset.draw(in: ctx, rect: i.frame, vector: vector) }
+        }
         for s in visibleStrokes { Self.fill(s, in: ctx) }
     }
+    var visibleImages: [ImageObject] { images.filter { $0.frame.intersects(rect) } }
 
     /// Points per piece when a stroke is filled (PNG) or written as a group (SVG). CoreGraphics' fill time grows much
     /// faster than the number of overlapping subpaths in one fill: a 3,886-point highlighter scribble on a real page took
@@ -262,7 +273,7 @@ struct PageExport {
         var o = SVGOut(top: pageTop)
         let vb = CGRect(x: rect.minX, y: pageTop - rect.maxY, width: rect.width, height: rect.height)
         o.raw("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-        o.raw("<svg xmlns=\"http://www.w3.org/2000/svg\" version=\"1.1\" width=\"\(sz.width)\" height=\"\(sz.height)\" preserveAspectRatio=\"none\" viewBox=\"")
+        o.raw("<svg xmlns=\"http://www.w3.org/2000/svg\"\(visibleImages.isEmpty ? "" : " xmlns:xlink=\"http://www.w3.org/1999/xlink\"") version=\"1.1\" width=\"\(sz.width)\" height=\"\(sz.height)\" preserveAspectRatio=\"none\" viewBox=\"")
         o.num(vb.minX); o.raw(" "); o.num(vb.minY); o.raw(" "); o.num(vb.width); o.raw(" "); o.num(vb.height); o.raw("\">\n")
         if let title { o.raw("<title>"); o.raw(title.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")); o.raw("</title>\n") }
         func hex(_ c: (Double, Double, Double)) -> String { String(format: "#%02x%02x%02x", Int((c.0 * 255).rounded()), Int((c.1 * 255).rounded()), Int((c.2 * 255).rounded())) }
@@ -310,6 +321,22 @@ struct PageExport {
                     if self.paper == 1 { for x in gridXs(in: paper) { o.raw("M"); o.num(x); o.raw(" "); o.y(paper.maxY); o.raw("V"); o.y(paper.minY) } }
                     o.raw("\"/>\n")
                 }
+            }
+            o.raw("</g>\n")
+        }
+        // Pictures: embedded in the file (base64 data: URIs), so the SVG stands alone. PNG, JPEG and GIF go in as their
+        // original bytes; HEIC as JPEG and TIFF or PDF as PNG (what browsers can show).
+        let shown = visibleImages
+        if !shown.isEmpty {
+            o.raw("<g id=\"images\">\n")
+            if options.background != .transparent { for i in shown { rectEl(i.frame, "#ffffff") } }
+            for (k, i) in shown.enumerated() {
+                guard let e = i.asset.svgEmbed() else { continue }
+                o.raw("<image id=\"image-\(k + 1)\" x=\""); o.num(i.frame.minX); o.raw("\" y=\""); o.y(i.frame.maxY)
+                o.raw("\" width=\""); o.num(i.frame.width); o.raw("\" height=\""); o.num(i.frame.height)
+                o.raw("\" preserveAspectRatio=\"none\" xlink:href=\"data:\(e.mime);base64,")
+                o.bytes.append(contentsOf: e.data.base64EncodedData())
+                o.raw("\"/>\n")
             }
             o.raw("</g>\n")
         }
@@ -400,8 +427,12 @@ struct SVGOut {
 
 extension CanvasView {
     /// The part of a page to export, in page units (y up): full width, top of the page to the lowest ink.
+    /// A page with pictures: down to the lowest picture's bottom edge, or 20 units below the lowest ink if that is lower.
     func exportRect(_ d: Document) -> CGRect {
-        let lowest = min(d.strokes.map(\.bounds.minY).min() ?? 0, 0) - 20
+        var lowest = min(d.strokes.map(\.bounds.minY).min() ?? 0, 0) - 20
+        if let pictures = d.images.map(\.frame.minY).min() {
+            lowest = min(pictures, (d.strokes.map(\.bounds.minY).min() ?? .infinity) - 20)
+        }
         return CGRect(x: 0, y: lowest, width: camera.page.width, height: camera.page.height - lowest)
     }
 
@@ -419,7 +450,7 @@ extension CanvasView {
         let i = index ?? pageIndex
         let rect = i == pageIndex ? exportArea(options.area) : exportRect(pages[i])
         return PageExport(strokes: pages[i].strokes, rect: rect, pageWidth: camera.page.width, pageTop: camera.page.height,
-                          paper: tools.background, options: options)
+                          paper: tools.background, options: options, images: pages[i].images)
     }
 
     func export(_ options: ExportOptions, to url: URL, page index: Int? = nil) throws {
@@ -468,6 +499,7 @@ extension CanvasView {
             ctx.setFillColor(.white); ctx.fill(media)
             ctx.scaleBy(x: k, y: k)
             ctx.translateBy(x: -r.minX, y: -r.minY)
+            for i in d.images where i.frame.intersects(r) { i.asset.draw(in: ctx, rect: i.frame, vector: true) }
             for s in d.strokes {
                 ctx.setFillColor(CGColor(srgbRed: CGFloat(s.color.x), green: CGFloat(s.color.y), blue: CGFloat(s.color.z), alpha: CGFloat(s.color.w)))
                 ctx.addPath(strokePath(s.points, size: s.size, brush: Brush.of(s.tool)))

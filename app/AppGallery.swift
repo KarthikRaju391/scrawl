@@ -83,13 +83,18 @@ extension AppDelegate {
     }
 
     /// The "New page" tile (first in the overview): a page is added after the last one and grows from that tile.
-    func openNewPage() {
+    func openNewPage() { openNewPage { canvas.newPage() } }
+    /// A page made by `make` (a blank one, or one from a picture) grows from the New page tile. Nil if the overview isn't
+    /// showing (nothing was made).
+    @discardableResult
+    func openNewPage(make: () -> Void) -> Int? {
         finishTransitionNow()
-        guard let g = gallery, galleryShown, transitionView == nil else { return }
+        guard let g = gallery, galleryShown, transitionView == nil else { return nil }
         let from = g.cellRectAsShown(canvas.pages.count, in: container)
-        canvas.newPage()
+        make()
         updateBanner()
         finishOpening(page: canvas.pageIndex, from: from)
+        return canvas.pageIndex
     }
 
     private func finishOpening(page i: Int, from: CGRect) {
@@ -225,23 +230,14 @@ extension AppDelegate {
     func deletePage(_ i: Int) {
         let shownAt = galleryShown ? gallery?.position(of: i) : nil   // the tile that takes its place gets the highlight
         guard let d = canvas.deletePage(i) else { return }
-        deletedPages.append(d)
+        pageOps.append(.deleted(d))
         usage.record("delete_page", ["pages": canvas.pages.count])
         afterPagesChanged(select: min(i, canvas.pages.count - 1), position: shownAt)
         showToast(d.blank != nil ? "Page deleted (a blank page stays) · ⌘Z to undo" : "Page \(i + 1) deleted · ⌘Z to undo", seconds: 3)
     }
-    /// ⌘Z or the toolbar's undo right after deleting a page: put it back. False if there's nothing to restore.
-    func undoPageDelete() -> Bool {
-        guard let d = deletedPages.popLast() else { return false }
-        canvas.restorePage(d)
-        usage.record("restore_page")
-        afterPagesChanged(select: min(d.index, canvas.pages.count - 1))
-        showToast("Page \(min(d.index, canvas.pages.count - 1) + 1) restored")
-        return true
-    }
     /// `select`: a page to highlight in the overview, or `position`: the tile position to highlight (after a delete,
     /// the page that moved into the deleted tile's place; never the New page tile while there are pages).
-    private func afterPagesChanged(select: Int, position: Int? = nil) {
+    func afterPagesChanged(select: Int, position: Int? = nil) {
         updateBanner(); updateUndoState()
         container.pageMap.refresh(); container.needsLayout = true
         if galleryShown, let g = gallery {

@@ -114,9 +114,21 @@ final class Document {
     /// A page made now (not one being loaded).
     static func new() -> Document { let d = Document(); d.created = clock(); d.edited = d.created; return d }
 
+    /// What an undo step puts back: the ink, and the image objects under it (z-order: first = bottom).
+    struct State {
+        var strokes: [Stroke]
+        var images: [ImageObject] = []
+        func same(_ o: State) -> Bool {
+            strokes.count == o.strokes.count && images.count == o.images.count &&
+                zip(strokes, o.strokes).allSatisfy { $0 === $1 } && zip(images, o.images).allSatisfy { $0 === $1 }
+        }
+    }
     private(set) var strokes: [Stroke] = []
-    private var undoStack: [[Stroke]] = []
-    private var redoStack: [[Stroke]] = []
+    /// Image objects on the page, bottom first; all of them are under the ink.
+    private(set) var images: [ImageObject] = []
+    private var state: State { State(strokes: strokes, images: images) }
+    private var undoStack: [State] = []
+    private var redoStack: [State] = []
     /// Bumped on every change to the page's contents (the gallery re-renders a thumbnail only then).
     private(set) var version = 0 { didSet { edited = Self.clock() } }
     /// When the page was made, and last changed (stroke, erase, undo, redo, clear). Pages saved before
@@ -126,18 +138,24 @@ final class Document {
     /// You chose to keep writing on this page past a screen (K, or wrote on with the "filled a screen" note showing):
     /// the note doesn't come back for it, also after the notebook is reopened (saved with the page).
     var keptWriting = false
+    /// The Inbox item this page was made from (a page is never made twice from one item).
+    var importId: String?
     nonisolated(unsafe) static var clock: () -> Date = { Date() }
 
     static let maxUndo = 100
-    func snapshot() { editedBeforeSnapshot = edited; version += 1; undoStack.append(strokes); if undoStack.count > Self.maxUndo { undoStack.removeFirst() }; redoStack.removeAll() }
+    func snapshot() { editedBeforeSnapshot = edited; version += 1; undoStack.append(state); if undoStack.count > Self.maxUndo { undoStack.removeFirst() }; redoStack.removeAll() }
     /// An eraser gesture snapshots at its start; if it erased nothing, the page wasn't changed (the overview sorts by it).
     private var editedBeforeSnapshot: Date?
-    var undoStackForSave: [[Stroke]] { undoStack }
+    var undoStackForSave: [State] { undoStack }
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
-    var redoStackForSave: [[Stroke]] { redoStack }
-    func restore(strokes: [Stroke], undo: [[Stroke]], redo: [[Stroke]]) { let e = edited; version += 1; edited = e; self.strokes = strokes; undoStack = undo; redoStack = redo }
+    var redoStackForSave: [State] { redoStack }
+    func restore(_ now: State, undo: [State], redo: [State]) { let e = edited; version += 1; edited = e; set(now); undoStack = undo; redoStack = redo }
+    func restore(strokes: [Stroke], undo: [[Stroke]], redo: [[Stroke]]) { restore(State(strokes: strokes), undo: undo.map { State(strokes: $0) }, redo: redo.map { State(strokes: $0) }) }
+    private func set(_ s: State) { strokes = s.strokes; images = s.images }
     func add(_ s: Stroke) { snapshot(); strokes.append(s) }
+    /// A new page's first contents (an imported picture and its ink): no undo step (undoing makes the page go).
+    func setInitial(images: [ImageObject], strokes: [Stroke]) { version += 1; self.images = images; self.strokes = strokes }
     /// Eraser: removes without a new undo step (one step per eraser gesture, taken at its start).
     func remove(where pred: (Stroke) -> Bool) -> Bool {
         let n = strokes.count
@@ -145,16 +163,24 @@ final class Document {
         if strokes.count != n { version += 1 }
         return strokes.count != n
     }
+    /// Clear Page clears the ink; pictures stay.
     func clear() { guard !strokes.isEmpty else { return }; snapshot(); strokes.removeAll() }
     /// Scratch-out: the strokes under a scratch go in one undo step (the scratch itself is never added).
     func scratchOut(erasing gone: [Stroke]) { snapshot(); strokes.removeAll { s in gone.contains { $0 === s } } }
     /// Swap the last stroke (no new undo step: it's a correction of the stroke just added).
     func replaceLast(_ s: Stroke) { guard !strokes.isEmpty else { return }; version += 1; strokes[strokes.count - 1] = s }
-    func undo() { guard let s = undoStack.popLast() else { return }; version += 1; redoStack.append(strokes); strokes = s }
-    func redo() { guard let s = redoStack.popLast() else { return }; version += 1; undoStack.append(strokes); strokes = s }
+    func undo() { guard let s = undoStack.popLast() else { return }; version += 1; redoStack.append(state); set(s) }
+    func redo() { guard let s = redoStack.popLast() else { return }; version += 1; undoStack.append(state); set(s) }
     /// Put back the state saved by the last snapshot and forget that step (a cancelled eraser gesture).
-    func rollbackLastSnapshot() { guard let s = undoStack.popLast() else { return }; if s.count != strokes.count || !zip(s, strokes).allSatisfy({ $0 === $1 }) { version += 1 } else { edited = editedBeforeSnapshot }; strokes = s }
-    func dropEmptyUndo() { if let last = undoStack.last, last.count == strokes.count, zip(last, strokes).allSatisfy({ $0 === $1 }) { undoStack.removeLast(); edited = editedBeforeSnapshot } }
+    func rollbackLastSnapshot() { guard let s = undoStack.popLast() else { return }; if !s.same(state) { version += 1 } else { edited = editedBeforeSnapshot }; set(s) }
+    func dropEmptyUndo() { if let last = undoStack.last, last.same(state) { undoStack.removeLast(); edited = editedBeforeSnapshot } }
+    /// The bounds of everything on the page (ink and pictures), nil when it's empty.
+    var contentBounds: CGRect? {
+        let rs = strokes.map(\.bounds) + images.map(\.frame)
+        guard var r = rs.first else { return nil }
+        for b in rs.dropFirst() { r = r.union(b) }
+        return r
+    }
 }
 
 struct Camera {
@@ -441,11 +467,12 @@ final class CanvasView: MTKView {
     static let scrubStepMM = 7.0, scrubStartMM = 4.0
     private var tapViewAnchor: Camera?
 
-    func restorePages(_ docs: [Document], cameras: [Camera], index: Int, nextStrokeId: Int) {
+    func restorePages(_ docs: [Document], cameras: [Camera], index: Int, nextStrokeId: Int, nextImageId: Int = 1) {
         setSelection(nil, "page")
         pages = docs; pageCameras = cameras; pageIndex = index
         if index < cameras.count { camera = cameras[index] }
         nextStrokeIdValue = nextStrokeId
+        nextImageIdValue = max(nextImageId, (docs.flatMap(\.images).map(\.id).max() ?? 0) + 1)
         endWritingLine(); screensFilled = 0; hintDismissedAt = 0; updateScreensFilled()
         needsRender = true; onStatus?()
     }
@@ -670,6 +697,48 @@ final class CanvasView: MTKView {
         screensFilled = 0; hintDismissedAt = 0
         markDirty()
         needsRender = true; onStatus?()
+    }
+
+    private var nextImageIdValue = 1
+    var nextImageIdForSave: Int { nextImageIdValue }
+
+    /// A new page made from a picture: the picture at the page's width, at its top, with the request's ink on it, after the
+    /// last page. `open`: it becomes the open page, viewed from its top (at zoom 1 unless the zoom is locked); otherwise
+    /// the open page stays (an import arriving while you draw). Returns the new page's index.
+    @discardableResult
+    func newImagePage(_ p: PreparedImagePage, open: Bool = true) -> Int {
+        act("newImagePage", ["pages": pages.count + 1, "kind": p.request.source.kind.rawValue, "px": [p.asset.pixelWidth, p.asset.pixelHeight],
+                             "strokes": p.request.strokes.count])
+        if open { endWritingLine(); finishSlide() }
+        while pageCameras.count < pages.count { pageCameras.append(camera) }
+        pageCameras[pageIndex] = camera
+        let d = Document.new()
+        let frame = ImageObject.defaultFrame(for: p.asset, pageWidth: camera.page.width, pageTop: camera.page.height)
+        let obj = ImageObject(id: nextImageIdValue, asset: p.asset, frame: frame, source: p.request.source, added: Document.clock())
+        nextImageIdValue += 1
+        let ink = ImagePages.strokes(p.request, asset: p.asset, frame: frame, maxStep: 1.5 / max(ptPerUnit, 0.1))
+        for s in ink { s.id = nextStrokeIdValue; nextStrokeIdValue += 1 }
+        d.setInitial(images: [obj], strokes: ink)
+        d.keptWriting = true   // a picture fills the page: no "filled a screen" note
+        d.importId = p.request.importId
+        pages.append(d)
+        var cam = camera
+        if !tools.zoomLocked { cam.zoom = 1 }
+        cam.home()
+        pageCameras.append(cam)
+        if open {
+            pageIndex = pages.count - 1
+            changing("newImagePage") { camera = cam }
+            screensFilled = 0; hintDismissedAt = 0
+        }
+        markDirty()
+        needsRender = true; onStatus?()
+        return pages.count - 1
+    }
+
+    /// What the GPU draws for the open page's pictures in `vis` at `pxPerUnit` device pixels per page unit.
+    func imageDraws(_ d: Document, vis: CGRect, pxPerUnit: Double, sync: Bool) -> Renderer.ImageDraws {
+        d.images.isEmpty ? Renderer.ImageDraws() : renderer.images.draws(d.images, visible: vis, pxPerUnit: pxPerUnit, sync: sync)
     }
 
     /// A deleted page, kept so ⌘Z can put it back where it was.
@@ -927,6 +996,7 @@ final class CanvasView: MTKView {
         super.init(frame: frame, device: device ?? MTLCreateSystemDefaultDevice())
         guard let r = Renderer(view: self) else { fatalError("Metal unavailable") }
         renderer = r
+        r.images.onReady = { [weak self] in self?.needsRender = true }
         clearStencil = 0
         isPaused = true                 // driven by our display link, only when something changed
         enableSetNeedsDisplay = false
@@ -1573,8 +1643,8 @@ final class CanvasView: MTKView {
         let cpu0 = CACurrentMediaTime()
         let vis = renderRect   // everything drawn in the view, not just the pad's area
         var items: [Renderer.DrawItem] = []
-        // Dashed line at every screen height down the page: where a screen's worth of writing ends.
-        do {
+        // Dashed line at every screen height down the page: where a screen's worth of writing ends. Not over pictures.
+        if doc.images.isEmpty {
             let k = 1 / (ptPerUnit * camera.zoom), su = screenUnits
             var verts: [SIMD2<Float>] = []
             var n = max(1, Int(((camera.page.height - vis.maxY) / su).rounded(.down)))
@@ -1686,11 +1756,13 @@ final class CanvasView: MTKView {
             outlineDrawn = padRect
         }
         renderedRect = vis
+        let devicePx = ptPerUnit * camera.zoom * Double(window?.backingScaleFactor ?? 2)
+        let pictures = imageDraws(doc, vis: vis, pxPerUnit: devicePx, sync: false)
         perf.build.append((CACurrentMediaTime() - cpu0) * 1000)
         renderer.render(in: self, visible: vis, background: tools.background,
-                        spacing: 48, pxPerUnit: ptPerUnit * camera.zoom * Double(window?.backingScaleFactor ?? 2),
+                        spacing: 48, pxPerUnit: devicePx,
                         page: CGRect(x: 0, y: -1e9, width: camera.page.width, height: camera.page.height + 1e9),
-                        items: items, presented: { [weak self] t in
+                        images: pictures, items: items, presented: { [weak self] t in
                             guard t > 0 else { return }  // 0 = dropped frame
                             DispatchQueue.main.async {
                                 guard let self else { return }

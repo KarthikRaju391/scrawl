@@ -147,6 +147,10 @@ struct NotebookFile: Codable {
     var nextStrokeId = 1
     var pages: [PageFile] = []
     var strokes: [StrokeFile] = []   // every stroke referenced by a page or its undo/redo history
+    // 0.1.6: image objects. Every field below is optional and left out when a notebook has no pictures, so such a
+    // notebook is written exactly as before; older versions skip these keys (they show the ink, without the pictures).
+    var images: [ImageFile]?         // every image object referenced by a page or its undo/redo history
+    var nextImageId: Int?
 
     struct PageFile: Codable {
         var strokes: [Int]           // current contents, in drawing order (stroke ids)
@@ -158,6 +162,24 @@ struct NotebookFile: Codable {
         var created: Double?         // seconds since 1970; absent in notebooks saved before 0.1.0
         var edited: Double?
         var kept: Bool?              // kept writing past a screen: no "filled a screen" note (absent = false)
+        var images: [Int]?           // image object ids, bottom first (absent = none)
+        var imageUndo: [[Int]]?      // the image objects of each undo / redo step, beside `undo` / `redo` (absent = none in any)
+        var imageRedo: [[Int]]?
+        var importId: String?        // the Inbox item the page was made from
+    }
+    /// An image object: a picture (a file in Images/, named by its hash) placed on a page.
+    struct ImageFile: Codable {
+        var id: Int
+        var asset: String            // the picture's SHA-256 (32 hex characters): Images/<asset>.<type>
+        var type: String             // file extension: png, jpeg, heic, tiff, pdf...
+        var width: Int               // pixels as shown (orientation applied; a PDF's first page as drawn)
+        var height: Int
+        var frame: [Double]          // x, y, width, height in page units, y up (anywhere: may be outside the page's column)
+        var sourceKind: String?      // file, paste, web
+        var sourceName: String?
+        var sourceURL: String?
+        var sourceTitle: String?
+        var added: Double?
     }
     struct StrokeFile: Codable {
         var id: Int
@@ -198,7 +220,7 @@ enum PageDate {
 
 extension Document {
     /// Undo history, for saving (oldest first).
-    var history: (undo: [[Stroke]], redo: [[Stroke]]) { (undoStackForSave, redoStackForSave) }
+    var history: (undo: [State], redo: [State]) { (undoStackForSave, redoStackForSave) }
 }
 
 // MARK: - Saving and loading pages
@@ -208,27 +230,44 @@ extension Document {
 /// can then happen on the save queue: doing that on the main thread blocked drawing for ~100 ms per save on
 /// a 4.5 MB notebook (the ink froze, then jumped).
 struct NotebookSnapshot {
-    struct Page { var strokes: [Stroke]; var undo: [[Stroke]]; var redo: [[Stroke]]; var camera: Camera; var created: Date?; var edited: Date?; var kept = false }
+    struct Page { var strokes: [Stroke]; var undo: [Document.State]; var redo: [Document.State]; var camera: Camera; var created: Date?; var edited: Date?; var kept = false
+        var images: [ImageObject] = []; var importId: String? }
     var appVersion: String
     var pageIndex: Int
     var nextStrokeId: Int
     var pages: [Page]
+    var nextImageId = 1
+    /// Every picture the notebook refers to (pages and their undo history).
+    var imageKeys: Set<String> { Set(pages.flatMap { p in (p.images + (p.undo + p.redo).flatMap(\.images)).map(\.asset.key) }) }
 }
 
 extension NotebookFile {
     init(_ snap: NotebookSnapshot) {
         self.init()
         appVersion = snap.appVersion; pageIndex = snap.pageIndex; nextStrokeId = snap.nextStrokeId
-        var table: [Int: Stroke] = [:]
+        var table: [Int: Stroke] = [:], imageTable: [Int: ImageObject] = [:]
         for p in snap.pages {
             for s in p.strokes { table[s.id] = s }
-            for list in p.undo + p.redo { for s in list { table[s.id] = s } }
-            pages.append(.init(strokes: p.strokes.map(\.id), undo: p.undo.map { $0.map(\.id) }, redo: p.redo.map { $0.map(\.id) },
+            for list in p.undo + p.redo { for s in list.strokes { table[s.id] = s } }
+            for i in p.images + (p.undo + p.redo).flatMap(\.images) { imageTable[i.id] = i }
+            let anyImages = !p.images.isEmpty || (p.undo + p.redo).contains { !$0.images.isEmpty }
+            pages.append(.init(strokes: p.strokes.map(\.id), undo: p.undo.map { $0.strokes.map(\.id) }, redo: p.redo.map { $0.strokes.map(\.id) },
                                zoom: p.camera.zoom, centerX: p.camera.center.x, centerY: p.camera.center.y,
-                               created: p.created?.timeIntervalSince1970, edited: p.edited?.timeIntervalSince1970, kept: p.kept ? true : nil))
+                               created: p.created?.timeIntervalSince1970, edited: p.edited?.timeIntervalSince1970, kept: p.kept ? true : nil,
+                               images: p.images.isEmpty ? nil : p.images.map(\.id),
+                               imageUndo: anyImages ? p.undo.map { $0.images.map(\.id) } : nil, imageRedo: anyImages ? p.redo.map { $0.images.map(\.id) } : nil,
+                               importId: p.importId))
         }
         strokes = table.values.sorted { $0.id < $1.id }.map {
             .init(id: $0.id, tool: $0.tool.rawValue, color: [$0.color.x, $0.color.y, $0.color.z, $0.color.w], size: $0.size, points: NotebookFile.pack($0.points))
+        }
+        if !imageTable.isEmpty {
+            images = imageTable.values.sorted { $0.id < $1.id }.map { i in
+                .init(id: i.id, asset: i.asset.key, type: i.asset.ext, width: i.asset.pixelWidth, height: i.asset.pixelHeight,
+                      frame: [i.frame.minX, i.frame.minY, i.frame.width, i.frame.height], sourceKind: i.source.kind.rawValue,
+                      sourceName: i.source.fileName, sourceURL: i.source.url, sourceTitle: i.source.title, added: i.added?.timeIntervalSince1970)
+            }
+            nextImageId = max(snap.nextImageId, (imageTable.keys.max() ?? 0) + 1)
         }
     }
 }
@@ -242,8 +281,8 @@ extension CanvasView {
                              let h = doc.history
                              return .init(strokes: doc.strokes, undo: h.undo, redo: h.redo,
                                           camera: i == pageIndex ? camera : (i < pageCamerasForSave.count ? pageCamerasForSave[i] : camera),
-                                          created: doc.created, edited: doc.edited, kept: doc.keptWriting)
-                         })
+                                          created: doc.created, edited: doc.edited, kept: doc.keptWriting, images: doc.images, importId: doc.importId)
+                         }, nextImageId: nextImageIdForSave)
     }
     func notebookFile() -> NotebookFile { NotebookFile(notebookSnapshot()) }
 
@@ -257,10 +296,22 @@ extension CanvasView {
             table[s.id] = st
         }
         func list(_ ids: [Int]) -> [Stroke] { ids.compactMap { table[$0] } }
+        var imageTable: [Int: ImageObject] = [:]
+        for i in f.images ?? [] where i.frame.count == 4 && i.asset.count == 32 && i.frame.allSatisfy(\.isFinite) {
+            let a = ImageStore.asset(key: i.asset, ext: i.type, width: i.width, height: i.height)
+            let src = ImageSource(kind: ImageSource.Kind(rawValue: i.sourceKind ?? "") ?? .file, fileName: i.sourceName, url: i.sourceURL, title: i.sourceTitle)
+            imageTable[i.id] = ImageObject(id: i.id, asset: a, frame: CGRect(x: i.frame[0], y: i.frame[1], width: i.frame[2], height: i.frame[3]),
+                                           source: src, added: i.added.map(Date.init(timeIntervalSince1970:)))
+        }
+        func images(_ ids: [Int]?) -> [ImageObject] { (ids ?? []).compactMap { imageTable[$0] } }
+        func states(_ s: [[Int]], _ im: [[Int]]?) -> [Document.State] {
+            s.indices.map { k in Document.State(strokes: list(s[k]), images: images(im.flatMap { k < $0.count ? $0[k] : nil })) }
+        }
         var docs: [Document] = [], cams: [Camera] = []
         for p in f.pages {
             let d = Document()
-            d.restore(strokes: list(p.strokes), undo: p.undo.map(list), redo: p.redo.map(list))
+            d.restore(Document.State(strokes: list(p.strokes), images: images(p.images)), undo: states(p.undo, p.imageUndo), redo: states(p.redo, p.imageRedo))
+            d.importId = p.importId
             d.created = p.created.map(Date.init(timeIntervalSince1970:))
             d.edited = p.edited.map(Date.init(timeIntervalSince1970:))
             d.keptWriting = p.kept ?? false
@@ -269,7 +320,8 @@ extension CanvasView {
             cams.append(c)
         }
         restorePages(docs.isEmpty ? [Document.new()] : docs, cameras: cams, index: min(max(f.pageIndex, 0), max(docs.count - 1, 0)),
-                     nextStrokeId: max(f.nextStrokeId, (f.strokes.map(\.id).max() ?? 0) + 1))
+                     nextStrokeId: max(f.nextStrokeId, (f.strokes.map(\.id).max() ?? 0) + 1),
+                     nextImageId: max(f.nextImageId ?? 1, (f.images?.map(\.id).max() ?? 0) + 1))
     }
 
     /// Load the saved notebook at launch. A file that can't be read is kept aside, never overwritten.
@@ -288,6 +340,7 @@ extension CanvasView {
             let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
             let aside = AppPaths.dataDir + "/Notebook-unreadable-\(f.string(from: Date())).tdnb"
             try? FileManager.default.moveItem(atPath: path, toPath: aside)
+            ImageStore.collects = false   // its pictures stay: the notebook kept aside still refers to them
             NSLog("Scrawl: notebook unreadable (\(error)); kept as \(aside)")
             return "unreadable, kept as \(aside)"
         }
@@ -306,6 +359,14 @@ final class Autosaver {
     var delay = 0.5
     /// Main-thread time of each save (test / diagnostics): what the app is blocked for while you write.
     private(set) var mainThreadMs: [Double] = []
+    /// Pictures to keep besides those the saved notebook refers to (pages deleted, which ⌘Z can still bring back).
+    var extraImageKeys: (() -> Set<String>)?
+    /// After a write completes (main queue): the number of changes it covers.
+    var onSaved: ((Int) -> Void)?
+    private var collectedFor: Set<String>?   // save queue only
+    /// The save queue: an image file written here (before the page that shows it is saved) is on disk before any
+    /// notebook that refers to it.
+    var saveQueue: DispatchQueue { queue }
 
     init(canvas: CanvasView) { self.canvas = canvas }
 
@@ -324,6 +385,7 @@ final class Autosaver {
         guard AppPaths.persists, let c = canvas else { return }
         // Main thread: only the snapshot. Building, encoding and writing happen on the save queue (in order).
         let snap = c.notebookSnapshot()
+        let keep = snap.imageKeys.union(extraImageKeys?() ?? [])
         let path = AppPaths.notebookPath, through = changes
         let write = { [weak self] in
             AppPaths.ensure()
@@ -334,7 +396,11 @@ final class Autosaver {
                 let data = try file.encoded()
                 try data.write(to: URL(fileURLWithPath: path), options: .atomic)
                 NotebookSafety.onDisk = (path, c.pages, c.strokes)
-                DispatchQueue.main.async { self?.saves += 1; self?.savedThrough = max(self?.savedThrough ?? 0, through) }
+                // Pictures nothing refers to any more go, once this notebook (which doesn't need them) is on disk.
+                if let self, ImageStore.collects, self.collectedFor != keep { self.collectedFor = keep; ImageStore.collectGarbage(keep: keep) }
+                DispatchQueue.main.async {
+                    self?.saves += 1; self?.savedThrough = max(self?.savedThrough ?? 0, through); self?.onSaved?(through)
+                }
             }
             catch { NSLog("Scrawl: autosave failed: \(error)") }
         }

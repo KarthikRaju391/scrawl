@@ -11,11 +11,12 @@ enum TransitionTiming { nonisolated(unsafe) static var inputAt: Double? }
 enum PageImage {
     /// `rect` (page units) drawn into an image of `px` pixels; off-page space is the grey desk.
     static func render(_ doc: Document, rect: CGRect, pageWidth: Double, pageTop: Double, px: CGSize, background: Int = 0, spacing: Double = 48) -> CGImage? {
-        render(doc.strokes, rect: rect, pageWidth: pageWidth, pageTop: pageTop, px: px, background: background, spacing: spacing)
+        render(doc.strokes, images: doc.images, rect: rect, pageWidth: pageWidth, pageTop: pageTop, px: px, background: background, spacing: spacing)
     }
     /// `fast`: thumbnails. Each stroke is one round-capped line at its average width, through points at least
     /// 1.5 px apart, instead of its exact pressure outline: the same at thumbnail size, and ~10x quicker.
-    static func render(_ strokes: [Stroke], rect: CGRect, pageWidth: Double, pageTop: Double, px: CGSize, background: Int = 0, spacing: Double = 48, fast: Bool = false) -> CGImage? {
+    /// `images`: the page's pictures, drawn on plain white under the ink (from their reduced copy when `fast`).
+    static func render(_ strokes: [Stroke], images: [ImageObject] = [], rect: CGRect, pageWidth: Double, pageTop: Double, px: CGSize, background: Int = 0, spacing: Double = 48, fast: Bool = false) -> CGImage? {
         let w = max(Int(px.width), 1), h = max(Int(px.height), 1)
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
@@ -41,6 +42,9 @@ enum PageImage {
             if background == 1 { var x = x0; while x <= rect.maxX { ctx.fill(CGRect(x: x - lw / 2, y: rect.minY, width: lw, height: rect.height)); x += spacing } }
             ctx.restoreGState()
         }
+        let shown = images.filter { $0.frame.intersects(rect) }
+        ctx.setFillColor(.white); for i in shown { ctx.fill(i.frame) }
+        for i in shown { i.asset.draw(in: ctx, rect: i.frame, preview: fast) }
         if fast {
             ctx.setLineCap(.round); ctx.setLineJoin(.round)
             let minStep = 1.5 / sx
@@ -82,13 +86,13 @@ final class ThumbnailCache {
     var renders: Int { lock.lock(); defer { lock.unlock() }; return renderCount }
     static let pixelWidth = 480.0
 
-    private func render(_ strokes: [Stroke], version: Int, key: ObjectIdentifier, page: CGSize) -> CGImage? {
+    private func render(_ strokes: [Stroke], images: [ImageObject], version: Int, key: ObjectIdentifier, page: CGSize) -> CGImage? {
         lock.lock(); let have = cache[key]; lock.unlock()
         if let have, have.version == version { return have.image }   // rendered meanwhile
-        let rect = Self.region(strokes, page: page)
-        guard var img = PageImage.render(strokes, rect: rect, pageWidth: page.width, pageTop: page.height,
+        let rect = Self.region(strokes, images: images, page: page)
+        guard var img = PageImage.render(strokes, images: images, rect: rect, pageWidth: page.width, pageTop: page.height,
                                          px: CGSize(width: Self.pixelWidth, height: Self.pixelWidth * page.height / page.width), fast: true) else { return nil }
-        if Self.continuesBelow(strokes, rect), let faded = Self.fadeBottom(img) { img = faded }
+        if Self.continuesBelow(strokes, images: images, rect), let faded = Self.fadeBottom(img) { img = faded }
         lock.lock(); renderCount += 1; if (cache[key]?.version ?? -1) <= version { cache[key] = (version, img) }; lock.unlock()
         return img
     }
@@ -97,10 +101,12 @@ final class ThumbnailCache {
     /// lines at the top used to make a near-blank card. Ink taller than the tile at the page's full width (a long
     /// page) shows from its top, as the page reads and as it usually opens (18 of 24 pages in Karthik's notebook open
     /// at the top); it was centred on the ink, a middle slice matching neither (Karthik, 2 Nov: page 22).
-    static func region(_ strokes: [Stroke], page: CGSize) -> CGRect {
+    /// Pictures count as content, like ink (a screenshot's page shows from the screenshot's top).
+    static func region(_ strokes: [Stroke], images: [ImageObject] = [], page: CGSize) -> CGRect {
         let top = CGRect(x: 0, y: 0, width: page.width, height: page.height)
-        guard var ink = strokes.first?.bounds else { return top }
-        for s in strokes.dropFirst() { ink = ink.union(s.bounds) }
+        let rects = strokes.map(\.bounds) + images.map(\.frame)
+        guard var ink = rects.first else { return top }
+        for r in rects.dropFirst() { ink = ink.union(r) }
         let a = page.width / page.height, m = max(ink.width, ink.height) * 0.08 + page.width * 0.01
         var w = ink.width + 2 * m, h = ink.height + 2 * m
         if w / h < a { w = h * a } else { h = w / a }
@@ -123,8 +129,8 @@ final class ThumbnailCache {
         return ctx.makeImage()
     }
     /// Whether there's ink below a thumbnail's region (it fades out at the bottom: more below).
-    static func continuesBelow(_ strokes: [Stroke], _ region: CGRect) -> Bool {
-        strokes.contains { $0.bounds.minY < region.minY - 1 && $0.bounds.maxX > region.minX && $0.bounds.minX < region.maxX }
+    static func continuesBelow(_ strokes: [Stroke], images: [ImageObject] = [], _ region: CGRect) -> Bool {
+        (strokes.map(\.bounds) + images.map(\.frame)).contains { $0.minY < region.minY - 1 && $0.maxX > region.minX && $0.minX < region.maxX }
     }
     /// The cached image and whether it is up to date (no rendering).
     func cached(_ doc: Document) -> (image: CGImage?, fresh: Bool) {
@@ -136,8 +142,8 @@ final class ThumbnailCache {
     func image(for doc: Document, page: CGSize) -> CGImage? {
         let (img, fresh) = cached(doc)
         if fresh { return img }
-        let strokes = doc.strokes, v = doc.version, key = ObjectIdentifier(doc)
-        return queue.sync { render(strokes, version: v, key: key, page: page) }
+        let strokes = doc.strokes, images = doc.images, v = doc.version, key = ObjectIdentifier(doc)
+        return queue.sync { render(strokes, images: images, version: v, key: key, page: page) }
     }
     /// Render in the background if out of date; `ready` runs on the main queue afterwards.
     func refresh(_ doc: Document, page: CGSize, ready: @escaping () -> Void) {
@@ -147,9 +153,9 @@ final class ThumbnailCache {
         if !fresh && !busy { pending.insert(key) }
         lock.unlock()
         guard !fresh && !busy else { return }
-        let strokes = doc.strokes, v = doc.version   // a copy: the page may change while this renders
+        let strokes = doc.strokes, images = doc.images, v = doc.version   // a copy: the page may change while this renders
         queue.async { [weak self] in
-            _ = self?.render(strokes, version: v, key: key, page: page)
+            _ = self?.render(strokes, images: images, version: v, key: key, page: page)
             self?.lock.lock(); self?.pending.remove(key); self?.lock.unlock()
             DispatchQueue.main.async(execute: ready)
         }
@@ -457,8 +463,10 @@ extension CanvasView {
         p.colorAttachments[0].texture = ms; p.colorAttachments[0].resolveTexture = out
         p.colorAttachments[0].loadAction = .clear; p.colorAttachments[0].storeAction = .multisampleResolve
         p.stencilAttachment.texture = st; p.stencilAttachment.loadAction = .clear
+        // Pictures loaded now if they aren't yet: the transition's picture is exactly what the canvas then shows.
+        let pictures = imageDraws(doc, vis: vis, pxPerUnit: pxPerUnit, sync: true)
         renderer.encode(cb, p, visible: vis, background: tools.background, spacing: 48, pxPerUnit: pxPerUnit,
-                        page: CGRect(x: 0, y: -1e9, width: camera.page.width, height: camera.page.height + 1e9), items: items)
+                        page: CGRect(x: 0, y: -1e9, width: camera.page.width, height: camera.page.height + 1e9), images: pictures, items: items)
         cb.commit(); cb.waitUntilCompleted()
         return true
     }
