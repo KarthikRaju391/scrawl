@@ -58,6 +58,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>ScrawlPostHogToken</key><string>$PH_TOKEN</string>
   <key>ScrawlPostHogHost</key><string>${POSTHOG_HOST:-}</string>
   <key>TDBuildConfig</key><string>$CONFIG</string>
+  <key>ScrawlUpdatePublicKey</key><string>${UPDATE_PUBLIC_KEY:-}</string>
 </dict></plist>
 PLIST
 if [ "$CONFIG" = release ]; then

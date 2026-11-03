@@ -58,6 +58,16 @@ else
     echo "== notarization skipped (no NOTARY_PROFILE)"
 fi
 
+echo "== update signature"
+# The in-app updater checks the DMG's Ed25519 signature (Scrawl-<version>.dmg.sig, uploaded with the DMG).
+SIGN_KEY=${UPDATE_SIGNING_KEY:-$HOME/.config/scrawl/update-signing.key}
+if [ -f "$SIGN_KEY" ]; then
+    swiftc -O -o build/update-sign tools/update-sign.swift
+    build/update-sign --sign "$SIGN_KEY" "$DMG"
+    build/update-sign --verify "$UPDATE_PUBLIC_KEY" "$DMG" "$DMG.sig" || { echo "the DMG's signature doesn't match UPDATE_PUBLIC_KEY"; exit 1; }
+else
+    echo "== no update signing key at $SIGN_KEY: the DMG is unsigned (the in-app updater will refuse it)"
+fi
 echo "== zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/$SLUG-$VERSION.zip"
 (cd "$DIST" && shasum -a 256 *.dmg *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
