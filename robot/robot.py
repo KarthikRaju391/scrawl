@@ -608,7 +608,7 @@ def run_scenarios(app, rep, only, hand):
         if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
         st = app.state()
         tips = st.get("toolbarTips") or []
-        rep.check(len(tips) > 0 and all(tips) and len(tips) <= 15, "every toolbar button has a tooltip; 15 buttons or fewer (with the zoom)", f"{sum(1 for t in tips if t)}/{len(tips)} buttons")
+        rep.check(len(tips) > 0 and all(tips) and len(tips) <= 16, "every toolbar button has a tooltip; 16 buttons or fewer (with the zoom and Select)", f"{sum(1 for t in tips if t)}/{len(tips)} buttons")
         rep.check(bool(tips) and tips[0].startswith("Draw"), "Draw is the first button", tips[0] if tips else "")
         withkey = sum(1 for t in tips if "(" in t)
         rep.check(withkey >= len(tips) - 1, "tooltips name the shortcut", f"{withkey}/{len(tips)}")
