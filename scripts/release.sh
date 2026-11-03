@@ -70,7 +70,8 @@ else
 fi
 echo "== zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/$SLUG-$VERSION.zip"
-(cd "$DIST" && shasum -a 256 *.dmg *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
+# SHA256SUMS.txt lists only what gets uploaded (the DMG; the zip stays local), so `shasum -c` passes on a download.
+(cd "$DIST" && shasum -a 256 *.dmg > SHA256SUMS.txt && cat SHA256SUMS.txt)
 # Forget the release build and any staged copy: only the installed app is Scrawl to LaunchServices (checks/launchservices.sh).
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 for a in "$APP" "${STAGE:-}/$APP_NAME.app"; do if [ -e "$a" ]; then "$LSREGISTER" -u "$(cd "$(dirname "$a")" && pwd)/$(basename "$a")" 2>/dev/null || true; fi; done

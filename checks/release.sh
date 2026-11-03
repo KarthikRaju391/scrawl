@@ -10,7 +10,7 @@ pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; BAD=$((BAD + 1)); }
 [ "${SKIP_BUILD:-}" = 1 ] || scripts/release.sh >/tmp/td-release-build.log 2>&1 || { echo "FAIL release build (see /tmp/td-release-build.log)"; exit 1; }
 SLUG=$(echo "$APP_NAME" | tr ' ' '-'); DMG="dist/$VERSION/$SLUG-$VERSION.dmg"
-(cd "dist/$VERSION" && shasum -a 256 -c SHA256SUMS.txt >/dev/null) && pass "SHA256SUMS.txt matches the DMG and zip" || fail "checksums"
+(cd "dist/$VERSION" && shasum -a 256 -c SHA256SUMS.txt >/dev/null && [ "$(awk '{print $2}' SHA256SUMS.txt)" = "$SLUG-$VERSION.dmg" ]) && pass "SHA256SUMS.txt lists exactly the DMG, and it matches" || fail "checksums"
 
 MNT=$(mktemp -d /tmp/td-mnt.XXXX)
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MNT" "$DMG" || { fail "DMG mounts"; exit 1; }
