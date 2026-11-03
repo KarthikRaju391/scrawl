@@ -11,10 +11,12 @@ enum AppInfo {
 
 // MARK: - Updates
 
-/// Check for Updates: one GET to the latest GitHub release, only when the user asks. No download,
-/// no background checks: a newer version opens its release page.
+/// Check for Updates: one GET to the latest GitHub release, only when the user asks; no background checks. A newer
+/// version opens the update sheet (Updater.swift), which downloads only if the user says so.
 enum UpdateChecker {
     enum Result: Equatable { case upToDate(String), available(version: String, page: String), failed(String) }
+    /// The release the last check read (its notes and assets, for the update sheet).
+    nonisolated(unsafe) static var latest: UpdateRelease?
 
     static var url: URL? {
         let s = ProcessInfo.processInfo.environment["TRACKPAD_DRAW_UPDATE_URL"] ?? AppInfo.info("TDUpdateURL")
@@ -39,6 +41,7 @@ enum UpdateChecker {
         guard let data, let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let tag = j["tag_name"] as? String, let page = j["html_url"] as? String else { return .failed("The update information couldn't be read.") }
         if (j["draft"] as? Bool) == true || (j["prerelease"] as? Bool) == true { return .upToDate(current) }
+        latest = UpdateRelease.parse(j)
         return isNewer(tag, than: current) ? .available(version: tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV")), page: page) : .upToDate(current)
     }
 

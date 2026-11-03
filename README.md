@@ -165,9 +165,11 @@ second of ink is lost.
   `~/Library/Logs/Scrawl/events.jsonl`, and a release built with a PostHog project token also sends them
   there in the background every 30 s (anonymously: no person profiles, no location). The first launch says so; **Settings › Share anonymous usage
   counts** turns it all off. [docs/analytics.md](docs/analytics.md) lists every event.
-- The only other network request is **Check for Updates**, which runs only when you choose it. It asks
-  GitHub for the latest release and opens the release page if there's a newer one. Nothing connects at
-  launch.
+- The only other network requests are **Check for Updates**, which runs only when you choose it, and the
+  download that follows if you click **Download and Install**. It asks GitHub for the latest release; if
+  there's a newer one, it shows what's new. The download is installed only if its checksum and its
+  signature (Scrawl's release key) check out; Scrawl then restarts into the new version, with your notebook
+  as it was. Nothing connects at launch.
 - Local logs live in `~/Library/Logs/Scrawl`. They note when the pointer was given back, and when
   a session ended without quitting. Touch diagnostics (raw touch data, for tuning) are off unless
   you turn on **Help › Record Touch Diagnostics**. They also stay on this Mac.

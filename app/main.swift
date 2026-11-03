@@ -163,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if AppPaths.override == nil && !Launch.testing { migrationNotes = Migration.run() }
         AppPaths.ensure()
         previousCrash = CrashNote.checkAndMark()
+        UpdateInstaller.confirmIfPending()   // after an in-app update: tell the waiting helper this version started
         Watchdog.spawn()
         Signals.install { [weak self] in self?.exitDrawMode("SIGTERM/SIGINT/SIGHUP"); NSApp.terminate(nil) }
 
@@ -518,6 +519,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     var thumbWarm: DispatchWorkItem?
     /// Settings was opened from draw mode: closing it goes back to drawing.
     var settingsResumeDraw = false
+    /// The update sheet, while it's open (Updater.swift).
+    var updatePanel: UpdatePanel?
     var badgeFade: DispatchWorkItem?
     weak var zoomField: NSTextField?
     var robot: AnyObject?   // the robot user's hook (Robot.swift, dev builds only)
@@ -527,6 +530,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func startTestReplayIfAsked() {
         let a = CommandLine.arguments
+        #if !RELEASE
+        if a.contains("--test-update") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestUpdate.run(app: self) } }
+        if a.contains("--test-update-report") { DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [self] in TestUpdate.report(app: self) } }
+        #endif
         if let i = a.firstIndex(of: "--test-stress"), i + 1 < a.count {
             let dir = (canvas.logger.path as NSString).deletingLastPathComponent
             let n = a.firstIndex(of: "--count").flatMap { Int(a[$0 + 1]) } ?? 400

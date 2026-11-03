@@ -123,6 +123,10 @@ extension AppDelegate {
         UpdateChecker.check { [weak self] r in self?.showUpdateResult(r) }
     }
     func showUpdateResult(_ r: UpdateChecker.Result) {
+        if case .available = r, let rel = UpdateChecker.latest {
+            let p = UpdatePanel(release: rel)
+            updatePanel = p; p.show(); return
+        }
         let a = NSAlert()
         switch r {
         case .upToDate(let v): a.messageText = "You're up to date"; a.informativeText = "\(AppInfo.name) \(v) is the latest version."

@@ -43,6 +43,7 @@ suites=(
   "edge-replay|checks/edge_cf.sh"
 )
 [ "${1:-}" = --no-release ] || suites+=("release-dmg|checks/release.sh")
+suites+=("updater|checks/updater.sh")
 suites+=("launchservices|checks/launchservices.sh")   # last: after every build and the DMG run
 bad=0; skipped=0
 for s in "${suites[@]}"; do

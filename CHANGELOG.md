@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Updates inside the app:** Check for Updates shows what's new and offers **Download and Install**. The download is
+  checked (its checksum, Scrawl's signature, the app inside it) before anything changes; **Restart to Update** then
+  quits normally, swaps in the new version and opens it, and puts the old one back if the new one doesn't start.
+  Works when Scrawl is in your Applications folder; otherwise it opens the release page. Versions before 0.1.5.2
+  need one manual download of 0.1.5.2.
+
 ## 0.1.5.1 (2026-11-03, build 9)
 
 - Scrawl keeps backups of your notebook: a copy each day (the last 7 days) in the Backups folder next to it, and a
