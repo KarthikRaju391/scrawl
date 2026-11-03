@@ -119,8 +119,11 @@ private func req(_ d: Data, _ name: String) -> ImagePageRequest { ImagePageReque
 func imageChecks(_ check: (Bool, String) -> Void) {
     // These checks spin the run loop (tiles load in the background): an autosave queued by any canvas here would run. The
     // bench never saves (AppPaths.offline); check it before anything is drawn.
-    guard !AppPaths.persists else { check(false, "the bench would save to \(AppPaths.notebookPath): stopping"); return }
-    check(!AppPaths.persists, "the image checks run with saving off (they spin the run loop; nothing reaches \(AppPaths.notebookPath))")
+    // Saving may only ever reach a throwaway TRACKPAD_DRAW_DATA folder, never the real one.
+    let real = (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.path + "/" + AppPaths.folderName)
+    let safe = !AppPaths.persists || (AppPaths.override.map { URL(fileURLWithPath: $0).standardized.path != URL(fileURLWithPath: real).standardized.path } ?? false)
+    guard safe else { check(false, "the bench would save to \(AppPaths.notebookPath): stopping"); return }
+    check(safe, "the image checks can't reach the real notebook (saving \(AppPaths.persists ? "only to " + AppPaths.dataDir : "off"); they spin the run loop)")
     let tmp = NSTemporaryDirectory() + "scrawl-image-bench-\(getpid())"
     try? FileManager.default.removeItem(atPath: tmp)
     ImageStore.root = tmp + "/Images"; ImageStore.cacheRoot = tmp + "/ImageCache"
@@ -381,7 +384,7 @@ func imageChecks(_ check: (Bool, String) -> Void) {
         let data = try! f.encoded()
         let d = CanvasView(frame: NSRect(x: 0, y: 0, width: 1400, height: 860), device: nil)
         d.load(try! NotebookFile.decode(data))
-        let a = c.pages[1].images[0], b = d.pages[1].images[0]
+        guard let a = c.pages[1].images.first, let b = d.pages[1].images.first else { check(false, "notebook round trip: page 2 lost its picture"); return }
         let onDisk = FileManager.default.contents(atPath: b.asset.path) ?? Data()
         check(d.pages.count == c.pages.count && b.id == a.id && b.frame == a.frame && b.asset.key == a.asset.key && b.source == a.source && sha(onDisk) == sha(pngData)
               && d.pages[1].strokes.count == c.pages[1].strokes.count && d.pages[2].images.count == 1,
