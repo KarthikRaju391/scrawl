@@ -5,6 +5,7 @@
 # /Applications/Scrawl.app (scripts/install-applications.sh).
 LS=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 . "$(dirname "$0")/../release.conf"
+[ "${1:-}" = --forget-dev-build ] && "$LS" -u "$(cd "$(dirname "$0")/.." && pwd)/build/Scrawl.app" 2>/dev/null
 found=$($LS -dump 2>/dev/null | awk '/^path:/{sub(/^path: */,""); sub(/ \(0x[0-9a-f]+\)$/,""); p=$0} /^identifier:/{print $2"\t"p}' | grep -E "^($BUNDLE_ID|local\.trackpad-draw)	" | sort -u)
 others=$(echo "$found" | grep -v "	/Applications/Scrawl.app$" | grep -v '^$')
 echo "$found" | sed 's/^/  registered: /'
