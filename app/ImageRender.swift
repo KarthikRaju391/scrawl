@@ -17,7 +17,7 @@ final class ImageTextures {
     var onReady: (() -> Void)?
     static let tile = 1024, gutter = 4
     /// GPU memory for pictures' textures; the least recently drawn are released beyond it (they load again when needed).
-    nonisolated(unsafe) static var budget = 512 << 20
+    nonisolated(unsafe) static var budget = 256 << 20
 
     private struct Key: Hashable { let asset: String; let tile: Int }   // tile -1: the preview
     private final class Entry { var texture: MTLTexture?; var bytes = 0; var lastUsed = 0; var loading = false; var failed = false }

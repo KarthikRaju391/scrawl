@@ -10,6 +10,7 @@ precondition(!AppPaths.persists || AppPaths.override != nil, "the bench must not
 var failures = 0
 func check(_ ok: Bool, _ msg: String) { print(ok ? "PASS" : "FAIL", msg); if !ok { failures += 1 } }
 
+if ProcessInfo.processInfo.environment["BENCH_ONLY"] == "images" { imageChecks(check); exit(failures == 0 ? 0 : 1) }
 if ProcessInfo.processInfo.environment["BENCH_ONLY"] == "thumbnails" { thumbnailRegionChecks(check); exit(failures == 0 ? 0 : 1) }
 if ProcessInfo.processInfo.environment["BENCH_ONLY"] == "export" {   // just the export checks (checks/export.sh)
     exportChecks(check); exportPageChecks(check); selectionChecks(check)
@@ -210,6 +211,7 @@ postHogChecks(check)
 pageMapRevealChecks(check)
 thumbnailSpeedChecks(check)
 thumbnailRegionChecks(check)
+imageChecks(check)
 
 // Prediction must point ahead along the motion: sine path like the UI test, at several phases.
 do {
