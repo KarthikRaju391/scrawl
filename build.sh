@@ -11,6 +11,10 @@ CONFIG=${CONFIG:-dev}
 # Usage counts go to PostHog from release builds only (docs/analytics.md).
 if [ "$CONFIG" = release ]; then PH_TOKEN=${POSTHOG_PROJECT_TOKEN:-}; else PH_TOKEN=; fi
 BUILD=${BUILD_NUMBER:-1}
+# Dev builds show as "Scrawl Dev" and are unregistered from LaunchServices after every build, so Spotlight, Open With and
+# `open -b` only ever find the installed app (checks/launchservices.sh).
+if [ "$CONFIG" = release ]; then DISPLAY_NAME=$APP_NAME; else DISPLAY_NAME="$APP_NAME Dev"; fi
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 if [ "$CONFIG" = release ]; then FINAL="build/release/$APP_NAME.app"; else FINAL="build/$APP_NAME.app"; fi
 FRAMEWORKS="-framework AppKit -framework Metal -framework MetalKit -framework QuartzCore -framework Carbon"
 # Build and sign in a staging folder, then swap it in: the app at $FINAL may be open (Karthik runs it while the
@@ -39,7 +43,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0"><dict>
   <key>CFBundleIdentifier</key><string>$ID</string>
   <key>CFBundleName</key><string>$APP_NAME</string>
-  <key>CFBundleDisplayName</key><string>$APP_NAME</string>
+  <key>CFBundleDisplayName</key><string>$DISPLAY_NAME</string>
   <key>CFBundleExecutable</key><string>TrackpadDraw</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -66,6 +70,7 @@ OLD="$FINAL.old-$$"
 mv "$APP" "$FINAL"
 rm -rf "$OLD" "$STAGE"
 APP=$FINAL
+"$LSREGISTER" -u "$(cd "$(dirname "$APP")" && pwd)/$(basename "$APP")" 2>/dev/null || true
 echo "built: $APP ($CONFIG, $VERSION build $BUILD)"
 [ "$CONFIG" = release ] && exit 0
 swiftc -O -swift-version 5 -o build/bench $(ls app/*.swift | grep -v -e main.swift -e TestZoomLock.swift -e TestPersist.swift -e TestInput.swift -e TestAbout.swift -e TestMapping.swift -e TestEdge.swift -e TestKeys.swift -e TestNewLine.swift -e TestPage.swift -e TestGallery.swift -e TestArrows.swift -e TestMeta.swift -e TestGallerySpeed.swift -e TestToolDraw.swift -e TestTaps.swift -e TestArrowKeys.swift -e TestToast.swift -e TestJitter.swift -e TestGalleryKeys.swift -e TestGalleryFlow.swift -e TestGalleryReplay.swift -e TestGalleryOrder.swift -e TestAccessibility.swift -e TestMenus.swift -e TestExport.swift -e TestSelect.swift -e TestSelectBar.swift -e Selection.swift -e TestModes.swift -e Robot.swift -e TestPan.swift -e UsageEvents.swift -e AppMenu.swift -e AppGallery.swift) bench/*.swift \

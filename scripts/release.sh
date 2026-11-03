@@ -61,4 +61,7 @@ fi
 echo "== zip"
 ditto -c -k --sequesterRsrc --keepParent "$APP" "$DIST/$SLUG-$VERSION.zip"
 (cd "$DIST" && shasum -a 256 *.dmg *.zip > SHA256SUMS.txt && cat SHA256SUMS.txt)
+# Forget the release build and any staged copy: only the installed app is Scrawl to LaunchServices (checks/launchservices.sh).
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+for a in "$APP" "${STAGE:-}/$APP_NAME.app"; do if [ -e "$a" ]; then "$LSREGISTER" -u "$(cd "$(dirname "$a")" && pwd)/$(basename "$a")" 2>/dev/null || true; fi; done
 echo "release: $DIST (signed: $([ "$SIGN_ID" = "-" ] && echo ad-hoc || echo "$SIGN_ID"))"

@@ -14,7 +14,8 @@ SLUG=$(echo "$APP_NAME" | tr ' ' '-'); DMG="dist/$VERSION/$SLUG-$VERSION.dmg"
 
 MNT=$(mktemp -d /tmp/td-mnt.XXXX)
 hdiutil attach -quiet -nobrowse -readonly -mountpoint "$MNT" "$DMG" || { fail "DMG mounts"; exit 1; }
-trap 'hdiutil detach -quiet "$MNT" 2>/dev/null' EXIT
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+trap '"$LSREGISTER" -u "$MNT/$APP_NAME.app" 2>/dev/null; hdiutil detach -quiet "$MNT" 2>/dev/null' EXIT   # the app ran from here: forget it
 APPDIR="$MNT/$APP_NAME.app"; BIN="$APPDIR/Contents/MacOS/TrackpadDraw"
 [ -d "$APPDIR" ] && [ -L "$MNT/Applications" ] && [ -f "$MNT/Read me first.txt" ] && pass "DMG: app, Applications link, install notes" || fail "DMG contents"
 grep -q "Open Anyway" "$MNT/Read me first.txt" && pass "install notes cover the Gatekeeper prompt (Open / Open Anyway)" || fail "install notes"
