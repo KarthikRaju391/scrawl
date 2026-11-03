@@ -2,9 +2,11 @@
 
 ## Unreleased
 
+## 0.1.5 (2026-11-03, build 8)
+
 - Pages overview: a long page's tile shows the page from its top, as it reads and as it usually opens, fading out at
-  the bottom when there's more below. It showed a slice from the middle of the ink (page 22: "I want to work on
-  something useful…" while the page opens at "Lol, I hope…"). Short pages keep the tight crop.
+  the bottom when there's more below. It showed a slice from the middle of the ink, so the tile didn't match the
+  page you'd open. Short pages keep the tight crop.
 
 - **File › Export Page…** (⇧⌘E, replacing Export Page as PNG…): one sheet with the options under the file browser.
   - **Format:** PNG or SVG. SVG is vector: one path per stroke, the same shapes as the PDF, highlighter at 35%,
@@ -22,6 +24,8 @@
   - **Copy as Image** (⌘C with a selection, or Copy on the small bar next to it): the rectangle, with strokes cut at
     its edges, at 2×, on the paper you last exported with (never transparent). Apps get a PNG, a vector PDF and SVG.
   - **Export Selection…** (⌥⌘E, or Export… on the bar): the export sheet with Area set to Selection.
+- Export stays quick with long highlighter strokes, and the saved file always has the extension of the format you
+  chose.
 
 ## 0.1.4 (2026-11-01, build 7)
 

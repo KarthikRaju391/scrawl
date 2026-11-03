@@ -138,8 +138,13 @@ The app needs no special permissions: no Accessibility, Input Monitoring or Scre
 - **Page dates:** every page remembers when it was created (shown in the small label at the top of the
   open page) and when it was last changed (shown under its tile in the overview). Pages from before
   0.1.0 show "date unknown" and come last in the overview.
-- **Export:** ⌘E saves every page as one PDF (vector, sharp at any size), and ⇧⌘E saves the current
-  page as a PNG.
+- **Export:** ⌘E saves every page as one PDF (vector, sharp at any size). **Export Page…** (⇧⌘E) saves the
+  current page as a PNG or SVG, at 1×–4× or any size from 50% to 800%, either the whole page or just what's on
+  screen, on the paper, white or transparent.
+- **Select (S):** click and drag a box with the pointer (picking Select leaves draw mode; S again goes back to
+  drawing). **⌘C** copies it as an image (other apps get a PNG, PDF and SVG), and **Export Selection…** (⌥⌘E)
+  saves it with the same options as Export Page. The small bar next to the box has both. Selecting never
+  changes the page.
 - **Help › Scrawl Help** (⌘?) lists every shortcut, and **Help › Practice Page** walks you through the
   gestures in 30 seconds. Short tips appear when they'd help (each at most twice; Settings › Tips turns
   them off).
