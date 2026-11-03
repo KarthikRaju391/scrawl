@@ -736,6 +736,16 @@ final class CanvasView: MTKView {
         return pages.count - 1
     }
 
+    /// Test: put a picture under page i's ink (its default place unless `frame`).
+    func testPlaceImage(_ a: ImageAsset, page i: Int, frame: CGRect? = nil, name: String = "test.png") {
+        let d = pages[i]
+        let f = frame ?? ImageObject.defaultFrame(for: a, pageWidth: camera.page.width, pageTop: camera.page.height)
+        let o = ImageObject(id: nextImageIdValue, asset: a, frame: f, source: ImageSource(kind: .file, fileName: name), added: Document.clock())
+        nextImageIdValue += 1
+        d.setInitial(images: d.images + [o], strokes: d.strokes)
+        markDirty(); needsRender = true
+    }
+
     /// What the GPU draws for the open page's pictures in `vis` at `pxPerUnit` device pixels per page unit.
     func imageDraws(_ d: Document, vis: CGRect, pxPerUnit: Double, sync: Bool) -> Renderer.ImageDraws {
         d.images.isEmpty ? Renderer.ImageDraws() : renderer.images.draws(d.images, visible: vis, pxPerUnit: pxPerUnit, sync: sync)

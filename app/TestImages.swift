@@ -1,0 +1,246 @@
+// --test-images write|read|big: image pages in the real app (background window, a scratch data folder; checks/images.sh).
+//   write : pictures come in by every way there is: ⌘V (the app's Paste action, test pasteboard), a drop on the window
+//           (the window's own drag handlers, with a pasteboard holding a file), New Page from Image's import (HEIC,
+//           TIFF, PDF), the Inbox (an item put there before launch, and one while running). Then ink on a picture
+//           through the real input path, ⌘Z after a new picture page (the page goes, then its file), the page header,
+//           Copy as Image, Export Page (PNG, SVG) and Export All as PDF. Waits for the autosave, records what's expected,
+//           and stays mid-stroke for the script's kill -9.
+//   read  : what the reopened notebook holds (and the picture files' hashes).
+//   big   : a 4000 x 12000 screenshot: frame times scrolling it, ink latency on it vs a plain page, memory.
+import AppKit
+import CryptoKit
+import UniformTypeIdentifiers
+
+enum TestImages {
+    static var dir: String { AppPaths.dataDir }
+    static func spin(_ s: Double) { RunLoop.current.run(until: Date().addingTimeInterval(s)) }
+    static func sha(_ d: Data) -> String { SHA256.hash(data: d).map { String(format: "%02x", $0) }.joined() }
+    static func write(_ obj: Any, _ name: String) {
+        try? JSONSerialization.data(withJSONObject: obj, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/" + name))
+    }
+    /// The picture files in Images/ and their hashes.
+    static func files() -> [String: String] {
+        var out: [String: String] = [:]
+        for n in (try? FileManager.default.contentsOfDirectory(atPath: ImageStore.root)) ?? [] where !n.hasPrefix(".") {
+            out[n] = FileManager.default.contents(atPath: ImageStore.root + "/" + n).map(sha) ?? "?"
+        }
+        return out
+    }
+    static func summary(_ app: AppDelegate) -> [String: Any] {
+        var s = TestPersist.summary(app.canvas)
+        s["files"] = files()
+        s["imagePages"] = app.canvas.pages.enumerated().filter { !$0.element.images.isEmpty }.map { i, d in
+            ["page": i, "images": d.images.map { ["id": $0.id, "asset": $0.asset.key, "frame": [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height], "source": $0.source.label] },
+             "strokes": d.strokes.count, "importId": d.importId ?? ""] as [String: Any]
+        }
+        return s
+    }
+    /// Wait (spinning the run loop) until `cond` or `timeout`.
+    @discardableResult static func wait(_ timeout: Double = 10, _ cond: () -> Bool) -> Bool {
+        let d = Date().addingTimeInterval(timeout)
+        while !cond() && Date() < d { spin(0.01) }
+        return cond()
+    }
+
+    /// A test card (gradient, blocks, lines): `w` x `h`.
+    static func card(_ w: Int, _ h: Int, hue: Double = 0.6) -> CGImage {
+        let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
+        let c1 = NSColor(hue: hue, saturation: 0.25, brightness: 0.98, alpha: 1).cgColor, c2 = NSColor(hue: hue, saturation: 0.6, brightness: 0.75, alpha: 1).cgColor
+        ctx.drawLinearGradient(CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB)!, colors: [c1, c2] as CFArray, locations: [0, 1])!, start: CGPoint(x: 0, y: h), end: CGPoint(x: w, y: 0), options: [])
+        ctx.setFillColor(CGColor(gray: 1, alpha: 0.9))
+        for k in 0..<max(h / 160, 1) { ctx.fill(CGRect(x: w / 12, y: h - 100 - k * 160, width: w * (5 + k % 4) / 12, height: 46)) }   // "text lines"
+        ctx.setFillColor(CGColor(gray: 0.15, alpha: 1))
+        for x in stride(from: 0, to: w, by: 200) { ctx.fill(CGRect(x: x, y: 0, width: 2, height: h)) }
+        return ctx.makeImage()!
+    }
+    static func encode(_ img: CGImage, _ t: UTType) -> Data {
+        let d = NSMutableData(); let dest = CGImageDestinationCreateWithData(d, t.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(dest, img, nil); CGImageDestinationFinalize(dest); return d as Data
+    }
+    static func pdf() -> Data {
+        let d = NSMutableData(); var box = CGRect(x: 0, y: 0, width: 612, height: 792)
+        let ctx = CGContext(consumer: CGDataConsumer(data: d as CFMutableData)!, mediaBox: &box, nil)!
+        ctx.beginPage(mediaBox: &box)
+        ctx.setFillColor(CGColor(srgbRed: 0.1, green: 0.45, blue: 0.9, alpha: 1)); ctx.fill(CGRect(x: 72, y: 560, width: 300, height: 160))
+        let s = NSAttributedString(string: "A PDF page", attributes: [.font: NSFont.systemFont(ofSize: 36)])
+        let line = CTLineCreateWithAttributedString(s); ctx.textPosition = CGPoint(x: 72, y: 480); CTLineDraw(line, ctx)
+        ctx.endPage(); ctx.closePDF(); return d as Data
+    }
+
+    /// A stand-in for AppKit's dragging session (the window's handlers only read the pasteboard).
+    final class Drag: NSObject, NSDraggingInfo {
+        let pb: NSPasteboard
+        init(_ pb: NSPasteboard) { self.pb = pb }
+        var draggingDestinationWindow: NSWindow? { nil }
+        var draggingSourceOperationMask: NSDragOperation { .copy }
+        var draggingLocation: NSPoint { NSPoint(x: 300, y: 300) }
+        var draggedImageLocation: NSPoint { .zero }
+        var draggedImage: NSImage? { nil }
+        var draggingPasteboard: NSPasteboard { pb }
+        var draggingSource: Any? { nil }
+        var draggingSequenceNumber: Int { 1 }
+        func slideDraggedImage(to screenPoint: NSPoint) {}
+        var draggingFormation: NSDraggingFormation { get { .default } set {} }
+        var animatesToDestination: Bool { get { false } set {} }
+        var numberOfValidItemsForDrop: Int { get { 1 } set {} }
+        func enumerateDraggingItems(options: NSDraggingItemEnumerationOptions = [], for view: NSView?, classes: [AnyClass], searchOptions: [NSPasteboard.ReadingOptionKey: Any] = [:], using block: (NSDraggingItem, Int, UnsafeMutablePointer<ObjCBool>) -> Void) {}
+        var springLoadingHighlight: NSSpringLoadingHighlight { .none }
+        func resetSpringLoading() {}
+    }
+
+    /// A screenshot of this window, taken by the script (it watches for shot-<name>.req).
+    static func shot(_ name: String) {
+        try? name.write(toFile: dir + "/shot-\(name).req", atomically: true, encoding: .utf8)
+        wait(5) { FileManager.default.fileExists(atPath: dir + "/shot-\(name).done") }
+    }
+
+    static func run(_ mode: String, app: AppDelegate) {
+        let canvas = app.canvas
+        var r: [String: Any] = [:]
+        switch mode {
+        case "write":
+            let fx = dir + "/fixtures"; try? FileManager.default.createDirectory(atPath: fx, withIntermediateDirectories: true)
+            // 0. The Inbox item put there before launch is a page already (or becomes one now).
+            wait(10) { canvas.pages.contains { $0.importId == "before-launch" } }
+            r["inboxBeforeLaunch"] = canvas.pages.firstIndex { $0.importId == "before-launch" } ?? -1
+            // 1. ⌘V: a PNG on the (test) pasteboard; the menu item is enabled for it.
+            let pngData = encode(card(1600, 2400, hue: 0.58), .png)
+            let pb = AppDelegate.pasteboard
+            pb.clearContents(); pb.setData(pngData, forType: .png)
+            let paste = NSApp.mainMenu?.items.first { $0.submenu?.title == "Edit" }?.submenu?.items.first { $0.title == "Paste" }
+            r["pasteEnabled"] = paste.map { app.validateMenuItem($0) } ?? false
+            let n0 = canvas.pages.count
+            app.paste(nil)
+            r["paste"] = wait { canvas.pages.count == n0 + 1 }
+            r["pasteOpened"] = canvas.pageIndex == canvas.pages.count - 1
+            r["pasteHeader"] = app.container.hint.stringValue
+            shot("import")
+            // 2. A JPEG file dropped on the window (the window's own drag handlers).
+            let jpgURL = URL(fileURLWithPath: fx + "/Holiday photo.jpg")
+            try? encode(card(1200, 900, hue: 0.08), .jpeg).write(to: jpgURL)
+            let dpb = NSPasteboard(name: NSPasteboard.Name("scrawl.test.drag")); dpb.clearContents(); dpb.writeObjects([jpgURL as NSURL])
+            let drag = Drag(dpb)
+            r["dragEntered"] = app.container.draggingEntered(drag) == .copy
+            let n1 = canvas.pages.count
+            r["dropTaken"] = app.container.performDragOperation(drag)
+            r["drop"] = wait { canvas.pages.count == n1 + 1 }
+            r["dropHeader"] = app.container.hint.stringValue
+            // A dropped text file is not taken.
+            let txt = URL(fileURLWithPath: fx + "/notes.txt"); try? "hi".write(to: txt, atomically: true, encoding: .utf8)
+            dpb.clearContents(); dpb.writeObjects([txt as NSURL])
+            r["dropTextRefused"] = app.container.draggingEntered(drag) == [] && !app.container.performDragOperation(drag)
+            // 3. New Page from Image… (what the panel imports): HEIC, TIFF, PDF, three pages at once, the last opened.
+            let n2 = canvas.pages.count
+            app.importImages([ImagePageRequest(data: encode(card(1000, 1400, hue: 0.33), .heic), source: ImageSource(kind: .file, fileName: "plant.heic")),
+                              ImagePageRequest(data: encode(card(800, 600, hue: 0.9), .tiff), source: ImageSource(kind: .file, fileName: "scan.tiff")),
+                              ImagePageRequest(data: pdf(), source: ImageSource(kind: .file, fileName: "Handout.pdf"))], via: "open")
+            r["open3"] = wait { canvas.pages.count == n2 + 3 }
+            r["openHeader"] = app.container.hint.stringValue
+            r["menuItem"] = NSApp.mainMenu?.items.first { $0.submenu?.title == "File" }?.submenu?.items.first { $0.title == "New Page from Image…" }.map { "\($0.keyEquivalentModifierMask.rawValue) \($0.keyEquivalent)" } ?? ""
+            // 4. An Inbox item while the app runs (the script writes it when asked).
+            try? "go".write(toFile: dir + "/inbox-now.req", atomically: true, encoding: .utf8)
+            r["inboxWhileRunning"] = wait(10) { canvas.pages.contains { $0.importId == "while-running" } }
+            r["inboxDone"] = wait(10) { FileManager.default.fileExists(atPath: AppPaths.dataDir + "/Inbox/while-running.done.json") }
+            r["inboxHeader"] = app.container.hint.stringValue
+            shot("inbox")
+            // The overview: picture pages' tiles (from their tops), then back to the page.
+            app.showGallery(); spin(0.8); shot("gallery")
+            app.openPage(canvas.pageIndex); spin(0.6)
+            // 5. ⌘Z right after a new picture page: the page goes; after the save, its file too (no other page uses it).
+            let uniq = encode(card(640, 480, hue: 0.75), .png)
+            pb.clearContents(); pb.setData(uniq, forType: .png)
+            let n3 = canvas.pages.count
+            app.paste(nil); wait { canvas.pages.count == n3 + 1 }
+            let key = canvas.doc.images.first?.asset.key ?? "?"
+            r["undoFileBefore"] = files().keys.contains { $0.hasPrefix(key) }
+            app.undo()
+            r["undoRemovedPage"] = canvas.pages.count == n3 && !canvas.pages.contains { $0.images.contains { $0.asset.key == key } }
+            TestPersist.waitForSave(canvas) {}
+            wait(5) { !files().keys.contains { $0.hasPrefix(key) } }
+            r["undoFileAfterSave"] = files().keys.contains { $0.hasPrefix(key) }
+            // 6. Ink on the pasted picture's page (the real input path, draw mode without the pointer lock).
+            let pastedPage = canvas.pages.firstIndex { $0.images.first?.asset.pixelWidth == 1600 && $0.images.first?.asset.pixelHeight == 2400 } ?? 0
+            canvas.goToPage(pastedPage)
+            app.enterDrawMode(lock: false)
+            let pen = TestPersist.Pen(canvas: canvas)
+            var penDone = false
+            pen.strokes(5, y0: 20) { penDone = true }
+            wait(15) { penDone }
+            r["inkOnPicture"] = canvas.doc.strokes.count
+            r["inkPage"] = pastedPage
+            // 7. Copy as Image (a selection over the picture and the ink), exports.
+            canvas.setSelectionForTest(CGRect(x: 100, y: canvas.camera.page.height - 600, width: 900, height: 500))
+            app.copySelectionAction()
+            r["copyPNG"] = AppDelegate.pasteboard.data(forType: .png)?.count ?? 0
+            canvas.setSelectionForTest(nil)
+            try? canvas.export(ExportOptions(format: .png, scale: 1, area: .page, background: .paper), to: URL(fileURLWithPath: dir + "/export.png"))
+            try? canvas.export(ExportOptions(format: .svg, scale: 1, area: .page, background: .paper), to: URL(fileURLWithPath: dir + "/export.svg"))
+            try? canvas.exportPDF(to: URL(fileURLWithPath: dir + "/export.pdf"))
+            if let d = AppDelegate.pasteboard.data(forType: .png) { try? d.write(to: URL(fileURLWithPath: dir + "/copy.png")) }
+            // The window as it is (the script's screenshot of this window).
+            app.exitDrawMode("test")
+            spin(0.3); shot("writing")
+            write(r, "images-write.json")
+            // 8. Saved; the expected state; then mid-stroke until the script's kill -9.
+            canvas.setNeedsRender()
+            TestPersist.waitForSave(canvas) {
+                write(summary(app), "expected.json")
+                try? canvas.exportPNG(to: URL(fileURLWithPath: dir + "/before.png"), pxPerUnit: 1)
+                app.enterDrawMode(lock: false)
+                pen.stroke(at: 60, x0: 20, len: 60, lift: false) {
+                    write(["inFlightPoints": canvas.liveStrokePointCountForTest], "midstroke.json")
+                    Timer.scheduledTimer(withTimeInterval: 0.008, repeats: true) { _ in pen.frame(CGPoint(x: 50, y: 60)) }
+                }
+            }
+        case "big":
+            // A plain page first (latency baseline), then a 4000 x 12000 screenshot.
+            app.enterDrawMode(lock: false)
+            let pen = TestPersist.Pen(canvas: canvas)
+            var done = false
+            canvas.logger.event(["what": "phase", "phase": "plain"])
+            pen.strokes(12, y0: 15) { done = true }; wait(30) { done }
+            let shot = autoreleasepool { encode(card(4000, 12000, hue: 0.55), .png) }
+            let m0 = TestImagesMemory.footprintMB()
+            let t0 = CACurrentMediaTime()
+            var made = false
+            app.importImages([ImagePageRequest(data: shot, source: ImageSource(kind: .paste, fileName: "Long screenshot.png"))], via: "paste")
+            let n = canvas.pages.count
+            wait(20) { canvas.pages.count > n - 1 && canvas.doc.images.first?.asset.pixelHeight == 12000 }
+            made = canvas.doc.images.first?.asset.pixelHeight == 12000
+            r["importSeconds"] = CACurrentMediaTime() - t0; r["made"] = made
+            spin(0.5)
+            canvas.logger.event(["what": "phase", "phase": "picture"])
+            done = false; pen.strokes(12, y0: 15) { done = true }; wait(30) { done }
+            // Scroll the whole picture: one arrow step per display frame, down then up, zoom 1 then 2.
+            app.exitDrawMode("test")
+            for z in [1.0, 2.0] {
+                canvas.setZoom(z); spin(0.3)
+                canvas.resetPerf()
+                for k in 0..<240 { canvas.panByArrow(dx: 0, dy: k < 120 ? 1 : -1, screen: false); spin(1.0 / 60) }
+                let p = canvas.perf
+                func q(_ v: [Double], _ f: Double) -> Double { let s = v.sorted(); return s.isEmpty ? 0 : s[Int(f * Double(s.count - 1))] }
+                r["zoom\(Int(z))"] = ["frames": p.cpu.count, "cpuP50": q(p.cpu, 0.5), "cpuP95": q(p.cpu, 0.95), "gpuP50": q(p.gpu, 0.5), "gpuP95": q(p.gpu, 0.95),
+                                      "gapP50": q(p.gaps, 0.5), "gapP95": q(p.gaps, 0.95), "gapMax": p.gaps.max() ?? 0]
+            }
+            r["footprintMB"] = [m0, TestImagesMemory.footprintMB()]
+            r["gpuTexturesMB"] = Double(canvas.renderer.images.residentBytes) / 1_048_576
+            r["strokeLog"] = canvas.logger.path
+            write(r, "images-big.json")
+        default:   // read
+            var s = summary(app)
+            s["loadStatus"] = app.notebookStatus
+            s["hint"] = app.container.hint.stringValue
+            write(s, "actual.json")
+            try? canvas.exportPNG(to: URL(fileURLWithPath: dir + "/after.png"), pxPerUnit: 1)
+        }
+        try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+    }
+}
+
+enum TestImagesMemory {
+    static func footprintMB() -> Double {
+        var info = task_vm_info_data_t(); var n = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) { $0.withMemoryRebound(to: integer_t.self, capacity: Int(n)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &n) } }
+        return kr == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : -1
+    }
+}

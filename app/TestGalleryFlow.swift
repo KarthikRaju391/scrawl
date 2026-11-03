@@ -161,6 +161,12 @@ enum TestGalleryFlow {
                 canvas.testAddStroke(pts)
             }
         }
+        // TRACKPAD_DRAW_TEST_IMAGES: pages 2 and 5 have a picture under their ink (page 5: a tall one, tiled at 370%).
+        if ProcessInfo.processInfo.environment["TRACKPAD_DRAW_TEST_IMAGES"] != nil {
+            for (p, w, h, hue) in [(1, 1600, 1000, 0.08), (4, 4000, 9000, 0.55)] {
+                if let a = try? ImageStore.importImage(TestImages.encode(TestImages.card(w, h, hue: hue), .png)) { canvas.testPlaceImage(a, page: p) }
+            }
+        }
         // Page 5 (index 4) is saved at 370%, on its ink.
         canvas.goToPage(4)
         canvas.setVisibleForReplay(x: 300, y: 700, w: canvas.camera.page.width / 3.7, z: 3.7)

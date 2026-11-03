@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Pictures on pages.** Drag an image onto the window, paste one (⌘V), or File › New Page from Image… (⇧⌘N): each
+  becomes a new page with the picture across the page, from its top, and you write on it with every tool (the
+  highlighter, scratch-out and the eraser only ever touch the ink). PNG, JPEG, HEIC, TIFF, GIF, PDF (its first page)
+  and screenshots. The picture is kept as it is, at its full resolution, and stays sharp as you zoom in. The page
+  header says where it came from. ⌘Z right after takes the page away again.
+  - Exports and Copy as Image include the picture under the ink. An SVG holds it inside the file.
+  - Pictures are stored next to the notebook, in `Images/`, unchanged. The notebook only refers to them, so saving
+    stays as quick as before. Scrawl 0.1.5 and older open such a notebook without the pictures.
+  - The browser extension's snapshots come in the same way (docs/image-objects.md, "The Inbox").
+
 ## 0.1.5.2 (2026-11-04, build 10)
 
 - **Updates inside the app:** Check for Updates shows what's new and offers **Download and Install**. The download is

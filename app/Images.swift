@@ -353,19 +353,24 @@ enum ImageStore {
         ctx.restoreGState()
     }
 
+    /// A minute; TRACKPAD_DRAW_IMAGE_GRACE (seconds) for tests.
+    static let grace = ProcessInfo.processInfo.environment["TRACKPAD_DRAW_IMAGE_GRACE"].flatMap(Double.init) ?? 60
     /// Off when the notebook on disk couldn't be read (kept aside: its pictures must stay).
     nonisolated(unsafe) static var collects = true
-    /// Remove stored pictures no notebook refers to: after a save, `keep` = every picture the saved notebook and the
-    /// undo of page deletes still refer to. Files changed in the last `grace` seconds stay (a picture being imported is
+    /// Remove stored pictures no notebook refers to any more: after a save, `keep` = every picture the saved notebook and
+    /// the undo of page deletes still refer to. Files changed in the last `grace` seconds stay (a picture being imported is
     /// written before the page that shows it exists).
     @discardableResult
-    static func collectGarbage(keep: Set<String>, grace: TimeInterval = 60) -> [String] {
+    static func collectGarbage(keep: Set<String>, grace: TimeInterval = ImageStore.grace) -> [String] {
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: root) else { return [] }
+        lock.lock(); let known = Set(assets.keys); lock.unlock()
         var removed: [String] = []
         for n in names where !n.hasPrefix(".") {
             let key = String(n.split(separator: ".").first ?? "")
-            guard !keep.contains(key) else { continue }
+            // Only pictures this run has seen in use: a file no page referred to when the notebook was opened (an older
+            // version saved it without its pictures; a notebook restored from a backup may still want it) stays.
+            guard !keep.contains(key), known.contains(key) else { continue }
             let p = root + "/" + n
             if let m = (try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date, Date().timeIntervalSince(m) < grace { continue }
             if (try? fm.removeItem(atPath: p)) != nil { removed.append(n) }
