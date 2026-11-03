@@ -117,6 +117,10 @@ private func footprintMB() -> Double {
 private func req(_ d: Data, _ name: String) -> ImagePageRequest { ImagePageRequest(data: d, source: ImageSource(kind: .file, fileName: name)) }
 
 func imageChecks(_ check: (Bool, String) -> Void) {
+    // These checks spin the run loop (tiles load in the background): an autosave queued by any canvas here would run. The
+    // bench never saves (AppPaths.offline); check it before anything is drawn.
+    guard !AppPaths.persists else { check(false, "the bench would save to \(AppPaths.notebookPath): stopping"); return }
+    check(!AppPaths.persists, "the image checks run with saving off (they spin the run loop; nothing reaches \(AppPaths.notebookPath))")
     let tmp = NSTemporaryDirectory() + "scrawl-image-bench-\(getpid())"
     try? FileManager.default.removeItem(atPath: tmp)
     ImageStore.root = tmp + "/Images"; ImageStore.cacheRoot = tmp + "/ImageCache"
