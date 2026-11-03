@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.5.1 (2026-11-03, build 9)
+
+- Scrawl keeps backups of your notebook: a copy each day (the last 7 days) in the Backups folder next to it, and a
+  copy before any save that would remove more than half of your pages or writing.
+- Safer saving: only the Scrawl app you open saves your notebook; development and test builds keep their own.
+
 ## 0.1.5 (2026-11-03, build 8)
 
 - Pages overview: a long page's tile shows the page from its top, as it reads and as it usually opens, fading out at
