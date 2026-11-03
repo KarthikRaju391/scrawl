@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.5.2 (2026-11-04, build 10)
+
 - **Updates inside the app:** Check for Updates shows what's new and offers **Download and Install**. The download is
   checked (its checksum, Scrawl's signature, the app inside it) before anything changes; **Restart to Update** then
   quits normally, swaps in the new version and opens it, and puts the old one back if the new one doesn't start.

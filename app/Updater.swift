@@ -212,7 +212,9 @@ enum UpdateInstaller {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/sh")
         p.arguments = [sh, String(getpid()), UpdateLocation.bundle, UpdateLocation.staged, version, markerPath, logPath]
-        var env = ProcessInfo.processInfo.environment; env["LAUNCH_ARGS"] = launchArgs.joined(separator: " ")
+        // A copy run with its own data folder is relaunched with the arguments it was started with (e.g. -analyticsEnabled NO).
+        let args = launchArgs.isEmpty && AppPaths.override != nil ? Array(CommandLine.arguments.dropFirst()) : launchArgs
+        var env = ProcessInfo.processInfo.environment; env["LAUNCH_ARGS"] = args.joined(separator: " ")
         p.environment = env
         p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
         try p.run()
