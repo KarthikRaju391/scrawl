@@ -4,7 +4,9 @@ import CoreGraphics
 import Foundation
 import Metal
 
+AppPaths.offline = true   // first: nothing here may ever save to the real notebook (AppPaths.persists is false from now on)
 Diagnostics.off = true
+precondition(!AppPaths.persists || AppPaths.override != nil, "the bench must not save to the real notebook")
 var failures = 0
 func check(_ ok: Bool, _ msg: String) { print(ok ? "PASS" : "FAIL", msg); if !ok { failures += 1 } }
 
@@ -191,6 +193,7 @@ meshEquivalence(check, strokesPath: ProcessInfo.processInfo.environment["STROKES
 writingLayoutChecks(check)
 settingsChecks(check)
 notebookChecks(check)
+dataSafetyChecks(check)
 exportChecks(check)
 exportPageChecks(check)
 selectionChecks(check)

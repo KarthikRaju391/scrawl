@@ -13,7 +13,16 @@ enum Launch {
 enum AppPaths {
     /// The notebook is only read and written by the real app, or by tests given their own folder:
     /// a test must never load or overwrite Karthik's pages.
-    static var persists: Bool { !Launch.testing || override != nil }
+    ///
+    /// Only the app itself (a bundle) saves without TRACKPAD_DRAW_DATA: the bench and other command-line builds of these
+    /// files never do, even if something makes them run the autosave's timer (an image bench check spinning the run loop
+    /// wrote its canvas over the real notebook, 3 Nov).
+    static var persists: Bool {
+        if override != nil { return true }
+        return !offline && !Launch.testing && Bundle.main.bundleIdentifier != nil
+    }
+    /// Set by the bench (and true for any process named "bench"): never touch the real notebook.
+    nonisolated(unsafe) static var offline = ProcessInfo.processInfo.processName == "bench"
 
     /// Tests and development point everything at one folder with TRACKPAD_DRAW_DATA.
     static let override = ProcessInfo.processInfo.environment["TRACKPAD_DRAW_DATA"]
@@ -21,17 +30,26 @@ enum AppPaths {
     /// The folder name under Application Support and Logs. Fixed here, not taken from the bundle, so a
     /// rename never strands anyone's pages (Migration moves the old "Trackpad Draw" folders).
     static let folderName = "Scrawl"
+    /// Where this build keeps its notebook: the released app uses "Scrawl"; development builds use "Scrawl-dev", so a dev
+    /// copy (or anything built from these files) can't write the real notebook (3 Nov).
+    static var ownFolder: String {
+        #if RELEASE
+        return folderName
+        #else
+        return folderName + "-dev"
+        #endif
+    }
 
     /// ~/Library/Application Support/Scrawl: the notebook.
     static var dataDir: String {
         if let o = override { return o }
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.path
-        return base + "/" + folderName
+        return base + "/" + ownFolder
     }
     /// ~/Library/Logs/Scrawl: watchdog log, crash notes, optional touch diagnostics. Local only.
     static var logsDir: String {
         if let o = override { return o }
-        return NSHomeDirectory() + "/Library/Logs/" + folderName
+        return NSHomeDirectory() + "/Library/Logs/" + ownFolder
     }
     static var notebookPath: String { dataDir + "/Notebook.tdnb" }
 
@@ -63,6 +81,60 @@ enum Diagnostics {
         #else
         return true
         #endif
+    }
+}
+
+/// Backups of the notebook, in its folder's Backups/ (3 Nov: a stray process wrote a 2-page canvas over 26 pages and
+/// nothing could bring them back).
+enum NotebookSafety {
+    /// Pages and live strokes of the notebook on disk, as last written or read (nil: not known yet in this process).
+    nonisolated(unsafe) static var onDisk: (path: String, pages: Int, strokes: Int)?
+
+    static func counts(_ f: NotebookFile) -> (pages: Int, strokes: Int) { (f.pages.count, f.pages.reduce(0) { $0 + $1.strokes.count }) }
+
+    /// Before a save: if it would leave under half the pages or half the strokes of the notebook on disk (and that
+    /// notebook isn't tiny), copy the notebook to Backups/Notebook-YYYYMMDD-HHMM.tdnb first, keeping the newest `keep`.
+    /// Returns the backup's path when one was made.
+    @discardableResult
+    static func backupIfShrinking(notebook: String, newPages: Int, newStrokes: Int, backupsDir: String, now: Date, keep: Int = 10) -> String? {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: notebook) else { return nil }
+        if onDisk?.path != notebook {
+            guard let d = fm.contents(atPath: notebook), let f = try? NotebookFile.decode(d) else { return nil }
+            let c = counts(f); onDisk = (notebook, c.pages, c.strokes)
+        }
+        guard let old = onDisk, old.pages + old.strokes >= 3 else { return nil }
+        guard newPages * 2 < old.pages || newStrokes * 2 < old.strokes else { return nil }
+        let df = DateFormatter(); df.dateFormat = "yyyyMMdd-HHmm"; df.locale = Locale(identifier: "en_US_POSIX")
+        var dest = backupsDir + "/Notebook-\(df.string(from: now)).tdnb"
+        if fm.fileExists(atPath: dest) { df.dateFormat = "yyyyMMdd-HHmmss"; dest = backupsDir + "/Notebook-\(df.string(from: now)).tdnb" }
+        do {
+            try fm.createDirectory(atPath: backupsDir, withIntermediateDirectories: true)
+            if !fm.fileExists(atPath: dest) { try fm.copyItem(atPath: notebook, toPath: dest) }
+        } catch { NSLog("Scrawl: shrink backup failed: \(error)"); return nil }
+        prune(backupsDir, prefix: "Notebook-2", keep: keep)
+        return dest
+    }
+
+    /// Once a day: copy the notebook to Backups/Notebook-daily-YYYYMMDD.tdnb, keeping the newest `keep` days.
+    static func dailyBackup(notebook: String, backupsDir: String, now: Date, keep: Int = 7) {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: notebook) else { return }
+        let df = DateFormatter(); df.dateFormat = "yyyyMMdd"; df.locale = Locale(identifier: "en_US_POSIX")
+        let dest = backupsDir + "/Notebook-daily-\(df.string(from: now)).tdnb"
+        guard !fm.fileExists(atPath: dest) else { return }
+        do {
+            try fm.createDirectory(atPath: backupsDir, withIntermediateDirectories: true)
+            try fm.copyItem(atPath: notebook, toPath: dest)
+        } catch { NSLog("Scrawl: daily backup failed: \(error)"); return }
+        prune(backupsDir, prefix: "Notebook-daily-", keep: keep)
+    }
+
+    /// Keep the newest `keep` files with this prefix (names sort by date).
+    private static func prune(_ dir: String, prefix: String, keep: Int) {
+        let fm = FileManager.default
+        let all = ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).filter { $0.hasPrefix(prefix) && $0.hasSuffix(".tdnb") }.sorted()
+        for f in all.dropLast(keep) { try? fm.removeItem(atPath: dir + "/" + f) }
     }
 }
 
@@ -207,7 +279,10 @@ extension CanvasView {
         guard AppPaths.persists else { return "not saved (test)" }
         guard let data = FileManager.default.contents(atPath: path) else { return "new" }
         do {
-            load(try NotebookFile.decode(data))
+            let f = try NotebookFile.decode(data)
+            load(f)
+            let c = NotebookSafety.counts(f); NotebookSafety.onDisk = (path, c.pages, c.strokes)
+            NotebookSafety.dailyBackup(notebook: path, backupsDir: AppPaths.dataDir + "/Backups", now: Date())
             return "loaded \(pages.count) page(s)"
         } catch {
             let f = DateFormatter(); f.dateFormat = "yyyyMMdd-HHmmss"
@@ -253,8 +328,12 @@ final class Autosaver {
         let write = { [weak self] in
             AppPaths.ensure()
             do {
-                let data = try NotebookFile(snap).encoded()
+                let file = NotebookFile(snap), backups = AppPaths.dataDir + "/Backups", c = NotebookSafety.counts(file)
+                NotebookSafety.dailyBackup(notebook: path, backupsDir: backups, now: Date())
+                NotebookSafety.backupIfShrinking(notebook: path, newPages: c.pages, newStrokes: c.strokes, backupsDir: backups, now: Date())
+                let data = try file.encoded()
                 try data.write(to: URL(fileURLWithPath: path), options: .atomic)
+                NotebookSafety.onDisk = (path, c.pages, c.strokes)
                 DispatchQueue.main.async { self?.saves += 1; self?.savedThrough = max(self?.savedThrough ?? 0, through) }
             }
             catch { NSLog("Scrawl: autosave failed: \(error)") }

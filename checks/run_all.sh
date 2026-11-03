@@ -7,6 +7,7 @@ LOG=$(mktemp -d /tmp/td-runall.XXXX)
 suites=(
   "bench|./build/bench data/passive-1.jsonl"
   "persist|checks/persist.sh"
+  "real-folder-untouched|checks/real-folder.sh"
   "bundle-intact|checks/bundle-intact.sh"
   "ink-jitter|checks/jitter.sh"
   "cursor|checks/cursor.sh"
