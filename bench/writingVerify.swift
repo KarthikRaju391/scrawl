@@ -106,7 +106,7 @@ struct WExplore {
         q(m.lineInk); h.combine(m.lineStrokes.count); for r in m.lineStrokes { q(r) }
         q(m.runStart); q(m.segmentStart); q(m.prevLine?.ink); h.combine(m.prevLine?.strokes.count ?? -1)
         h.combine(m.lineHeld); q(m.handPanX); q(m.handRef?.x); q(m.handRef?.y)
-        q(m.pending.map { m.clock - $0.liftAt }); q(m.pending?.target.x); q(m.pending?.target.y)
+        q(m.pending.map { m.clock - $0.liftAt }); q(m.pending?.target.x); q(m.pending?.target.y); h.combine(m.pending?.follow ?? false); q(m.blockView)
         h.combine(m.counted); h.combine(m.edge); q(m.held)
         h.combine(m.pageIdx)
         for p in m.pages { h.combine(p.strokes.count); for r in p.strokes { q(r) }; h.combine(p.undo.count); h.combine(p.redo.count); q(p.cam?.center.x); q(p.cam?.zoom) }
@@ -252,7 +252,8 @@ final class WReal {
         return WObs(writing: canvas.writingMode, width: ToolState.lineWidths[canvas.tools.lineWidthIndex], cam: canvas.camera, runStart: s.runStart, lineInk: s.lineInk,
                     lineStrokes: s.lineStrokes, prevLine: s.prevLine, lineHeld: s.lineHeld, handRef: s.handRef, pendingTarget: s.pending?.target,
                     pendingLiftAt: s.pending?.liftAt, counted: s.countedContacts, edge: edge == nil ? 0 : 1, clock: vclock,
-                    strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex, handPanX: s.handPanX)
+                    strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex, handPanX: s.handPanX,
+                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth)
     }
 
     private func contact(_ id: Int32, page p: CGPoint) -> Contact {
@@ -486,6 +487,8 @@ struct WFuzz {
             stats["steps", default: 0] += 1
             if committed != nil { stats["commits", default: 0] += 1; if post.pendingLiftAt != nil { stats["commits that scheduled a move", default: 0] += 1 } }
             if post.newLines > pre.newLines { stats[e == .ret ? "Return moves" : "automatic moves", default: 0] += 1 }
+            if post.follows > pre.follows { stats["follows (view went along a long line)", default: 0] += 1 }
+            if pre.cam.zoom != post.cam.zoom && post.runStart != nil && post.runStart == pre.runStart { stats["zoom changes mid-block", default: 0] += 1 }
             if pre.pendingLiftAt != nil && post.pendingLiftAt == nil && post.newLines == pre.newLines { stats["pending moves dropped", default: 0] += 1 }
             if pre.runStart != nil && post.runStart != nil && pre.runStart != post.runStart { stats["block start moved", default: 0] += 1 }
             if post.lineHeld && !pre.lineHeld { stats["lines continued (held)", default: 0] += 1 }
@@ -580,7 +583,8 @@ func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
         return WObs(writing: canvas.writingMode, width: ToolState.lineWidths[canvas.tools.lineWidthIndex], cam: canvas.camera, runStart: s.runStart, lineInk: s.lineInk,
                     lineStrokes: s.lineStrokes, prevLine: s.prevLine, lineHeld: s.lineHeld, handRef: s.handRef, pendingTarget: s.pending?.target,
                     pendingLiftAt: s.pending?.liftAt, counted: s.countedContacts, edge: 0, clock: vclock,
-                    strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex)
+                    strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex,
+                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth)
     }
     var afterWidth: (old: Double, at: Double)?
     var heldFrom: Double?
@@ -686,11 +690,13 @@ func wCheckRecordedMoves(_ path: String) -> (checked: Int, moves: Int, bad: [Str
         switch r["a"] as? String {
         case "movePending":
             pendingAt = m; touchedSince = false
+            if r["kind"] as? String == "follow" { break }   // 0.1.6: the view following a long line (P9), not a next line
             if let right = r["right"] as? Double, let limit = r["limit"] as? Double, let width = r["width"] as? Double {
                 checked += 1
-                let zone = WSpec.zone(limit, width)
+                let bw = (r["blockWidth"] as? Double).flatMap { $0 > 0 ? $0 : nil }   // 0.1.6 recordings: the block's line length (no 95% cap, no 93% zone)
+                let zone = bw.map { limit - WSpec.nearMarker * $0 } ?? WSpec.zone(limit, width)
                 if right < zone - 1e-6 { bad.append(String(format: "t=%.1fs: move scheduled with the line's ink at %.1f, short of the zone (from %.1f, limit %.1f, width %.0f%%)", m - t0, right, zone, limit, width * 100)) }
-                if limit > WSpec.rightCap * wPage.width + 1e-6 { bad.append(String(format: "t=%.1fs: limit %.1f past 95%% of the page", m - t0, limit)) }
+                if bw == nil, limit > WSpec.rightCap * wPage.width + 1e-6 { bad.append(String(format: "t=%.1fs: limit %.1f past 95%% of the page", m - t0, limit)) }
             }
         case "newLine":
             moves += 1

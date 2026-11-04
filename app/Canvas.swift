@@ -920,6 +920,8 @@ final class CanvasView: MTKView {
     /// 0.1.6: the view's width (page units) when the block started; its lines are the width setting of it, whatever the
     /// zoom later (WritingLayout.blockWidth). Nil with `--column-bound` (the rules before).
     private var blockViewWidth: Double?
+    /// Follow moves made (tests).
+    private(set) var followCount = 0
     /// The block's line length now (the width setting x the view's width at the block's start), nil before a block.
     var blockWidth: Double? { Camera.columnBound ? nil : blockViewWidth.map { $0 * ToolState.lineWidths[tools.lineWidthIndex] } }
     /// Where the next-line pan comes for the current line (page x): its width limit, moved along when a deliberate hand
@@ -988,12 +990,15 @@ final class CanvasView: MTKView {
     /// Test hook (bench/writingVerify.swift): the writing-mode state, read only.
     struct WritingStateForTest { var runStart, segmentStart: Double?; var lineInk: CGRect?; var lineStrokes: [CGRect]; var prevLine: CGRect?
                                  var lineHeld: Bool; var handPanX: Double; var handRef: CGPoint?; var pending: (target: CGPoint, liftAt: Double)?
-                                 var countedContacts: Int; var sliding: Bool }
+                                 var countedContacts: Int; var sliding: Bool; var pendingFollow: CGPoint? = nil; var follows = 0; var blockViewWidth: Double? = nil }
     var writingStateForTest: WritingStateForTest {
         var p: (target: CGPoint, liftAt: Double)?
         if let m = pendingMove, case .newLine(let c) = m.move { p = (c, m.liftAt) }
+        var f: CGPoint?
+        if let m = pendingMove, case .follow(let c) = m.move { f = c }
         return WritingStateForTest(runStart: runStart, segmentStart: segmentStart, lineInk: lineInk, lineStrokes: lineStrokes, prevLine: prevLine?.ink,
-                                   lineHeld: lineHeld, handPanX: handPanX, handRef: handRef, pending: p, countedContacts: countedContacts, sliding: camAnim != nil)
+                                   lineHeld: lineHeld, handPanX: handPanX, handRef: handRef, pending: p, countedContacts: countedContacts, sliding: camAnim != nil,
+                                   pendingFollow: f, follows: followCount, blockViewWidth: blockViewWidth)
     }
 
     /// Return in writing mode: next line now (one line down, back to the line start).
@@ -1690,7 +1695,7 @@ final class CanvasView: MTKView {
                 let wait = settings.pauseBeforeMoveMs
                 pendingMove = (move, now(), wait)
                 act("movePending", ["kind": move.kind, "right": line.maxX, "limit": layout.lineEnd(lineLeft: start, pageWidth: camera.page.width),
-                                    "runStart": runStart ?? -1, "segStart": segmentStart ?? -1, "width": layout.lineWidth])
+                                    "runStart": runStart ?? -1, "segStart": segmentStart ?? -1, "width": layout.lineWidth, "blockWidth": layout.blockWidth ?? -1])
             }
     }
 
@@ -1728,7 +1733,7 @@ final class CanvasView: MTKView {
         case .none: break
         case .follow(let c):
             // The line runs on past the view's right side: the view goes along (the line stays open; ink never moves).
-            act("follow", ["toX": c.x])
+            act("follow", ["toX": c.x]); followCount += 1
             var target = camera; target.center = c; target.clamp(); handRef = target.center
             slideCamera(to: c, src: "follow")
         case .newLine(let c):

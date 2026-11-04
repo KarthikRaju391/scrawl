@@ -64,6 +64,9 @@ struct WObs {
     var newLines: Int
     var page: Int
     var handPanX: Double? = nil   // the app's own measure (diagnostics only)
+    var follows = 0               // follow moves made (0.1.6)
+    var pendingFollow: CGPoint? = nil
+    var blockView: Double? = nil  // the implementation's own block view width: only seeds the oracle for a run that starts mid-block
 }
 
 // MARK: - The model (CanvasView's writing logic)
@@ -75,13 +78,17 @@ struct WModel {
     var cam = Camera(page: wPage)
     var lineInk: CGRect?
     var lineStrokes: [CGRect] = []
-    var runStart: Double?
+    var runStart: Double? { didSet { if runStart != oldValue { blockView = runStart == nil ? nil : cam.visible.width } } }
+    /// 0.1.6: the view's width when the block started (CanvasView.blockViewWidth).
+    var blockView: Double?
+    var blockWidth: Double? { Camera.columnBound ? nil : blockView.map { $0 * width } }
+    var follows = 0
     var segmentStart: Double?
     var prevLine: (ink: CGRect, strokes: [CGRect])?
     var lineHeld = false
     var handPanX = 0.0
     var handRef: CGPoint?
-    var pending: (target: CGPoint, liftAt: Double, waitMs: Double)?
+    var pending: (target: CGPoint, liftAt: Double, waitMs: Double, follow: Bool)?
     var counted = 0
     var edge = 0
     var clock = 0.0
@@ -95,11 +102,12 @@ struct WModel {
     var strokes: [CGRect] { pages[pageIdx].strokes }
 
     var obs: WObs {
-        var l = WritingLayout(); l.lineWidth = width; l.segmentStart = segmentStart
+        var l = WritingLayout(); l.lineWidth = width; l.segmentStart = segmentStart; l.blockWidth = blockWidth
+        let lim: Double? = !writing || (!Camera.columnBound && blockWidth == nil) ? nil : l.lineEnd(lineLeft: l.lineStart(pageWidth: wPage.width), pageWidth: wPage.width)
+        let nl = pending.flatMap { $0.follow ? nil : $0 }, fl = pending.flatMap { $0.follow ? $0.target : nil }
         return WObs(writing: writing, width: width, cam: cam, runStart: runStart, lineInk: lineInk, lineStrokes: lineStrokes, prevLine: prevLine?.ink,
-                    lineHeld: lineHeld, handRef: handRef, pendingTarget: pending?.target, pendingLiftAt: pending?.liftAt, counted: counted, edge: edge,
-                    clock: clock, strokes: strokes, limit: writing ? l.lineEnd(lineLeft: l.lineStart(pageWidth: wPage.width), pageWidth: wPage.width) : nil,
-                    newLines: newLines, page: pageIdx)
+                    lineHeld: lineHeld, handRef: handRef, pendingTarget: nl?.target, pendingLiftAt: nl?.liftAt, counted: counted, edge: edge,
+                    clock: clock, strokes: strokes, limit: lim, newLines: newLines, page: pageIdx, follows: follows, pendingFollow: fl, blockView: blockView)
     }
 
     private mutating func addStroke(_ s: CGRect) {
@@ -149,11 +157,12 @@ struct WModel {
         var layout = WritingLayout()
         layout.lineWidth = width
         layout.segmentStart = segmentStart
+        layout.blockWidth = blockWidth
         let start = runStart ?? layout.lineStart(pageWidth: cam.page.width)
         let move = layout.after(stroke: s, line: line, lineStrokes: lineStrokes, lineLeft: start, visible: cam.visible, pageWidth: cam.page.width)
         if move == .none || lineHeld { pending = nil }
-        else if waitMs <= 0 { if case .newLine(let c) = move { applyMove(c) } }
-        else if case .newLine(let c) = move { pending = (c, clock, waitMs) }
+        else if waitMs <= 0 { switch move { case .newLine(let c): applyMove(c); case .follow(let c): applyFollow(c); case .none: break } }
+        else { switch move { case .newLine(let c): pending = (c, clock, waitMs, false); case .follow(let c): pending = (c, clock, waitMs, true); case .none: break } }
     }
 
     mutating func cancelPendingMove() { pending = nil }
@@ -161,7 +170,14 @@ struct WModel {
     mutating func advanceClock() {
         guard let p = pending, counted == 0, clock - p.liftAt >= p.waitMs / 1000 else { return }
         pending = nil
-        applyMove(p.target)
+        if p.follow { applyFollow(p.target) } else { applyMove(p.target) }
+    }
+
+    /// applyMove(.follow): the view slides right with the line (the line stays open).
+    mutating func applyFollow(_ c: CGPoint) {
+        follows += 1
+        var target = cam; target.center = c; target.clamp(); handRef = target.center
+        cam = target
     }
 
     /// applyMove(.newLine); the slide is finished at once (a touch finishes it in the app).
@@ -185,7 +201,7 @@ struct WModel {
         let v = cam.visible, layout = WritingLayout()
         let midY = lineInk?.midY ?? v.midY
         let pitch = max((lineInk?.height ?? 0) * 1.35, v.height * 0.12)
-        applyMove(WritingLayout.newLineCenter(lineLeft: runStart ?? layout.lineStart(pageWidth: cam.page.width), lineMidY: midY, pitch: pitch, visible: v))
+        applyMove(WritingLayout.newLineCenter(lineLeft: runStart ?? layout.lineStart(pageWidth: cam.page.width), lineMidY: midY, pitch: pitch, visible: v, bounded: Camera.columnBound))
     }
 
     mutating func undo() {
@@ -335,17 +351,32 @@ struct WSpec {
         var downSinceSched = false    // a counted touch-down since then
         var refX: Double?             // view centre x after the last stroke or app move
         var panSum = 0.0              // sideways two-finger pans and arrows since then
+        var blockRun: Double?         // 0.1.6: the block whose view width is remembered (its start)
+        var blockView: Double?        //        the view's width when that block started
+        var seeded = false
     }
     var mon = Mon()
 
-    static func limit(_ runStart: Double?, _ w: Double) -> Double { min((runStart ?? 0) + w * wPage.width, rightCap * wPage.width) }
-    static func zone(_ limit: Double, _ w: Double) -> Double { limit > nearEdge * wPage.width ? nearEdge * wPage.width : limit - nearMarker * w * wPage.width }
+    /// Before 0.1.6 (`--column-bound`): the line ends at the block's start + the width of the page, at most 95% of it; ink from
+    /// 93% of the page is a full line. 0.1.6 (`blockView`, the view's width when the block started): the block's start + the
+    /// width of that, no cap; only ink within 3% of the line before its end is a full line.
+    static func limit(_ runStart: Double?, _ w: Double, _ blockView: Double? = nil) -> Double {
+        if let bv = blockView, !Camera.columnBound { return (runStart ?? 0) + w * bv }
+        return min((runStart ?? 0) + w * wPage.width, rightCap * wPage.width)
+    }
+    static func zone(_ limit: Double, _ w: Double, _ blockView: Double? = nil) -> Double {
+        if let bv = blockView, !Camera.columnBound { return limit - nearMarker * w * bv }
+        return limit > nearEdge * wPage.width ? nearEdge * wPage.width : limit - nearMarker * w * wPage.width
+    }
+    static let followWithin = 0.12, followTo = 0.5
 
     static func near(_ a: Double, _ b: Double, _ tol: Double = 1e-6) -> Bool { abs(a - b) <= tol * max(1, abs(a), abs(b)) }
 
     /// The runStart the block rules (P6) give for stroke `s` committed in state `o`, with `hand` = how far the view
     /// moved by hand since the last stroke.
-    static func expectedRunStart(_ o: WObs, _ s: CGRect, hand: Double) -> Double {
+    static func expectedRunStart(_ o: WObs, _ s: CGRect, hand: Double) -> Double { expectedBlock(o, s, hand: hand).start }
+    /// The block start after stroke `s`, and whether the stroke started a new block (0.1.6: it takes the zoom then).
+    static func expectedBlock(_ o: WObs, _ s: CGRect, hand: Double) -> (start: Double, fresh: Bool) {
         let v = o.cam.visible, W = wPage.width
         var line = o.lineInk, rs = o.runStart, continued = false
         if line == nil, let p = o.prevLine, abs(s.midY - p.midY) < max(p.height * 0.6, v.height * 0.05), s.minX >= p.maxX - max(p.height, v.width * 0.03) {
@@ -356,13 +387,14 @@ struct WSpec {
             line = nil
             if !nextOfBlock { rs = nil }
         }
+        var fresh = rs == nil
         if !continued && hand >= deliberate * v.width * (1 - 1e-9) {   // "10% or more": exactly 10% (one arrow press) counts
             if let l = line {
                 let gap = max(l.height * 1.5, v.width * 0.08)
-                if s.minX > l.maxX + max(gap, newRun * W) || s.maxX < l.minX - gap { rs = s.minX }
-            } else if rs.map({ abs(s.minX - $0) > newRun * W }) ?? true { rs = s.minX }
+                if s.minX > l.maxX + max(gap, newRun * W) || s.maxX < l.minX - gap { rs = s.minX; fresh = true }
+            } else if rs.map({ abs(s.minX - $0) > newRun * W }) ?? true { rs = s.minX; fresh = true }
         }
-        return rs ?? s.minX
+        return (rs ?? s.minX, fresh)
     }
 
     /// The view after a next-line move from state `o` (P5).
@@ -371,7 +403,8 @@ struct WSpec {
         let rs = o.runStart ?? margin * wPage.width
         let midY = line?.midY ?? v.midY, pitch = max((line?.height ?? 0) * 1.35, v.height * 0.12)
         var c = o.cam
-        c.center = CGPoint(x: max(rs - inset * v.width, 0) + v.width / 2, y: midY - pitch + (fromTop - 0.5) * v.height)
+        let left = rs - inset * v.width
+        c.center = CGPoint(x: (Camera.columnBound ? max(left, 0) : left) + v.width / 2, y: midY - pitch + (fromTop - 0.5) * v.height)
         c.clamp()
         return c.center
     }
@@ -389,12 +422,20 @@ struct WSpec {
         var bad: [(String, String)] = []
         func fail(_ p: String, _ m: String) { bad.append((p, m)) }
         let W = wPage.width, wait = waitMs / 1000
-        let moved = post.newLines - pre.newLines
+        let moved = post.newLines - pre.newLines, followed = post.follows - pre.follows
+        // The block's view width, the oracle's own: taken when the block starts (its start changes), before the event's moves.
+        // A run that starts mid-block (the explorer's and fuzzer's start states): the block began before the oracle watched.
+        if !mon.seeded { mon.seeded = true; if pre.runStart != nil { mon.blockRun = pre.runStart; mon.blockView = pre.blockView } }
+        // A stroke that starts a block (by the block rules, P6: a new start, or the same x anew), or the block's end.
+        let handNow = max(mon.panSum, mon.refX.map { abs(pre.cam.center.x - $0) } ?? 0)
+        let freshBlock = committed.map { c in post.writing && Self.expectedBlock(pre.writing ? pre : post, c, hand: handNow).fresh } ?? false
+        if freshBlock || post.runStart != mon.blockRun { mon.blockRun = post.runStart; mon.blockView = post.runStart == nil ? nil : pre.cam.visible.width }
+        let bv = Camera.columnBound ? nil : mon.blockView
         let touch: Bool = { switch e { case .write, .down, .pan, .pinch, .scratch: return true; default: return false } }()
         let handView: Bool = { switch e { case .pan, .pinch, .arrow, .scroll: return true; default: return false } }()
 
         // P1: automatic moves only after the wait, with no counted touch since the lift.
-        if moved > 0, e != .ret {
+        if moved + followed > 0, e != .ret {
             switch e { case .tick, .edgeDown, .edgeUp, .scroll: break; default: fail("P1", "a move during \(e)") }
             if let t = mon.schedAt {
                 if post.clock - t < wait - 1e-9 { fail("P1", String(format: "move %.0f ms after the lift (wait %.0f ms)", (post.clock - t) * 1000, waitMs)) }
@@ -402,7 +443,7 @@ struct WSpec {
             } else { fail("P1", "move with nothing scheduled") }
             if post.counted > 0 { fail("P1", "move with a counted finger down") }
         }
-        if moved > 1 { fail("P1", "\(moved) moves in one event") }
+        if moved + followed > 1 { fail("P1", "\(moved + followed) moves in one event") }
         // P2: written ink never moves.
         switch e {
         case .undo, .redo, .scratch, .page: break
@@ -410,9 +451,19 @@ struct WSpec {
             if post.page == pre.page && (post.strokes.count < pre.strokes.count || Array(post.strokes.prefix(pre.strokes.count)) != pre.strokes) { fail("P2", "strokes changed during \(e)") }
         }
         // P3: the guide line.
-        if post.writing, let lim = post.limit {
+        if Camera.columnBound, post.writing, let lim = post.limit {
             if lim > Self.rightCap * W + 1e-6 { fail("P3", String(format: "limit at %.1f%% of the page", lim / W * 100)) }
             if !Self.near(lim, Self.limit(post.runStart, post.width)) { fail("P3", String(format: "limit %.1f, want min(runStart + %.0f%%, 95%%) = %.1f", lim, post.width * 100, Self.limit(post.runStart, post.width))) }
+        } else if post.writing {
+            // 0.1.6: at the block's start + the width x the view's width when the block started, whatever the zoom now; none
+            // before a block.
+            switch (post.limit, post.runStart, bv) {
+            case let (lim?, rs?, b?):
+                let want = Self.limit(rs, post.width, b)
+                if !Self.near(lim, want) { fail("P3", String(format: "limit %.1f, want block start %.1f + %.0f%% x the block's view width %.1f = %.1f (zoom now %.2f)", lim, rs, post.width * 100, b, want, post.cam.zoom)) }
+            case (nil, nil, _): break
+            default: fail("P3", "limit \(post.limit.map { String(format: "%.1f", $0) } ?? "none") with block start \(post.runStart.map { String(format: "%.1f", $0) } ?? "none")")
+            }
         }
         // P4: a move is pending exactly when the line's live ink reaches the zone (after a commit), and only then.
         if post.pendingLiftAt != nil {
@@ -420,7 +471,7 @@ struct WSpec {
             if !post.writing || post.lineHeld || post.lineInk == nil { fail("P4", "a move pending with no open line (writing \(post.writing), held \(post.lineHeld))") }
         }
         if let s = committed, post.writing {
-            let lim = Self.limit(post.runStart, post.width), zone = Self.zone(lim, post.width)
+            let lim = Self.limit(post.runStart, post.width, bv), zone = Self.zone(lim, post.width, bv)
             let right = Self.liveMaxX(post) ?? s.maxX
             let want = !post.lineHeld && right >= zone - 1e-6
             let has = post.pendingLiftAt != nil || moved > 0
@@ -432,6 +483,28 @@ struct WSpec {
                 let u = post.lineStrokes.dropFirst().reduce(first) { $0.union($1) }
                 if !Self.near(u.minX, ink.minX) || !Self.near(u.maxX, ink.maxX) { fail("P4", "the line's ink isn't its strokes") }
             }
+            // P9 (0.1.6): a line running on past the view's right side: the view follows it, when no next line is due. The
+            // follow is decided at this lift (the view it starts from is the view at the lift).
+            if !Camera.columnBound {
+                let v = pre.cam.visible
+                let target = min(right - Self.followTo * v.width + v.width / 2, lim + v.width * 0.05 - v.width / 2)
+                let wantFollow = !post.lineHeld && !want && right > v.maxX - Self.followWithin * v.width && target > v.midX + 1e-9
+                let hasFollow = post.pendingFollow != nil || followed > 0
+                if wantFollow != hasFollow {
+                    fail("P9", String(format: "line's ink ends at %.1f, view %.1f-%.1f (follow from %.1f), limit %.1f: follow %@, want %@", right, v.minX, v.maxX,
+                                      v.maxX - Self.followWithin * v.width, lim, hasFollow ? "yes" : "no", wantFollow ? "yes" : "no"))
+                }
+                if let f = post.pendingFollow, !Self.near(f.x, target, 1e-6) || !Self.near(f.y, v.midY, 1e-6) {
+                    fail("P9", String(format: "follow target (%.1f, %.1f), want (%.1f, %.1f): the ink's end at the view's middle, never past the line's end", f.x, f.y, target, v.midY))
+                }
+            }
+        }
+        // P9: a follow moves the view right only, at the same height, and keeps the line open.
+        if followed > 0 {
+            if post.cam.center.x < pre.cam.center.x - 1e-9 || !Self.near(post.cam.center.y, pre.cam.center.y, 1e-6) || post.cam.zoom != pre.cam.zoom {
+                fail("P9", String(format: "a follow moved the view from (%.1f, %.1f) to (%.1f, %.1f)", pre.cam.center.x, pre.cam.center.y, post.cam.center.x, post.cam.center.y))
+            }
+            if pre.lineInk != nil && post.lineInk == nil && moved == 0 { fail("P9", "a follow closed the line") }
         }
         // P5: where a move goes.
         if moved == 1 {
@@ -485,10 +558,11 @@ struct WSpec {
         if case .pan = e, abs(post.cam.zoom - pre.cam.zoom) < 1e-9 { mon.panSum += abs(post.cam.center.x - pre.cam.center.x) }
         if case .arrow = e, pre.writing { mon.panSum += abs(post.cam.center.x - pre.cam.center.x) }
         if committed != nil, post.writing { mon.refX = post.cam.center.x; mon.panSum = 0 }
-        if moved > 0 { mon.refX = post.cam.center.x; mon.panSum = 0 }
+        if moved > 0 || followed > 0 { mon.refX = post.cam.center.x; mon.panSum = 0 }   // the app's own moves aren't hand moves
         switch e { case .toggle, .page, .undo: mon.panSum = 0; default: break }
         if committed != nil || e == .redo, let t = post.pendingLiftAt { mon.schedAt = t; mon.downSinceSched = false }   // a redo decides the move too (0.1.6.1)
-        else if post.pendingLiftAt == nil { mon.schedAt = nil }
+        else if committed != nil || e == .redo, post.pendingFollow != nil { mon.schedAt = post.clock; mon.downSinceSched = false }   // a follow, from this lift (0.1.6)
+        else if post.pendingLiftAt == nil && post.pendingFollow == nil { mon.schedAt = nil }
         return bad
     }
 
