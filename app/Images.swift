@@ -407,6 +407,9 @@ enum ImageStore {
     }
     nonisolated(unsafe) private static var backupRefs: [String: (mtime: Double, keys: Set<String>)] = [:]
 
+    /// Every picture this run has seen (loaded with the notebook or imported).
+    static var knownKeys: Set<String> { lock.lock(); defer { lock.unlock() }; return Set(assets.keys) }
+
     /// Keep the decoded-pixels cache under `limit` bytes: the least recently used files go first (they are decoded
     /// again when needed). Also removes leftovers of interrupted writes.
     static func trimCache(limit: Int = 3_000_000_000) {

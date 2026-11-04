@@ -363,7 +363,7 @@ final class Autosaver {
     var extraImageKeys: (() -> Set<String>)?
     /// After a write completes (main queue): the number of changes it covers.
     var onSaved: ((Int) -> Void)?
-    private var collectedFor: Set<String>?   // save queue only
+    private var collectedFor: (keep: Set<String>, known: Set<String>)?   // save queue only
     /// The save queue: an image file written here (before the page that shows it is saved) is on disk before any
     /// notebook that refers to it.
     var saveQueue: DispatchQueue { queue }
@@ -398,8 +398,11 @@ final class Autosaver {
                 NotebookSafety.onDisk = (path, c.pages, c.strokes)
                 // Pictures nothing refers to any more go, once this notebook (which doesn't need them) is on disk.
                 // Backups keep theirs (they're made above, before this write, from the notebook that was on disk).
-                if let self, ImageStore.collects, self.collectedFor != keep {
-                    self.collectedFor = keep; ImageStore.collectGarbage(keep: keep.union(ImageStore.keysInBackups(backups)))
+                // Also when a picture came and went between two saves (imported, then undone): the set in use is the same, but
+                // the run knows a picture more.
+                let known = ImageStore.knownKeys
+                if let self, ImageStore.collects, self.collectedFor?.keep != keep || self.collectedFor?.known != known {
+                    self.collectedFor = (keep, known); ImageStore.collectGarbage(keep: keep.union(ImageStore.keysInBackups(backups)))
                 }
                 DispatchQueue.main.async {
                     self?.saves += 1; self?.savedThrough = max(self?.savedThrough ?? 0, through); self?.onSaved?(through)

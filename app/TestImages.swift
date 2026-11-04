@@ -133,21 +133,26 @@ enum TestImages {
             dpb.clearContents(); dpb.writeObjects([txt as NSURL])
             r["dropTextRefused"] = app.container.draggingEntered(drag) == [] && !app.container.performDragOperation(drag)
             // 2b. The Select tool through the window's own events: click the photo, drag it, drag its corner, ⌫, ⌘Z, ⌘C.
+            // Real NSEvents (window coordinates) to the canvas's own handlers. Not window.sendEvent: a press on a background
+            // window that isn't key is the window's (it would come forward), not the canvas's.
             func mouse(_ type: NSEvent.EventType, _ p: CGPoint, _ mods: NSEvent.ModifierFlags = []) {
                 let w = canvas.convert(canvas.viewPoint(fromCanvas: p), to: nil)
-                if let e = NSEvent.mouseEvent(with: type, location: w, modifierFlags: mods, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: app.window.windowNumber,
-                                              context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) { app.window.sendEvent(e) }
+                guard let e = NSEvent.mouseEvent(with: type, location: w, modifierFlags: mods, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: app.window.windowNumber,
+                                                 context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) else { return }
+                switch type { case .leftMouseDown: canvas.mouseDown(with: e); case .leftMouseDragged: canvas.mouseDragged(with: e); default: canvas.mouseUp(with: e) }
             }
             func pointerDrag(_ a: CGPoint, _ b: CGPoint, _ mods: NSEvent.ModifierFlags = []) {
                 mouse(.leftMouseDown, a, mods)
                 for k in 1...10 { let f = Double(k) / 10; mouse(.leftMouseDragged, CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f), mods); spin(0.008) }
                 mouse(.leftMouseUp, b, mods); spin(0.05)
             }
-            let photo = canvas.doc.images.last!
+            canvas.selectedImageId = nil   // inserting selected it: the click must do it
+            guard let photo = canvas.doc.images.last else { r["error"] = "no picture on the page after paste and drop"; write(r, "images-write.json"); try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8); return }
             mouse(.leftMouseDown, CGPoint(x: photo.frame.midX, y: photo.frame.midY)); mouse(.leftMouseUp, CGPoint(x: photo.frame.midX, y: photo.frame.midY))
             r["clickSelects"] = canvas.selectedImageId == photo.id
             pointerDrag(CGPoint(x: photo.frame.midX, y: photo.frame.midY), CGPoint(x: photo.frame.midX - 300, y: photo.frame.midY + 150))
             let moved = canvas.selectedImage
+            r["moved"] = moved.map { [$0.frame.minX, $0.frame.minY, $0.frame.width, $0.frame.height] } ?? []; r["photo"] = [photo.frame.minX, photo.frame.minY, photo.frame.width, photo.frame.height]
             r["moveByPointer"] = moved.map { abs($0.frame.minX - (photo.frame.minX - 300)) < 0.5 && abs($0.frame.minY - (photo.frame.minY + 150)) < 0.5 } ?? false
             if let m = moved { pointerDrag(CGPoint(x: m.frame.maxX, y: m.frame.minY), CGPoint(x: m.frame.maxX + 120, y: m.frame.minY - 40)) }
             let resized = canvas.selectedImage
@@ -159,8 +164,8 @@ enum TestImages {
             _ = app.copySelectedPicture()
             r["copyPicture"] = pb.data(forType: NSPasteboard.PasteboardType("public.jpeg")).map { sha($0) == sha(photo.asset.data() ?? Data()) } ?? false
             let del = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: app.window.windowNumber, context: nil,
-                                       characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}", isARepeat: false, keyCode: 51)!
-            r["deleteKey"] = app.key(del) && canvas.doc.images.count == 1
+                                       characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}", isARepeat: false, keyCode: 51)
+            r["deleteKey"] = del.map { app.key($0) } == true && canvas.doc.images.count == 1
             app.undo()
             r["undoDelete"] = canvas.doc.images.count == 2 && canvas.doc.images.last === resized
             app.undo(); app.undo()

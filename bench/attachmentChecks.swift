@@ -17,6 +17,7 @@ func attachmentChecks(_ check: (Bool, String) -> Void) {
     try? FileManager.default.removeItem(atPath: tmp)
     ImageStore.root = tmp + "/Images"; ImageStore.cacheRoot = tmp + "/ImageCache"
     defer { try? FileManager.default.removeItem(atPath: tmp) }
+    ImageStore.collects = false   // as in imageChecks: only the autosave check below collects
     guard !AppPaths.persists || AppPaths.override != nil else { check(false, "attachments: saving would reach the real notebook: stopping"); return }
 
     let c = CanvasView(frame: NSRect(x: 0, y: 0, width: 1400, height: 860), device: nil)
@@ -162,4 +163,22 @@ func attachmentChecks(_ check: (Bool, String) -> Void) {
     let removed = ImageStore.collectGarbage(keep: inBackup, grace: 0)
     check(inBackup.contains(big.asset.key) && inBackup.contains(small.asset.key) && removed.isEmpty && FileManager.default.fileExists(atPath: big.asset.path),
           "a picture a backup refers to stays when no page uses it any more (\(inBackup.count) kept, \(removed.count) removed)")
+
+    // 11. Through the autosave (only with a throwaway TRACKPAD_DRAW_DATA and no grace period): a picture page made and taken
+    //     away again before any save still has its file removed by the next save.
+    if let o = AppPaths.override, ImageStore.grace == 0, AppPaths.persists {
+        let saved = ImageStore.root
+        ImageStore.root = o + "/Images"; ImageStore.collects = true
+        defer { ImageStore.collects = false }
+        let s = CanvasView(frame: NSRect(x: 0, y: 0, width: 1400, height: 860), device: nil)
+        s.autosaver.saveNow(sync: true)
+        let gone = prep(card(90, 70, (0.4, 0.8, 0.3)), "gone.png")
+        let i = s.newImagePage(gone)
+        _ = s.deletePage(i)
+        s.autosaver.saveNow(sync: true)
+        check(!FileManager.default.fileExists(atPath: gone.asset.path), "autosave: a picture page made and undone between two saves has its file removed by the next save")
+        ImageStore.root = saved
+    } else {
+        print("SKIP autosave garbage collection (needs TRACKPAD_DRAW_DATA=<throwaway> and TRACKPAD_DRAW_IMAGE_GRACE=0)")
+    }
 }

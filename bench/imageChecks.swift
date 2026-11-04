@@ -128,6 +128,9 @@ func imageChecks(_ check: (Bool, String) -> Void) {
     try? FileManager.default.removeItem(atPath: tmp)
     ImageStore.root = tmp + "/Images"; ImageStore.cacheRoot = tmp + "/ImageCache"
     defer { try? FileManager.default.removeItem(atPath: tmp) }
+    // With a throwaway TRACKPAD_DRAW_DATA the bench's canvases autosave there; their saves must not collect each other's
+    // pictures (the GC checks call it themselves, and the autosave check turns it on).
+    ImageStore.collects = false
     let card = testCard(1600, 1000)
     let pngData = encode(card, .png)
 
@@ -409,7 +412,7 @@ func imageChecks(_ check: (Bool, String) -> Void) {
         // Unused picture files go after a save; used ones and recent ones stay.
         let keep = d.notebookSnapshot().imageKeys
         let stray = try! ImageStore.importImage(encode(testCard(64, 64), .png))
-        let recent = ImageStore.collectGarbage(keep: keep)
+        let recent = ImageStore.collectGarbage(keep: keep, grace: 60)
         let removed = ImageStore.collectGarbage(keep: keep, grace: 0)
         let left = Set((try? FileManager.default.contentsOfDirectory(atPath: ImageStore.root)) ?? [])
         check(recent.isEmpty && removed.contains(stray.fileName) && keep.allSatisfy { k in left.contains { $0.hasPrefix(k) } },
