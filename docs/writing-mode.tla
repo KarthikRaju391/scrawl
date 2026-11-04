@@ -3,6 +3,10 @@
    P1, P7, P8 of bench/writingVerify.swift). Time is in ticks of 50 ms; the wait is Wait ticks (4 = 200 ms, 8 = 400 ms, 20 = 1000 ms). The line's
    geometry (is the line full, is it held) is abstracted to a nondeterministic choice at each commit: the Swift model
    checker (bench/writingVerify.swift) covers it with the real WritingLayout.
+   0.1.6 (the infinite canvas): the waiting move is a next line or a follow (the view going along a line longer than
+   it, WritingLayout.Move.follow). Both are scheduled at a lift, wait the same pause and are cancelled by the same
+   inputs, so `pending` stands for either; where a follow goes, and that it keeps the line open, is property P9 of the
+   Swift checker. The line's length (the block's width of the view when it started, no page-edge cap) is geometry too.
 
    CanvasView code paths: TouchDown/Lift/Frame = handle() (countedContacts, cancelPendingMove, commit in endStroke);
    Tick = advanceClock(); EdgeDown/EdgeUp = contacts the edge guard ignores; Arrow = panByArrow; Scroll = scrollWheel /
