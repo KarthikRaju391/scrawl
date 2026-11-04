@@ -355,7 +355,7 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None, nudge_every=0
         strokes = hand.word(w, x, y, font)
         fr, cid = hand.frames(strokes, cid)
         fr += [[0.008, []]] * int(0.55 / 0.008)   # the pause after the word (> 400 ms: the page may move now)
-        before = app.state()["view"]
+        _bs = app.state(); before = _bs["view"]; follows_before = _bs.get("follows", 0)
         hand_moved = time.time() - last_hand < 2.0
         r = app.touch(fr, settle=0.05)
         map_seen = r.get("mapSeen", 0)
@@ -377,7 +377,8 @@ def write_words(app, hand, words, line_y, x0, cid, rep, font=None, nudge_every=0
                     "h": max(b[3] for b in new) - min(b[1] for b in new)}
         new_line = after["view"]["y"] < before["y"] - (line["h"] * 0.5 if line else 1)
         wb = [min(b[0] for b in new), min(b[1] for b in new), max(b[2] for b in new), max(b[3] for b in new)] if new else None
-        recs.append({"jumped": jumped, "word": w, "midWordMove": moved, "newLine": new_line, "view": after["view"], "before": before, "bounds": wb, "mapSeen": map_seen, "handMoved": hand_moved})
+        recs.append({"jumped": jumped, "word": w, "midWordMove": moved, "newLine": new_line, "view": after["view"], "before": before, "bounds": wb, "mapSeen": map_seen, "handMoved": hand_moved,
+                     "followed": after.get("follows", 0) > follows_before})
         if new_line and line:
             # The next word starts the new line: below this line's first word.
             nl = {"x": line["x"], "y": line["y"] - max(line["h"] * 1.6, after["view"]["h"] * 0.12), "h": line["h"]}
@@ -413,6 +414,16 @@ def scenario_writing(app, rep, hand, zoom, width_index, words):
 
 
 CAP = 0.95   # the line's limit is capped here (fraction of the page width): reachable inside the pad's edge guard
+
+def rule_limit(st, start, frac, W, view_w):
+    """(line end, start of the full-line zone, line length) for a block starting at `start`. 0.1.6, the infinite canvas:
+    the width setting x the view's width when the block started, from its start, the zone its last 3%. Before 0.1.6
+    (`--column-bound`, or an app that doesn't say): the width of the page, capped at 95%, and the 93% zone."""
+    if st.get("columnBound", True) is False:
+        lw = frac * view_w; lim = start + lw
+        return lim, lim - 0.03 * lw, lw
+    lim = min(start + frac * W, W * CAP); lw = frac * W
+    return lim, (W * 0.93 if lim > W * 0.93 else lim - 0.03 * lw), lw
 
 def run_scenarios(app, rep, only, hand):
     S = {}
@@ -920,9 +931,10 @@ def run_scenarios(app, rep, only, hand):
         wrapped = any(r["newLine"] for r in recs)
         w = (seg["end"] - seg["start"]) / W if seg else 0
         rep.step("segment", lines=[(round(l["start"]), round(l["end"])) for l in lines], wrapped=wrapped)
-        rep.check(seg is not None and wrapped and 0.4 <= w <= 0.5 + seg["last"] / W + 0.02,
-                  "after the deliberate pan the line starts at the new spot and wraps about half a page later",
-                  f"segment {w:.0%} of the page wide, new line: {wrapped}")
+        half = 0.5 * st["view"]["w"] / W if st.get("columnBound", True) is False else 0.5   # 0.1.6: half the view when the block started
+        rep.check(seg is not None and wrapped and 0.8 * half <= w <= half + seg["last"] / W + 0.02,
+                  "after the deliberate pan the line starts at the new spot and wraps " + ("half the view's width later (0.1.6)" if half != 0.5 else "about half a page later"),
+                  f"segment {w:.0%} of the page wide (want {half:.0%}), new line: {wrapped}")
         rep.shot(app, "line moved by a deliberate pan")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
@@ -971,7 +983,7 @@ def run_scenarios(app, rep, only, hand):
                 base = [max(b[2] for b in now) + gap, base[1]]
         return cid, written
 
-    def line_rule(words, frac, W, label):
+    def line_rule(words, frac, W, label, st=None, view_w=None):
         """The next-line rule as it is (Karthik, 29-30 Oct): a line breaks 400 ms after a lift once its ink crosses the
         guide line (the block's start + the width, capped at 95% of the page), or ends within 3% of the line width
         before it (from 93% of the page when the limit is at the cap). No look-ahead: a word that starts before the
@@ -983,8 +995,7 @@ def run_scenarios(app, rep, only, hand):
         keys = sorted(lines)
         if not keys: rep.check(False, f"{label}: words written", "none"); return
         start = min(x0 for x0, _, _ in lines[keys[0]])
-        lim = min(start + frac * W, W * CAP); lw = frac * W
-        zone = W * 0.93 if lim > W * 0.93 else lim - 0.03 * lw
+        lim, zone, lw = rule_limit(st or {}, start, frac, W, view_w or W)
         tol = 0.005 * W
         # A word written on a line after that line's ink had already reached the guide line or its last 3% (the
         # line should have broken at the word gap). A word may start past the guide line when the ink before it
@@ -1149,10 +1160,10 @@ def run_scenarios(app, rep, only, hand):
         views = []
         start_shot, samples, after_nl = [], [], []
         def seen(w, s_, b_, a_):
-            views.append((w, b_["view"]["x"], s_["view"]["x"], s_["newLines"] - b_["newLines"]))
+            views.append((w, b_["view"]["x"], s_["view"]["x"], s_["newLines"] - b_["newLines"], s_.get("follows", 0) - b_.get("follows", 0)))
             if a_ and a_.get("lineLimitX") is not None and a_.get("lineRight") is not None and a_["newLines"] == b_["newLines"]:
                 lim, right = a_["lineLimitX"], a_["lineRight"]
-                width = W * 0.5   # the ½-page line width
+                width = W * 0.5 if st.get("columnBound", True) is not False else 0.5 * st["view"]["w"]   # the line's width (0.1.6: ½ the view)
                 inview = a_["view"]["x"] < lim < a_["view"]["x"] + a_["view"]["w"]
                 samples.append((w, (lim - right) / width, a_.get("limitAlpha", 0), a_.get("limitDrawn"), lim, inview))
             if s_["newLines"] > b_["newLines"]:
@@ -1162,31 +1173,42 @@ def run_scenarios(app, rep, only, hand):
         hand.h = old_h
         # (a) sideways moves only with a new line (the view goes back to the margin), never while writing along a line
         # The view from just before each word (after any hand pan) to after its pause: it moves only with a new line.
-        side = [(w, round(after - before, 1)) for w, before, after, nl in views if abs(after - before) > 1 and nl == 0]
-        rep.check(not side, "(a) no sideways pan while writing along a line (400%, ½-page lines)", f"sideways moves without a new line: {side[:4]} ({len(views)} words)")
+        # 0.1.6: or the view following the line rightwards (a follow), the app's own move for a line longer than the view.
+        side = [(w, round(after - before, 1)) for w, before, after, nl, fo in views if abs(after - before) > 1 and nl == 0 and not (fo > 0 and after > before)]
+        rep.check(not side, "(a) no sideways pan while writing along a line (400%, ½-page lines), other than the view following it rightwards", f"sideways moves without a new line or a follow: {side[:4]} ({len(views)} words)")
         s2 = app.state()
         rep.check(s2["newLines"] > nl0, "(b) the next-line pan still comes", f"{s2['newLines'] - nl0} new lines")
         mine = s2["pageBounds"][n0:]
         p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
         upm = (p1[0] - p0[0]) / 10
-        line_rule(write_rows.words, 0.5, W, "(b) ½-page lines at 400%")
+        line_rule(write_rows.words, 0.5, W, "(b) ½-page lines at 400%", st, st["view"]["w"])
+        newrule = st.get("columnBound", True) is False
         # (c) the limit line (Karthik, 28 Oct evening: only when approaching the width point): hidden at the start of a
         # line, fading in within 15% of the line width from the limit, gone after the next-line move.
         lx = s2.get("lineLimitX")
         first_x = min(b[0] for b in mine) if mine else 0
         # (the block starts at its first stroke; a later line's stroke may sit a little further left: 1% tolerance)
-        rep.check(lx is not None and (abs(lx - 0.5 * W) < 1 or abs(lx - (first_x + 0.5 * W)) < 0.01 * W),
-                  "(c) the limit is where the next-line pan comes: ½ page from the line's start", f"limit x {lx}, page {W}, line start {first_x:.0f}")
+        if newrule:   # 0.1.6: the block's start + half the view's width when it started (400%: an eighth of the page)
+            rep.check(lx is not None and abs(lx - (first_x + 0.5 * st["view"]["w"])) < 0.01 * W,
+                      "(c) the limit is where the next-line move comes: the block's start + ½ of the view's width", f"limit x {lx}, line start {first_x:.0f}, view {st['view']['w']:.0f} wide")
+        else:
+            rep.check(lx is not None and (abs(lx - 0.5 * W) < 1 or abs(lx - (first_x + 0.5 * W)) < 0.01 * W),
+                      "(c) the limit is where the next-line pan comes: ½ page from the line's start", f"limit x {lx}, page {W}, line start {first_x:.0f}")
         far = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d > 0.3]
         near = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d <= 0.15]
         rep.step("limit line", samples=[(w, round(d, 2), round(a, 3)) for w, d, a, _, _, _ in samples], afterNewLine=[round(a, 3) for a in after_nl])
-        rep.check(far and all(a <= 0.01 for _, _, a in far), "(c) hidden while the line's ink is far from the limit (more than 30% of the line width)", f"{far[:6]}")
+        if newrule:   # 0.1.6: shown for the whole block (Karthik judges the rule by seeing it), 60% strength until the ink nears it
+            rep.check(far and all(a >= 0.22 * 0.6 - 0.03 for _, _, a in far), "(c) shown while the line's ink is far from the limit (the whole block, 0.1.6)", f"{far[:6]}")
+        else:
+            rep.check(far and all(a <= 0.01 for _, _, a in far), "(c) hidden while the line's ink is far from the limit (more than 30% of the line width)", f"{far[:6]}")
         # Strength 22% x (1 - distance / 15% of the line width): e.g. 0.015 at 14%, 0.044 at 12%, 0.22 at the limit and
         # past it (a word that started before the limit can end past it now: full strength there, not more).
-        rep.check(near and all(abs(a - 0.22 * min(1.0, max(0.0, 1 - d / 0.15))) < 0.03 for _, d, a in near) and max(a for _, _, a in near) > 0.005,
+        rep.check(near and all(abs(a - 0.22 * ((0.6 + 0.4 * min(1.0, max(0.0, 1 - d / 0.15))) if newrule else min(1.0, max(0.0, 1 - d / 0.15)))) < 0.03 for _, d, a in near) and max(a for _, _, a in near) > 0.005,
                   "(c) fades in as the ink comes within 15% of the line width of the limit (in proportion)", f"{near}")
         shown_in_view = [(d, l) for _, _, a, d, l, iv in samples if a > 0.002 and iv]
-        rep.check(all(d and abs(d[0] - l) < 1e-6 for d, l in shown_in_view), "(c) when shown (and the limit is in view), it's drawn at the limit's page x (the 100% screenshot below checks it too)", f"{len(shown_in_view)} shown in view: drawn at {[d and round(d[0]) for d, _ in shown_in_view]}")
+        # (a sample taken before the frame that draws it, as the line fades in, has nothing drawn yet: at most the first)
+        drawn_ = [(d, l) for d, l in shown_in_view if d]
+        rep.check(len(drawn_) >= len(shown_in_view) - 1 and all(abs(d[0] - l) < 1e-6 for d, l in drawn_), "(c) when shown (and the limit is in view), it's drawn at the limit's page x (the 100% screenshot below checks it too)", f"{len(shown_in_view)} shown in view: drawn at {[d and round(d[0]) for d, _ in shown_in_view]}")
         # The last line has only a few words (far from the limit): at 100%, with the limit in view, no line to be seen.
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app, limit=3); time.sleep(0.6)
         st0 = app.state(); start_shot.append((rep.shot(app, "a line just started (100%): no limit line"), st0))
@@ -1235,8 +1257,9 @@ def run_scenarios(app, rep, only, hand):
             if cx < col < cx + cw:
                 px = [im.getpixel((int(col), int(cy + ch * (0.25 + 0.5 * i / 40)))) for i in range(41)]
                 t0 = sum(b - r_ for r_, g_, b in px) / len(px)
-            rep.check(t0 < 3, "(c) not to be seen at the start of a line (screenshot)", f"blue tint at the limit's column {t0:.1f}")
-        rep.check(after_nl and all(a <= 0.01 for a in after_nl), "(c) gone after the next-line move", f"{after_nl}")
+            if not newrule: rep.check(t0 < 3, "(c) not to be seen at the start of a line (screenshot)", f"blue tint at the limit's column {t0:.1f}")
+        if newrule: rep.check(after_nl and all(a >= 0.22 * 0.6 - 0.03 for a in after_nl), "(c) still shown after the next-line move (the block goes on, 0.1.6)", f"{after_nl}")
+        else: rep.check(after_nl and all(a <= 0.01 for a in after_nl), "(c) gone after the next-line move", f"{after_nl}")
         # Hidden without writing mode (no width chosen), and never in the page export.
         ensure(app, "writing", False, "w"); time.sleep(0.3)
         s5 = app.state(); shot5 = rep.shot(app, "writing mode off: no line")
@@ -1285,14 +1308,14 @@ def run_scenarios(app, rep, only, hand):
             rep.shot(app, f"{label}: after the next-line pan")
             app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app, limit=3); time.sleep(0.6)
             rep.shot(app, f"{label}: the whole page")
-            return W, lines, views, limits
+            return W, lines, views, limits, st, vw
         for start, wi, wname in [(0.30, 0, "50%"), (0.20, 1, "75%"), (0.55, 0, "50%"), (0.035, 0, "50%"), (0.035, 2, "100%")]:
             label = f"{wname} from {'the margin' if start < 0.05 else f'{start:.0%}'}"
-            W, lines, views, limits = run(start, wi, label)
-            want = min(lines[0][1] / W + [0.5, 0.75, 1.0][wi], CAP) if lines else None
+            W, lines, views, limits, st_, vw_ = run(start, wi, label)
+            want = rule_limit(st_, lines[0][1], [0.5, 0.75, 1.0][wi], W, vw_)[0] / W if lines else None
             rep.check(len(lines) >= 2 and views, f"{label}: the block wraps to a second line", f"{len(lines)} lines, {len(views)} next-line pans")
             if len(lines) < 2 or not views: continue
-            rep.check(limits and all(abs(l / W - want) < 0.005 for l in limits), f"{label}: the line's limit is its start + {wname} of the page (capped at {CAP:.0%} of the page)",
+            rep.check(limits and all(abs(l / W - want) < 0.005 for l in limits), f"{label}: the line's limit is its start + {wname} of " + ("the view when the block started (0.1.6)" if st_.get("columnBound", True) is False else f"the page (capped at {CAP:.0%} of the page)"),
                       f"start {lines[0][1] / W:.1%}, limit {sorted({round(l / W, 3) for l in limits})}, want {want:.1%}")
             rep.check(all(want - 0.15 <= L[2] / W <= want + 0.06 for L in lines[:-1]), f"{label}: full lines end near it", f"line ends {[round(L[2] / W, 3) for L in lines]}, limit {want:.1%}")
             v, nl = views[0]
@@ -1310,7 +1333,9 @@ def run_scenarios(app, rep, only, hand):
         write_rows(24500, (SENTENCE + " " + SENTENCE).split(), [W * 0.3, top])
         hand.h = old_h
         st2 = app.state()
-        rep.check(st2["newLines"] == nl0 and abs(st2["view"]["x"] - v0["x"]) < 1 and abs(st2["view"]["y"] - v0["y"]) < 1 and max(b[2] for b in st2["pageBounds"]) > W * 0.85,
+        # (0.1.6: the hand's own two-finger pans move the view past the page now; what must not happen is a move by the app)
+        app_moved = st2["newLines"] != nl0 or st2.get("follows", 0) != st.get("follows", 0) or (st.get("columnBound", True) is not False and (abs(st2["view"]["x"] - v0["x"]) >= 1 or abs(st2["view"]["y"] - v0["y"]) >= 1))
+        rep.check(not app_moved and max(b[2] for b in st2["pageBounds"]) > W * 0.85,
                   "writing mode off: writing across the page never moves it (no next-line pan)", f"new lines {st2['newLines'] - nl0}, view {v0['x']:.0f},{v0['y']:.0f} -> {st2['view']['x']:.0f},{st2['view']['y']:.0f}, ink to {max(b[2] for b in st2['pageBounds']) / W:.0%}")
         ensure(app, "draw", False, "d")
 
@@ -1358,11 +1383,11 @@ def run_scenarios(app, rep, only, hand):
             lines = [L for L in lines if L[2] - L[1] > W * 0.04]   # a stray i-dot or comma alone isn't a line
             label = f"{['50%', '75%', '100%'][width_idx]} at zoom {zoom}{' after a pan' if how == 'pan' else ''}"
             start = lines[0][1] if lines else W * 0.5
-            want = min(start + [0.5, 0.75, 1.0][width_idx] * W, W * CAP)
+            want = rule_limit(st, start, [0.5, 0.75, 1.0][width_idx], W, st["view"]["w"])[0]
             rep.step(label, lines=[(round(L[1] / W, 3), round(L[2] / W, 3)) for L in lines], limits=sorted({round(l / W, 3) for l, _ in lims}),
                      afterNewLine=[(round(v["x"] / W, 3), round((v["x"] + v["w"]) / W, 3), nl and round(nl[0] / W, 3)) for v, nl in views])
             rep.check(views, f"{label}: writing to the marker / the page's edge moves to the next line (never stuck)", f"{len(views)} next-line moves, lines {[(round(L[1] / W, 2), round(L[2] / W, 2)) for L in lines]}")
-            rep.check(lims and all(abs(l - want) < 0.01 * W for l, _ in lims), f"{label}: the guide line is at the block's start + the width (capped at {CAP:.0%} of the page)",
+            rep.check(lims and all(abs(l - want) < 0.01 * W for l, _ in lims), f"{label}: the guide line is at the block's start + the width" + (" of the view when it started (0.1.6)" if st.get("columnBound", True) is False else f" (capped at {CAP:.0%} of the page)"),
                       f"start {start / W:.1%}, limits {sorted({round(l / W, 3) for l, _ in lims})}, want {want / W:.1%}")
             if views:
                 v, nl = views[0]
@@ -1543,11 +1568,13 @@ def run_scenarios(app, rep, only, hand):
                 right = r2; x = right + sp
             s2 = app.state(); nl = s2.get("nextLine") or [None]
             label = f"(a) 22%, 50%, 200%, {variant}"
-            want = start + 0.5 * W
+            want = rule_limit(st, start, 0.5, W, st["view"]["w"])[0]   # 0.1.6: half the view when the block started
             rep.step(label, gapAfterPan=round(gap_ / W, 3), limits=sorted({round(l / W, 3) for l in lims}), inkAtMove=first_move and round(first_move / W, 3), nextLine=nl[0] and round(nl[0] / W, 3), newLines=s2["newLines"] - nl0, undone=n_before - app.state()["strokes"])
-            rep.check(lims and all(abs(l - want) < 0.01 * W for l in lims), f"{label}: the limit stays at the block's start + 50% ({want / W:.0%}) after the pan", f"limits {sorted({round(l / W, 3) for l in lims})}")
-            rep.check(s2["newLines"] > nl0 and first_move is not None and first_move < want + 0.12 * W, f"{label}: the next line comes once the ink crosses it (not at the page's edge)", f"ink at the move {first_move and first_move / W:.1%}, new lines {s2['newLines'] - nl0}")
-            rep.check(nl[0] is not None and abs(nl[0] - start) < 0.02 * W, f"{label}: the next line is back at the block's start", f"next line at {nl[0] and nl[0] / W:.1%}, block start 22%")
+            rep.check(lims and all(abs(l - want) < 0.01 * W for l in lims), f"{label}: the limit stays at the block's start + 50% of the " + ("view when it started" if st.get("columnBound", True) is False else "page") + f" ({want / W:.0%}) after the pan", f"limits {sorted({round(l / W, 3) for l in lims})}")
+            # (0.1.6: the block's line, half the view at 200%, can end before the pan: the next line came then, before first_move)
+            early_ok = st.get("columnBound", True) is False and first_move is None and s2["newLines"] > nl0
+            rep.check(s2["newLines"] > nl0 and (early_ok or (first_move is not None and first_move < want + 0.12 * W)), f"{label}: the next line comes once the ink crosses it (not at the page's edge)", f"ink at the move {f'{first_move / W:.1%}' if first_move is not None else 'none'}, new lines {s2['newLines'] - nl0}")
+            rep.check(nl[0] is not None and abs(nl[0] - start) < 0.02 * W, f"{label}: the next line is back at the block's start", f"next line at {f'{nl[0] / W:.1%}' if nl[0] is not None else 'none'}, block start 22%")
             rep.shot(app, label)
 
         # (b) Ink that stops at 93-95% of the page (or the move came earlier, at the width): a next-line move to the block's
@@ -1572,9 +1599,18 @@ def run_scenarios(app, rep, only, hand):
                 time.sleep(max(0, 2.0 - dt)); s3 = app.state()   # (and whether it came later)
                 label = f"(b) {wname} from {start:.0%}"
                 rep.step(label, inkRight=round(right / W, 3), limit=s_.get("lineLimitX") and round(s_["lineLimitX"] / W, 3), newLinesBy900ms=s2["newLines"] - nl0, newLinesBy2s=s3["newLines"] - nl0, nextLine=nl[0] and round(nl[0] / W, 3))
-                rep.check(s2["newLines"] > nl0 and nl[0] is not None and abs(nl[0] - x0) < 0.02 * W,
-                          f"{label}: the line (ink to {right / W:.1%}) brings the next line at the block's start at the 400 ms word gap (by 0.9 s after the lift)",
-                          f"ink to {right / W:.1%}, new lines by {dt:.2f} s: {s2['newLines'] - nl0}, by 2 s: {s3['newLines'] - nl0}, next line at {nl[0] and nl[0] / W:.1%}")
+                if st.get("columnBound", True) is False:
+                    # 0.1.6: the 93% rule is gone; the next line comes when the ink reaches the block's own end (its last 3%):
+                    # the block's start + the width of the view when it started, which may be past the page's edge.
+                    lim_, zone_, _ = rule_limit(st, x0, [0.5, 0.75, 1.0][wi], W, st["view"]["w"])
+                    want_nl = right >= zone_ - 0.002 * W
+                    ok_ = (s2["newLines"] > nl0) == want_nl and (not want_nl or (nl[0] is not None and abs(nl[0] - x0) < 0.02 * W))
+                    rep.check(ok_, f"{label}: ink to {right / W:.1%} with the block's end at {lim_ / W:.1%}: " + ("the next line at the block's start at the 400 ms gap" if want_nl else "no next line (no 93% rule; the line goes on past the page's edge)"),
+                              f"new lines by {dt:.2f} s: {s2['newLines'] - nl0}, by 2 s: {s3['newLines'] - nl0}")
+                else:
+                    rep.check(s2["newLines"] > nl0 and nl[0] is not None and abs(nl[0] - x0) < 0.02 * W,
+                              f"{label}: the line (ink to {right / W:.1%}) brings the next line at the block's start at the 400 ms word gap (by 0.9 s after the lift)",
+                              f"ink to {right / W:.1%}, new lines by {dt:.2f} s: {s2['newLines'] - nl0}, by 2 s: {s3['newLines'] - nl0}, next line at {f'{nl[0] / W:.1%}' if nl[0] is not None else 'none'}")
         hand.h = old_h
         ensure(app, "draw", False, "d")
 
@@ -2351,7 +2387,7 @@ def flow_metrics(recs):
                 if x["newLine"]: groups.append(g); g = []
             visible = sum(1 for gr in groups if any(pb[1] >= a["y"] - 1e-6 and pb[3] <= a["y"] + a["h"] + 1e-6 for pb in gr))
             lines.append({"prevLineVisible": visible > 0, "linesVisible": visible, "linesWritten": len(groups)})
-        elif a["x"] > b["x"] + 1e-6:
+        elif a["x"] > b["x"] + 1e-6 and not r.get("followed"):   # 0.1.6: a follow is the app's own move with a long line
             words = 0
             for x in reversed(recs[:i + 1]):
                 bb = x["bounds"]
@@ -2370,7 +2406,7 @@ def judge_writing(app, rep, recs, st, text, ocr_check=True):
         rep.check(not seen, "the page map stays hidden while writing (auto-pans and new lines don't show it)", f"shown while writing: {seen}" if seen else f"{len(recs)} words")
     pans, lines = flow_metrics(recs)
     rep.step("page moves", pans=[(p["wordsVisible"], round(p["jump"], 2)) for p in pans], newLines=len(lines))
-    rep.check(not pans, "no sideways pan along the line (only the next-line move)", f"{len(pans)} sideways pans, jumps {[round(p['jump'], 2) for p in pans]}")
+    rep.check(not pans, "no sideways pan along the line (only the next-line move, or the view following a line longer than itself)", f"{len(pans)} sideways pans, jumps {[round(p['jump'], 2) for p in pans]}")
     if lines:
         seen = sum(l["prevLineVisible"] for l in lines)
         rep.check(seen == len(lines), "after a new line the line just written is still in view", f"{seen} of {len(lines)} new lines")

@@ -317,6 +317,8 @@ final class Robot {
         chrome["frame"] = !app.container.drawFrame.isHidden   // robot:needs class DrawModeFrame
         s["chrome"] = chrome
         s["newLines"] = canvas.newLineCount
+        s["follows"] = canvas.writingStateForTest.follows   // 0.1.6: the view following a long line
+        s["columnBound"] = Camera.columnBound               // the rules before 0.1.6 (--column-bound)
         s["clickDrawOn"] = canvas.clickDrawOn   // robot:needs var clickDrawOn
         s["aimRing"] = [CanvasView.aimRingColor.x, CanvasView.aimRingColor.y, CanvasView.aimRingColor.z, CanvasView.aimRingColor.w].map { (Double($0) * 100).rounded() / 100 }   // robot:needs aimRingColor
         s["pageBounds"] = canvas.doc.strokes.map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] }
