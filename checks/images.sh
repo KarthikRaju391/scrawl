@@ -1,6 +1,7 @@
 #!/bin/bash
 # Image pages in the real app (background window, scratch data folders; never the real notebook). PASS/FAIL per case.
-#   1. every way in: ⌘V, a drop on the window, New Page from Image's import (HEIC, TIFF, PDF), the Inbox before launch and
+#   1. every way in: ⌘V and a drop (onto the open page), the Select tool on a picture (click, move, resize, ⌫, ⌘C, ⌘Z),
+#      New Page from Image's import (HEIC, TIFF, PDF), the Inbox before launch and
 #      while running (tools/inbox_write.py, the browser extension's way); the page header names the source; ⌘Z after a
 #      new picture page takes it away and its file goes after the save; ink on a picture; Copy; exports.
 #   2. kill -9 mid-stroke, reopen: the same notebook, the same picture files byte for byte, the page renders the same.
@@ -57,8 +58,11 @@ def chk(ok, msg):
 w = json.load(open(d + "/images-write.json"))
 e, a = json.load(open(d + "/expected.json")), json.load(open(d + "/actual.json"))
 chk(w.get("inboxBeforeLaunch", -1) >= 0, f"an Inbox item written before launch becomes a page at launch (page {w.get('inboxBeforeLaunch', -1) + 1})")
-chk(w["pasteEnabled"] and w["paste"] and w["pasteOpened"] and "from a pasted image" in w["pasteHeader"], f"⌘V with an image on the pasteboard: Paste is enabled, a new page opens; header: {w['pasteHeader']!r}")
-chk(w["dragEntered"] and w["dropTaken"] and w["drop"] and "Holiday photo.jpg" in w["dropHeader"], f"a JPEG file dropped on the window: a new page; header: {w['dropHeader']!r}")
+chk(w["pasteEnabled"] and w["paste"] and w["pasteOnPage"] and w["pasteSelected"] and "from a pasted image" in w["pasteHeader"], f"⌘V with an image on the pasteboard: Paste is enabled, the picture goes on the open page, selected with the Select tool; header: {w['pasteHeader']!r}")
+chk(w["dragEntered"] and w["dropTaken"] and w["drop"] and w["dropAtPointer"] and w["dropOnPage"], "a JPEG file dropped on the window: on the open page, centred where it was dropped")
+chk(w["clickSelects"] and w["moveByPointer"] and w["resizeByPointer"], "Select tool through the window's events: a click selects the photo, a drag moves it by exactly the pointer's travel, a corner drag resizes it (proportions kept, the opposite corner fixed)")
+chk(w["copyPicture"], "⌘C with the photo selected puts its original JPEG bytes on the pasteboard")
+chk(w["deleteKey"] and w["undoDelete"] and w["undoMoves"] and w["redoMoves"], "⌫ deletes it; ⌘Z brings it back; two more ⌘Z undo the resize and the move exactly; redo redoes them")
 chk(w["dropTextRefused"], "a dropped text file is refused (no copy cursor, not taken)")
 chk(w["open3"] and "Handout.pdf" in w["openHeader"] and w["menuItem"].endswith(" n"), f"New Page from Image's import: HEIC, TIFF, PDF -> 3 pages, the last opened ({w['openHeader']!r}); the menu item ⇧⌘N ({w['menuItem']})")
 chk(w["inboxWhileRunning"] and w["inboxDone"] and "Second page" in w["inboxHeader"], f"an Inbox item written while the app runs: a page at once, its result file after the save; header {w['inboxHeader']!r}")

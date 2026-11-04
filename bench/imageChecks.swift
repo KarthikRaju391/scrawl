@@ -429,6 +429,12 @@ func imageChecks(_ check: (Bool, String) -> Void) {
         let want = rgba(tall.cropping(to: CGRect(x: 0, y: 0, width: 1000, height: Int(1000 * page.height / page.width)))!, img.width, img.height)
         let upper = img.width * img.height * 4 * 6 / 10   // above the fade
         let td = diff(Array(thumb[0..<upper]), Array(want[0..<upper]))
+        // A small picture low on a page with no ink: the tile frames the picture (not the page's empty top).
+        let sp = c.newImagePage(PreparedImagePage(asset: try! ImageStore.importImage(encode(testCard(300, 200), .png)), request: req(Data(), "small.png")))
+        let so = c.pages[sp].images[0], low = so.with(frame: CGRect(x: 1000, y: -400, width: 300, height: 200), id: 9999)
+        c.pages[sp].setImages([low], undoable: false)
+        let sr = ThumbnailCache.region(c.pages[sp].strokes, images: c.pages[sp].images, page: page)
+        check(sr.contains(low.frame) && sr.maxY < page.height - 100, "a small picture low on an empty page: its tile frames the picture (region \(sr))")
         check(td.mean < 12 && ThumbnailCache.continuesBelow(c.pages[i].strokes, images: c.pages[i].images, region), "the tile is the picture's top (mean difference \(String(format: "%.1f", td.mean)) above the fade), fading out below (more picture under it)")
     }
 

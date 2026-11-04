@@ -66,7 +66,7 @@ func attachmentChecks(_ check: (Bool, String) -> Void) {
     check(c.selectedImageId == nil, "a click off every picture deselects")
 
     // 3. Move: exactly the pointer's travel in page units; ink stays; one undo step.
-    let steps0 = c.doc.canUndo
+    let steps0 = c.doc.canUndo, beforeMove = c.doc.images
     let from = CGPoint(x: a.frame.midX - 40, y: a.frame.midY + 10), dx = 200.0, dy = -120.0
     drag(from, CGPoint(x: from.x + dx, y: from.y + dy))
     guard let moved = c.selectedImage, moved.asset === a.asset else { check(false, "move: the picture is still selected after the drag"); return }
@@ -74,51 +74,52 @@ func attachmentChecks(_ check: (Bool, String) -> Void) {
           "move: the picture moved by the drag exactly (\(moved.frame.minX - a.frame.minX), \(moved.frame.minY - a.frame.minY) units), a new object in the same place in the order")
     check(c.doc.strokes.count == 1 && c.doc.strokes[0] === stroke && stroke.bounds == strokeBounds, "the ink didn't move or change")
     c.undo()
-    check(c.doc.images[0] === a && steps0, "one undo puts the picture back exactly where it was (the same object)")
+    check(c.doc.images.count == beforeMove.count && zip(c.doc.images, beforeMove).allSatisfy { $0 === $1 } && steps0, "one undo puts the picture back exactly where it was (the same object; the other picture untouched)")
     c.redo()
-    check(c.doc.images[0] === moved, "redo moves it again")
+    check(c.doc.images.first === moved, "redo moves it again")
 
     // 4. Resize from the top-right corner: proportions kept, the bottom-left corner stays; with Shift, free.
     click(CGPoint(x: moved.frame.midX, y: moved.frame.midY))
     let tr = CGPoint(x: moved.frame.maxX, y: moved.frame.maxY)
     drag(tr, CGPoint(x: tr.x + 150, y: tr.y + 10))
-    let r1 = c.selectedImage!
+    guard let r1 = c.selectedImage else { check(false, "resize: the picture is still selected after the drag"); return }
     check(abs(r1.frame.minX - moved.frame.minX) < 1e-6 && abs(r1.frame.minY - moved.frame.minY) < 1e-6 && abs(r1.frame.width / r1.frame.height - 1.5) < 1e-6
           && abs(r1.frame.width - (moved.frame.width + 150)) < 1e-3,
           "resize (top-right corner): grows with the pointer, 3:2 kept, the opposite corner fixed (\(Int(moved.frame.width)) -> \(Int(r1.frame.width)) units wide)")
     let tr2 = CGPoint(x: r1.frame.maxX, y: r1.frame.maxY)
     drag(tr2, CGPoint(x: tr2.x - 100, y: tr2.y + 80), .shift)
-    let r2 = c.selectedImage!
+    guard let r2 = c.selectedImage else { check(false, "resize: the picture is still selected after the drag"); return }
     check(abs(r2.frame.width - (r1.frame.width - 100)) < 1e-3 && abs(r2.frame.height - (r1.frame.height + 80)) < 1e-3 && r2.frame.origin == r1.frame.origin,
           "resize with Shift: width and height follow the pointer freely (\(Int(r2.frame.width)) x \(Int(r2.frame.height)))")
     let bl = CGPoint(x: r2.frame.minX, y: r2.frame.minY)
     drag(bl, CGPoint(x: r2.frame.maxX + 500, y: r2.frame.maxY + 500))
-    let r3 = c.selectedImage!
+    guard let r3 = c.selectedImage else { check(false, "resize: the picture is still selected after the drag"); return }
     check(r3.frame.width * k >= CanvasView.minImagePt - 1e-6 && r3.frame.height * k >= CanvasView.minImagePt - 1e-6 && abs(r3.frame.maxX - r2.frame.maxX) < 1e-6 && abs(r3.frame.maxY - r2.frame.maxY) < 1e-6,
           "resize past the opposite corner: it stops at the smallest size (\(String(format: "%.0f", r3.frame.width * k)) x \(String(format: "%.0f", r3.frame.height * k)) pt), never flips")
     c.undo(); c.undo()
-    check(c.doc.images[0] === r1, "two undos step back through two resizes exactly")
+    check(c.doc.images.first === r1 && c.doc.images.count == 2, "two undos step back through two resizes exactly")
     c.redo(); c.redo()
 
     // 5. A click on a picture without moving it is no edit.
     let canUndoBefore = c.doc.canUndo, imgsBefore = c.doc.images
-    click(CGPoint(x: c.doc.images[0].frame.midX, y: c.doc.images[0].frame.midY))
+    if let f = c.doc.images.first { click(CGPoint(x: f.frame.midX, y: f.frame.midY)) }
     c.undo(); c.redo()
     check(c.doc.images.count == imgsBefore.count && zip(c.doc.images, imgsBefore).allSatisfy { $0 === $1 } && canUndoBefore, "a click that doesn't move a picture adds no undo step")
 
     // 6. Reorder and delete.
-    click(CGPoint(x: c.doc.images[0].frame.midX, y: c.doc.images[0].frame.minY + 2))
-    let bottom = c.selectedImage!
+    if let f = c.doc.images.first { click(CGPoint(x: f.frame.midX, y: f.frame.minY + 2)) }
+    guard let bottom = c.selectedImage else { check(false, "a click selects the bottom picture"); return }
     c.reorderSelectedImage(1)
     check(c.doc.images.last === bottom, "Bring Forward: the selected picture goes above the other")
     c.undo()
     check(c.doc.images.first === bottom, "undo: back below")
     c.redo()
+    let beforeDelete = c.doc.images
     c.deleteSelectedImage()
     check(c.doc.images.count == 1 && !c.doc.images.contains { $0 === bottom } && c.selectedImageId == nil && c.doc.strokes[0] === stroke, "⌫ deletes the selected picture (not the ink)")
     check(c.notebookSnapshot().imageKeys.contains(bottom.asset.key), "a deleted picture's file stays while the undo history refers to it")
     c.undo()
-    check(c.doc.images.contains { $0 === bottom }, "undo brings the deleted picture back")
+    check(c.doc.images.count == beforeDelete.count && zip(c.doc.images, beforeDelete).allSatisfy { $0 === $1 }, "undo brings the deleted picture back, exactly as it was (order too)")
 
     // 7. Another tool or another page clears the selection.
     click(CGPoint(x: bottom.frame.midX, y: bottom.frame.midY))
@@ -138,7 +139,7 @@ func attachmentChecks(_ check: (Bool, String) -> Void) {
     check(d.doc.images.isEmpty && d.doc.strokes.count == 1 && d.doc.strokes[0].id == stroke.id, "undo on the reopened page steps back through every picture edit to the page with only its ink (\(backs) steps)")
 
     // 9. Export: the picture drawn where it now is.
-    let now = c.doc.images.first { $0.asset === big.asset }!
+    guard let now = c.doc.images.first(where: { $0.asset === big.asset }) else { check(false, "export: the moved picture is on the page"); return }
     let e = PageExport(strokes: [], rect: CGRect(x: 0, y: -200, width: 1600, height: c.camera.page.height + 200), pageWidth: 1600, pageTop: c.camera.page.height,
                        paper: 0, options: ExportOptions(format: .png, scale: 0.5, area: .page, background: .white), images: c.doc.images)
     let img = e.image()!

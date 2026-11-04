@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-- **Pictures on pages.** Drag an image onto the window, paste one (⌘V), or File › New Page from Image… (⇧⌘N): each
+- **Pictures on a page.** Paste an image (⌘V), drop one on the page, or File › Insert Image… (⇧⌘I): it lands on the
+  page you're on, under your ink. With the Select tool, click it to move it, drag a corner to resize it (Shift for free
+  proportions), ⌫ to delete it, ⌥⌘] / ⌥⌘[ to bring it forward or send it back, ⌘C to copy it. Every change can be
+  undone. Your backups keep their pictures.
+- **Pages from pictures.** File › New Page from Image… (⇧⌘N), or a drop or paste in the pages overview: each
   becomes a new page with the picture across the page, from its top, and you write on it with every tool (the
   highlighter, scratch-out and the eraser only ever touch the ink). PNG, JPEG, HEIC, TIFF, GIF, PDF (its first page)
   and screenshots. The picture is kept as it is, at its full resolution, and stays sharp as you zoom in. The page

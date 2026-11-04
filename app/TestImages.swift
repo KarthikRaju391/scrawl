@@ -103,7 +103,8 @@ enum TestImages {
             // 0. The Inbox item put there before launch is a page already (or becomes one now).
             wait(10) { canvas.pages.contains { $0.importId == "before-launch" } }
             r["inboxBeforeLaunch"] = canvas.pages.firstIndex { $0.importId == "before-launch" } ?? -1
-            // 1. ⌘V: a PNG on the (test) pasteboard; the menu item is enabled for it.
+            // 1. ⌘V on the first page: the picture goes on that page (not a new one), selected, with the Select tool.
+            canvas.goToPage(0)
             let pngData = encode(card(1600, 2400, hue: 0.58), .png)
             let pb = AppDelegate.pasteboard
             pb.clearContents(); pb.setData(pngData, forType: .png)
@@ -111,24 +112,61 @@ enum TestImages {
             r["pasteEnabled"] = paste.map { app.validateMenuItem($0) } ?? false
             let n0 = canvas.pages.count
             app.paste(nil)
-            r["paste"] = wait { canvas.pages.count == n0 + 1 }
-            r["pasteOpened"] = canvas.pageIndex == canvas.pages.count - 1
+            r["paste"] = wait { canvas.doc.images.count == 1 }
+            r["pasteOnPage"] = canvas.pages.count == n0 && canvas.pageIndex == 0
+            r["pasteSelected"] = canvas.tools.tool == .select && canvas.selectedImageId == canvas.doc.images.first?.id
             r["pasteHeader"] = app.container.hint.stringValue
-            shot("import")
-            // 2. A JPEG file dropped on the window (the window's own drag handlers).
+            spin(0.3); shot("import")
+            // 2. A JPEG file dropped on the window at a point: on the page, centred there.
             let jpgURL = URL(fileURLWithPath: fx + "/Holiday photo.jpg")
             try? encode(card(1200, 900, hue: 0.08), .jpeg).write(to: jpgURL)
             let dpb = NSPasteboard(name: NSPasteboard.Name("scrawl.test.drag")); dpb.clearContents(); dpb.writeObjects([jpgURL as NSURL])
             let drag = Drag(dpb)
             r["dragEntered"] = app.container.draggingEntered(drag) == .copy
-            let n1 = canvas.pages.count
             r["dropTaken"] = app.container.performDragOperation(drag)
-            r["drop"] = wait { canvas.pages.count == n1 + 1 }
-            r["dropHeader"] = app.container.hint.stringValue
+            r["drop"] = wait { canvas.doc.images.count == 2 }
+            let dropAt = canvas.canvasPoint(fromView: canvas.convert(app.container.convert(drag.draggingLocation, from: nil), from: app.container))
+            r["dropAtPointer"] = canvas.doc.images.last.map { abs($0.frame.midX - dropAt.x) < 0.5 && abs($0.frame.midY - dropAt.y) < 0.5 && $0.source.fileName == "Holiday photo.jpg" } ?? false
+            r["dropOnPage"] = canvas.pages.count == n0
             // A dropped text file is not taken.
             let txt = URL(fileURLWithPath: fx + "/notes.txt"); try? "hi".write(to: txt, atomically: true, encoding: .utf8)
             dpb.clearContents(); dpb.writeObjects([txt as NSURL])
             r["dropTextRefused"] = app.container.draggingEntered(drag) == [] && !app.container.performDragOperation(drag)
+            // 2b. The Select tool through the window's own events: click the photo, drag it, drag its corner, ⌫, ⌘Z, ⌘C.
+            func mouse(_ type: NSEvent.EventType, _ p: CGPoint, _ mods: NSEvent.ModifierFlags = []) {
+                let w = canvas.convert(canvas.viewPoint(fromCanvas: p), to: nil)
+                if let e = NSEvent.mouseEvent(with: type, location: w, modifierFlags: mods, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: app.window.windowNumber,
+                                              context: nil, eventNumber: 0, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) { app.window.sendEvent(e) }
+            }
+            func pointerDrag(_ a: CGPoint, _ b: CGPoint, _ mods: NSEvent.ModifierFlags = []) {
+                mouse(.leftMouseDown, a, mods)
+                for k in 1...10 { let f = Double(k) / 10; mouse(.leftMouseDragged, CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f), mods); spin(0.008) }
+                mouse(.leftMouseUp, b, mods); spin(0.05)
+            }
+            let photo = canvas.doc.images.last!
+            mouse(.leftMouseDown, CGPoint(x: photo.frame.midX, y: photo.frame.midY)); mouse(.leftMouseUp, CGPoint(x: photo.frame.midX, y: photo.frame.midY))
+            r["clickSelects"] = canvas.selectedImageId == photo.id
+            pointerDrag(CGPoint(x: photo.frame.midX, y: photo.frame.midY), CGPoint(x: photo.frame.midX - 300, y: photo.frame.midY + 150))
+            let moved = canvas.selectedImage
+            r["moveByPointer"] = moved.map { abs($0.frame.minX - (photo.frame.minX - 300)) < 0.5 && abs($0.frame.minY - (photo.frame.minY + 150)) < 0.5 } ?? false
+            if let m = moved { pointerDrag(CGPoint(x: m.frame.maxX, y: m.frame.minY), CGPoint(x: m.frame.maxX + 120, y: m.frame.minY - 40)) }
+            let resized = canvas.selectedImage
+            if let a = moved, let b = resized {   // the bottom-right corner dragged: the top-left corner stays, proportions kept
+                r["resizeByPointer"] = b !== a && abs(b.frame.width / b.frame.height - a.frame.width / a.frame.height) < 1e-6 && b.frame.width > a.frame.width
+                    && abs(b.frame.minX - a.frame.minX) < 1e-6 && abs(b.frame.maxY - a.frame.maxY) < 1e-6
+            } else { r["resizeByPointer"] = false }
+            spin(0.2); shot("attach")
+            _ = app.copySelectedPicture()
+            r["copyPicture"] = pb.data(forType: NSPasteboard.PasteboardType("public.jpeg")).map { sha($0) == sha(photo.asset.data() ?? Data()) } ?? false
+            let del = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: app.window.windowNumber, context: nil,
+                                       characters: "\u{7f}", charactersIgnoringModifiers: "\u{7f}", isARepeat: false, keyCode: 51)!
+            r["deleteKey"] = app.key(del) && canvas.doc.images.count == 1
+            app.undo()
+            r["undoDelete"] = canvas.doc.images.count == 2 && canvas.doc.images.last === resized
+            app.undo(); app.undo()
+            r["undoMoves"] = canvas.doc.images.last === photo
+            app.redoAction(); app.redoAction()
+            r["redoMoves"] = canvas.doc.images.last === resized
             // 3. New Page from Image… (what the panel imports): HEIC, TIFF, PDF, three pages at once, the last opened.
             let n2 = canvas.pages.count
             app.importImages([ImagePageRequest(data: encode(card(1000, 1400, hue: 0.33), .heic), source: ImageSource(kind: .file, fileName: "plant.heic")),
@@ -150,7 +188,8 @@ enum TestImages {
             let uniq = encode(card(640, 480, hue: 0.75), .png)
             pb.clearContents(); pb.setData(uniq, forType: .png)
             let n3 = canvas.pages.count
-            app.paste(nil); wait { canvas.pages.count == n3 + 1 }
+            app.importImages([ImagePageRequest(data: uniq, source: ImageSource(kind: .file, fileName: "uniq.png"))], via: "open", to: .newPages)
+            wait { canvas.pages.count == n3 + 1 }
             let key = canvas.doc.images.first?.asset.key ?? "?"
             r["undoFileBefore"] = files().keys.contains { $0.hasPrefix(key) }
             app.undo()
@@ -161,6 +200,7 @@ enum TestImages {
             // 6. Ink on the pasted picture's page (the real input path, draw mode without the pointer lock).
             let pastedPage = canvas.pages.firstIndex { $0.images.first?.asset.pixelWidth == 1600 && $0.images.first?.asset.pixelHeight == 2400 } ?? 0
             canvas.goToPage(pastedPage)
+            app.apply(.tool(.pen), from: "test")
             app.enterDrawMode(lock: false)
             let pen = TestPersist.Pen(canvas: canvas)
             var penDone = false

@@ -4,6 +4,23 @@ Pictures on a page, under the ink. A picture comes in as a **new page** with the
 top (dragged onto the window, ⌘V, File › New Page from Image… ⇧⌘N, or a web snapshot from the browser extension).
 You write on it with every tool; exports, Copy as Image, thumbnails and the page map show it.
 
+## On a page: attachments
+
+- **Insert** onto the open page: ⌘V, a drop (at the pointer), or File › Insert Image… (⇧⌘I). The picture is centred
+  there, at most 60% of the view's width and height, never larger than its own pixels on screen, above the page's other
+  pictures and under the ink. Several at once are stacked a little apart. Outside draw mode the Select tool is picked with
+  the new picture selected; in draw mode the tool stays.
+- **New page**: File › New Page from Image… (⇧⌘N), a drop or ⌘V in the pages overview, and the Inbox make a new page
+  with the picture across it.
+- **With the Select tool (S)**: click a picture to select it (a blue outline and four corner handles). Drag it to move
+  it; drag a corner to resize it (the opposite corner stays; proportions kept, Shift frees them; never below 16 pt).
+  ⌫ deletes it, ⌥⌘] / ⌥⌘[ bring it forward or send it back, ⌘C copies the picture itself (its original file, and a
+  PNG), Esc or a click elsewhere deselects. A drag that doesn't start on a picture is the box selection, as before.
+- **Undo**: each insert, move, resize, delete and reorder is one undo step of the page (⌘Z, the two-finger double tap,
+  the scrub). The ink never moves with a picture.
+- **Backups**: the notebook's backups (Backups/, daily and before a shrinking save) keep their pictures: a picture file
+  stays while any backup refers to it.
+
 ## Model
 
 An **image object** is an id, an **asset** (the picture's bytes) and a **frame** in page units (y up, the same space as
