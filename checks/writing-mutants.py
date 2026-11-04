@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mutation testing of the writing-mode checks (properties P1-P8, bench/writingVerify.swift): each mutant is one targeted change to the app
+"""Mutation testing of the writing-mode checks (properties P1-P9, bench/writingVerify.swift): each mutant is one targeted change to the app
 (and, for Canvas logic, the same change to the model that mirrors it), built from a copy of the sources and run through
 the model checker, the real-canvas fuzzer (with and without the model alongside) and the targeted slide check.
 
@@ -15,7 +15,7 @@ C, WL, M = "app/Canvas.swift", "app/Writing.swift", "bench/writingModel.swift"
 MUTANTS = {
     "wait0": ("P1", "no wait: the move comes at the lift", [
         (C, "else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }", "else if true { applyMove(move) }", 1),
-        (M, "else if waitMs <= 0 { if case .newLine(let c) = move { applyMove(c) } }", "else if true { if case .newLine(let c) = move { applyMove(c) } }", 1)]),
+        (M, "else if waitMs <= 0 { switch move {", "else if true { switch move {", 1)]),
     "halfWait": ("P1", "the move comes after half the wait", [
         (C, "now() - p.liftAt >= p.waitMs / 1000 else { return }", "now() - p.liftAt >= p.waitMs / 2000 else { return }", 1),
         (M, "clock - p.liftAt >= p.waitMs / 1000 else { return }", "clock - p.liftAt >= p.waitMs / 2000 else { return }", 1)]),
@@ -29,23 +29,35 @@ MUTANTS = {
             """            act("newLine", ["toX": c.x, "toY": c.y]); newLineCount += 1
             if let s = doc.strokes.last { doc.replaceLast(Stroke(tool: s.tool, color: s.color, size: s.size, points: s.points.map { StrokePoint(p: CGPoint(x: $0.p.x, y: $0.p.y - 10), pressure: $0.pressure) }, maxStep: 1e9)) }""", 1),
         (M, "        newLines += 1\n", "        newLines += 1\n        if let i = pages[pageIdx].strokes.indices.last { pages[pageIdx].strokes[i] = pages[pageIdx].strokes[i].offsetBy(dx: 0, dy: -10) }\n", 1)]),
-    "rightCap97": ("P3", "rightCap 0.97", [(WL, "static let rightCap = 0.95", "static let rightCap = 0.97", 1)]),
-    "limitFromEdge": ("P3", "the limit counts from the page's edge, not the block's start", [
-        (WL, "segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth", "lineWidth * pageWidth", 2)]),
+    # 0.1.6, the infinite canvas: a block's line is the width setting of the view's width when it started, from its start.
+    "blockFromPage": ("P3", "the block's line is the width of the page, not of the view when the block started", [
+        (C, "blockViewWidth.map { $0 * ToolState.lineWidths[tools.lineWidthIndex] }", "blockViewWidth.map { _ in camera.page.width * ToolState.lineWidths[tools.lineWidthIndex] }", 1),
+        (M, "blockView.map { $0 * width }", "blockView.map { _ in cam.page.width * width }", 1)]),
+    "blockWidthLive": ("P3", "the block's line follows the zoom now (the view's width at each stroke), not the zoom at its start", [
+        (C, "blockViewWidth.map { $0 * ToolState.lineWidths[tools.lineWidthIndex] }", "blockViewWidth.map { _ in camera.visible.width * ToolState.lineWidths[tools.lineWidthIndex] }", 1),
+        (M, "blockView.map { $0 * width }", "blockView.map { _ in cam.visible.width * width }", 1)]),
+    "limitFromEdge": ("P3", "the limit counts from the page's margin, not the block's start", [
+        (WL, "if let bw = blockWidth { return (segmentStart ?? lineLeft) + bw }", "if let bw = blockWidth { return lineStart(pageWidth: pageWidth) + bw }", 1)]),
+    "rightCapBack": ("P3", "the block's line still capped at 95% of the page", [
+        (WL, "if let bw = blockWidth { return (segmentStart ?? lineLeft) + bw }", "if let bw = blockWidth { return min((segmentStart ?? lineLeft) + bw, pageWidth * Self.rightCap) }", 1)]),
+    "nearEdgeBack": ("P4", "the 93% near-edge rule kept with a block width", [
+        (WL, "if let bw = blockWidth { return lineEnd - Self.nearMarker * bw }", "if let bw = blockWidth { return min(lineEnd - Self.nearMarker * bw, pageWidth * Self.nearEdge) }", 1)]),
+    "noFollow": ("P9", "the view never follows a line longer than itself", [
+        (WL, "if blockWidth != nil, right > v.maxX - Self.followWithin * v.width {", "if false, right > v.maxX - Self.followWithin * v.width {", 1)]),
+    "followPastEnd": ("P9", "the view follows past the line's end", [
+        (WL, "let cx = min(right - Self.followTo * v.width + v.width / 2, lineEnd + v.width * 0.05 - v.width / 2)", "let cx = right - Self.followTo * v.width + v.width / 2", 1)]),
     "nearMarker0": ("P4", "nearMarker 0 (only a crossing brings the next line)", [(WL, "static let nearMarker = 0.03", "static let nearMarker = 0.0", 1)]),
-    "noNearEdge": ("P4", "no 93% rule when the limit is at the page's edge", [
-        (WL, "lineEnd > pageWidth * Self.nearEdge ? pageWidth * Self.nearEdge :", "false ? pageWidth * Self.nearEdge :", 1)]),
     "idotCancels": ("P4", "only the last stroke's end counts (an i-dot cancels the move)", [
         (WL, "let right = legacyStrokeEdge ? s.maxX : max(s.maxX, line.maxX)", "let right = s.maxX", 1)]),
     "unclamped": ("P5", "the unclamped target is remembered (29 Oct bug 2)", [
-        (C, "var target = camera; target.center = c; target.clamp(); handRef = target.center", "var target = camera; target.center = c; handRef = c; target.clamp()", 1),
-        (M, "var target = cam; target.center = c; target.clamp(); handRef = target.center", "var target = cam; target.center = c; handRef = c; target.clamp()", 1)]),
+        (C, "var target = camera; target.center = c; target.clamp(); handRef = target.center", "var target = camera; target.center = c; handRef = c; target.clamp()", 2),
+        (M, "var target = cam; target.center = c; target.clamp(); handRef = target.center", "var target = cam; target.center = c; handRef = c; target.clamp()", 2)]),
     "toMargin": ("P5", "the next line goes to the page's margin, not the block's start", [
         (C, "let start = legacyWriting ? legacyLineLeft! : (runStart ?? layout.lineStart(pageWidth: camera.page.width))",
             "let start = legacyWriting ? legacyLineLeft! : layout.lineStart(pageWidth: camera.page.width)", 1),
         (M, "let start = runStart ?? layout.lineStart(pageWidth: cam.page.width)", "let start = layout.lineStart(pageWidth: cam.page.width)", 1)]),
     "noInset": ("P5", "the block's start lands at the view's very left (no 5% inset)", [
-        (WL, "max(lineLeft - v.width * 0.05, 0)", "max(lineLeft, 0)", 1)]),
+        (WL, "let left = lineLeft - v.width * 0.05", "let left = lineLeft", 1)]),
     "runNotReset": ("P6", "the block start isn't reset by a page change or writing mode off", [
         (C, "        if !keepRun { runStart = nil }\n", "", 1), (M, "        if !keepRun { runStart = nil }\n", "", 1)]),
     "drift": ("P6", "no '10% of the page from the block's start' guard (29 Oct bug 3: lines drifted)", [
