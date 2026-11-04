@@ -36,6 +36,7 @@ extension AppDelegate {
         menu("File", [
             item("New Page", #selector(newPageAction), "n"),
             item("New Page from Image…", #selector(newPageFromImageAction), "n", [.command, .shift]),
+            item("Insert Image…", #selector(insertImageAction), "i", [.command, .shift]),
             .separator(),
             item("Export All Pages as PDF…", #selector(exportPDF), "e"),
             item("Export Page…", #selector(exportPage), "e", [.command, .shift]),
@@ -57,6 +58,10 @@ extension AppDelegate {
             .separator(),
             item("Clear Page", #selector(clearPage), "\u{8}"),
             item("Delete Page", #selector(deletePageAction), "\u{8}", [.command, .option]),
+            .separator(),
+            item("Delete Picture", #selector(deletePictureAction)),
+            item("Bring Picture Forward", #selector(bringForwardAction), "]", [.command, .option]),
+            item("Send Picture Backward", #selector(sendBackwardAction), "[", [.command, .option]),
         ])
         let fullScreen = item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.control, .command], target: window)
         ownFullScreenItem = fullScreen
@@ -172,8 +177,9 @@ extension AppDelegate {
         // ⌘C in a text field copies its text (the item says so); elsewhere it copies the page.
         // With a selection (and the page open), ⌘C copies the selection.
         let hasSelection = canvas.selection != nil && !galleryShown
-        if item.action == #selector(copyPageAction) { item.title = textFocused ? "Copy" : hasSelection ? "Copy Selection as Image" : "Copy Page as Image" }
+        if item.action == #selector(copyPageAction) { item.title = textFocused ? "Copy" : (canvas.selectedImage != nil && !galleryShown) ? "Copy Picture" : hasSelection ? "Copy Selection as Image" : "Copy Page as Image" }
         if item.action == #selector(exportSelectionAction) { return hasSelection }
+        if [#selector(deletePictureAction), #selector(bringForwardAction), #selector(sendBackwardAction)].contains(item.action) { return canvas.selectedImage != nil && !galleryShown }
         if item.action == #selector(paste(_:)) { return textFocused || ImagePages.pasteboardHasImage(Self.pasteboard) }
         if item.action == #selector(prevPageAction) { return canvas.pageIndex > 0 && !galleryShown }
         if item.action == #selector(nextPageAction) { return canvas.pageIndex < canvas.pages.count - 1 && !galleryShown }

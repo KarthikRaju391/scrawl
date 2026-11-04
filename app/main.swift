@@ -62,10 +62,10 @@ final class ContainerView: NSView {
         registerForDraggedTypes([.fileURL] + ImagePages.pasteboardTypes)
     }
     /// Pictures dropped on the window (files, or images from another app): true if they were taken.
-    var onDropImages: ((NSPasteboard) -> Bool)?
+    var onDropImages: ((NSPasteboard, CGPoint) -> Bool)?
     override func draggingEntered(_ s: NSDraggingInfo) -> NSDragOperation { ImagePages.pasteboardHasImage(s.draggingPasteboard) && onDropImages != nil ? .copy : [] }
     override func draggingUpdated(_ s: NSDraggingInfo) -> NSDragOperation { draggingEntered(s) }
-    override func performDragOperation(_ s: NSDraggingInfo) -> Bool { onDropImages?(s.draggingPasteboard) ?? false }
+    override func performDragOperation(_ s: NSDraggingInfo) -> Bool { onDropImages?(s.draggingPasteboard, convert(s.draggingLocation, from: nil)) ?? false }
     required init?(coder: NSCoder) { fatalError() }
 
     override func layout() {
@@ -222,7 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         tips.show = { [weak self] text in self?.showToast(text, seconds: 4) }
         tips.onShown = { t in Analytics.shared.record("tip_shown", ["tip": t.rawValue]) }
         cv.onAct = { [weak self] name, extra in self?.canvasAct(name, extra) }
-        container.onDropImages = { [weak self] pb in self?.dropImages(pb) ?? false }
+        container.onDropImages = { [weak self] pb, p in self?.dropImages(pb, at: p) ?? false }
 
         // Input: MultitouchSupport (pressure) unless turned off (Help menu, or --input-nstouch), else the
         // public NSTouch path. Tests never start MT: real touches would interleave with the test input.
@@ -453,6 +453,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if galleryShown, e.keyCode == 51 || e.keyCode == 117, plainOrShift, let g = gallery, g.selected >= 0, g.selected < canvas.pages.count {   // Delete, ⌦
             deletePage(g.selected); return true
         }
+        // A picture selected with the Select tool: ⌫ deletes it.
+        if !galleryShown, e.keyCode == 51 || e.keyCode == 117, plainOrShift, canvas.selectedImage != nil { canvas.deleteSelectedImage(); updateUndoState(); return true }
         if !galleryShown, let a = arrow, plainOrShift {
             canvas.panByArrow(dx: a.0, dy: a.1, screen: e.modifierFlags.contains(.shift)); return true
         }
@@ -470,6 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Esc: clears the selection (Select is never on in draw mode, where Esc leaves draw mode above).
         if e.keyCode == 53 {
             if canvas.drawMode { exitDrawMode(); return true }
+            if canvas.selectedImageId != nil { canvas.selectedImageId = nil; return true }
             if canvas.selection != nil { canvas.setSelection(nil, "esc"); return true }
             container.toolbar.hidePanel(); return true
         }
@@ -840,7 +843,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func canvasAct(_ name: String, _ extra: [String: Any]) {
         usageAct(name, extra)
-        if ["commit", "scratchOut", "erase", "clear", "newPage"].contains(name) { pageOps = [] }   // ⌘Z is for the ink again
+        if ["commit", "scratchOut", "erase", "clear", "newPage", "insertImage", "imageMove", "imageResize", "imageDelete", "imageOrder"].contains(name) { pageOps = [] }   // ⌘Z is for the ink again
         switch name {
         case "gestureUndo": tips.gestureUndo(); practiceTick(.undo); Haptics.tick()
         case "gestureRedo", "scrubStep": Haptics.tick()

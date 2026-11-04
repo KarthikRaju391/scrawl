@@ -397,7 +397,10 @@ final class Autosaver {
                 try data.write(to: URL(fileURLWithPath: path), options: .atomic)
                 NotebookSafety.onDisk = (path, c.pages, c.strokes)
                 // Pictures nothing refers to any more go, once this notebook (which doesn't need them) is on disk.
-                if let self, ImageStore.collects, self.collectedFor != keep { self.collectedFor = keep; ImageStore.collectGarbage(keep: keep) }
+                // Backups keep theirs (they're made above, before this write, from the notebook that was on disk).
+                if let self, ImageStore.collects, self.collectedFor != keep {
+                    self.collectedFor = keep; ImageStore.collectGarbage(keep: keep.union(ImageStore.keysInBackups(backups)))
+                }
                 DispatchQueue.main.async {
                     self?.saves += 1; self?.savedThrough = max(self?.savedThrough ?? 0, through); self?.onSaved?(through)
                 }

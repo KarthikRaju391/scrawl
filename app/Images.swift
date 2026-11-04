@@ -385,6 +385,28 @@ enum ImageStore {
         return removed
     }
 
+    /// The pictures the notebook backups in `dir` (Backups/, 0.1.5.1) refer to: they stay while a backup needs them, so a
+    /// restored backup has its pictures. Each backup is read once (by name and date).
+    static func keysInBackups(_ dir: String) -> Set<String> {
+        struct Refs: Decodable { struct I: Decodable { var asset: String }; var images: [I]? }
+        let fm = FileManager.default
+        var out = Set<String>()
+        for n in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where n.hasSuffix(".tdnb") {
+            let p = dir + "/" + n
+            let m = ((try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+            lock.lock(); let cached = backupRefs[p]; lock.unlock()
+            if let c = cached, c.mtime == m { out.formUnion(c.keys); continue }
+            var keys = Set<String>()
+            if let d = try? Data(contentsOf: URL(fileURLWithPath: p), options: .alwaysMapped), let r = try? PropertyListDecoder().decode(Refs.self, from: d) {
+                keys = Set((r.images ?? []).map(\.asset))
+            }
+            lock.lock(); backupRefs[p] = (m, keys); lock.unlock()
+            out.formUnion(keys)
+        }
+        return out
+    }
+    nonisolated(unsafe) private static var backupRefs: [String: (mtime: Double, keys: Set<String>)] = [:]
+
     /// Keep the decoded-pixels cache under `limit` bytes: the least recently used files go first (they are decoded
     /// again when needed). Also removes leftovers of interrupted writes.
     static func trimCache(limit: Int = 3_000_000_000) {

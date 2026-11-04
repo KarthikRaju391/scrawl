@@ -154,6 +154,9 @@ final class Document {
     func restore(strokes: [Stroke], undo: [[Stroke]], redo: [[Stroke]]) { restore(State(strokes: strokes), undo: undo.map { State(strokes: $0) }, redo: redo.map { State(strokes: $0) }) }
     private func set(_ s: State) { strokes = s.strokes; images = s.images }
     func add(_ s: Stroke) { snapshot(); strokes.append(s) }
+    /// Picture edits: the page's pictures become `new` (bottom first). `undoable`: one undo step now; false for the frames a
+    /// drag goes through after its first (the drag's step was taken when it started).
+    func setImages(_ new: [ImageObject], undoable: Bool) { if undoable { snapshot() } else { version += 1 }; images = new }
     /// A new page's first contents (an imported picture and its ink): no undo step (undoing makes the page go).
     func setInitial(images: [ImageObject], strokes: [Stroke]) { version += 1; self.images = images; self.strokes = strokes }
     /// Eraser: removes without a new undo step (one step per eraser gesture, taken at its start).
@@ -476,7 +479,7 @@ final class CanvasView: MTKView {
         endWritingLine(); screensFilled = 0; hintDismissedAt = 0; updateScreensFilled()
         needsRender = true; onStatus?()
     }
-    private(set) var pageIndex = 0 { didSet { if pageIndex != oldValue { setSelection(nil, "page") } } }
+    private(set) var pageIndex = 0 { didSet { if pageIndex != oldValue { setSelection(nil, "page"); selectedImageId = nil; imageDrag = nil } } }
     var doc: Document { pages[pageIndex] }
     /// Called when page, hint or mode status changes (the window updates its labels).
     var onStatus: (() -> Void)?
@@ -490,7 +493,7 @@ final class CanvasView: MTKView {
             // A new width keeps the block and the line (widths count from the block's start); a waiting move is decided
             // again at the next lift, with the new width.
             if tools.lineWidthIndex != oldValue.lineWidthIndex { cancelPendingMove() }
-            if tools.tool != oldValue.tool { setSelection(nil, "tool") }   // switching tool clears the selection
+            if tools.tool != oldValue.tool { setSelection(nil, "tool"); selectedImageId = nil }   // switching tool clears the selection
             if tools.tool == .select && oldValue.tool != .select { cancelPendingMove() }   // the page never moves under the pointer
             if !testMode { tools.save() }
             needsRender = true
@@ -701,6 +704,15 @@ final class CanvasView: MTKView {
 
     private var nextImageIdValue = 1
     var nextImageIdForSave: Int { nextImageIdValue }
+    /// A fresh image object id (an edited picture is a new object, like an edited stroke).
+    func takeImageId() -> Int { defer { nextImageIdValue += 1 }; return nextImageIdValue }
+    /// The picture selected with the Select tool (Attachments.swift), by its object's id; nil when none.
+    var selectedImageId: Int? { didSet { if selectedImageId != oldValue { needsRender = true; onImageSelectionChange?() } } }
+    var onImageSelectionChange: (() -> Void)?
+    /// A move or resize of the selected picture in progress (Attachments.swift).
+    var imageDrag: ImageDrag?
+    /// Test hook: the selected picture's frame as the last frame drew its outline.
+    var selectedImageDrawnForTest: CGRect?
 
     /// A new page made from a picture: the picture at the page's width, at its top, with the request's ink on it, after the
     /// last page. `open`: it becomes the open page, viewed from its top (at zoom 1 unless the zoom is locked); otherwise
@@ -1256,14 +1268,21 @@ final class CanvasView: MTKView {
         if drawMode { clickDown(); return }
         onBackgroundClick?()
         // Select (never in draw mode: picking it leaves draw mode): a pointer drag on the page makes the rectangle.
-        if tools.tool == .select { selectBegin(at: canvasPoint(fromView: convert(e.locationInWindow, from: nil))); return }
+        if tools.tool == .select {
+            let p = canvasPoint(fromView: convert(e.locationInWindow, from: nil))
+            if imageMouseDown(at: p) { return }   // on a picture or a handle: select, move or resize it
+            selectedImageId = nil
+            selectBegin(at: p); return
+        }
         super.mouseDown(with: e)
     }
     override func mouseDragged(with e: NSEvent) {
+        if !drawMode, imageDrag != nil { imageMouseDragged(to: canvasPoint(fromView: convert(e.locationInWindow, from: nil)), freeAspect: e.modifierFlags.contains(.shift)); return }
         if !drawMode, selectDrag != nil { selectMove(to: canvasPoint(fromView: convert(e.locationInWindow, from: nil))); return }
         super.mouseDragged(with: e)
     }
     override func mouseUp(with e: NSEvent) {
+        if !drawMode, imageDrag != nil { imageMouseDragged(to: canvasPoint(fromView: convert(e.locationInWindow, from: nil)), freeAspect: e.modifierFlags.contains(.shift)); imageMouseUp(); return }
         if !drawMode, selectDrag != nil { selectMove(to: canvasPoint(fromView: convert(e.locationInWindow, from: nil))); selectEnd(); return }
         super.mouseUp(with: e)
     }
@@ -1715,6 +1734,8 @@ final class CanvasView: MTKView {
             items.append(.init(mesh: Mesh(), verts: dash, color: premul(Self.selectionLine)))
             selectionDrawnForTest = s
         }
+        selectedImageDrawnForTest = nil
+        items += imageSelectionItems(vis: vis)   // the selected picture's outline and handles (live view only)
         if !ghosts.isEmpty {
             let t = CACurrentMediaTime()
             ghosts = ghosts.filter { t - $0.start < Self.fadeSeconds }
