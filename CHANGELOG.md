@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Room around the page.** The view goes past the page's sides and above its top, and zooms out to 25%; write and put
+  pictures anywhere. The page's column stays as a faint guide.
+- **Writing mode: lines as long as your screen.** A block's lines are the width you chose (50 / 75 / 100%) of the
+  screen when you started the block, from where you started it, and the guide shows for the whole block. Zooming while
+  you write keeps them. A line longer than the screen carries the view along with it.
+
 ## 0.1.6.1 (2026-11-06, build 12)
 
 Stability: fixes from an audit of the app's hidden states (`docs/release-notes-0.1.6.1.md`).
