@@ -254,6 +254,7 @@ enum TestImages {
             made = canvas.doc.images.first?.asset.pixelHeight == 12000
             r["importSeconds"] = CACurrentMediaTime() - t0; r["made"] = made
             spin(0.5)
+            r["footprintAfterImportMB"] = TestImagesMemory.footprintMB()
             canvas.logger.event(["what": "phase", "phase": "picture"])
             done = false; pen.strokes(12, y0: 15) { done = true }; wait(30) { done }
             // Scroll the whole picture: one arrow step per display frame, down then up, zoom 1 then 2.
@@ -264,7 +265,9 @@ enum TestImages {
                 for k in 0..<240 { canvas.panByArrow(dx: 0, dy: k < 120 ? 1 : -1, screen: false); spin(1.0 / 60) }
                 let p = canvas.perf
                 func q(_ v: [Double], _ f: Double) -> Double { let s = v.sorted(); return s.isEmpty ? 0 : s[Int(f * Double(s.count - 1))] }
+                let work = zip(p.cpu, p.drawableWait).map { $0 - $1 }   // the frame's own work: minus waiting for a drawable
                 r["zoom\(Int(z))"] = ["frames": p.cpu.count, "cpuP50": q(p.cpu, 0.5), "cpuP95": q(p.cpu, 0.95), "gpuP50": q(p.gpu, 0.5), "gpuP95": q(p.gpu, 0.95),
+                                      "buildP95": q(p.build, 0.95), "waitP95": q(p.drawableWait, 0.95), "workP50": q(work, 0.5), "workP95": q(work, 0.95),
                                       "gapP50": q(p.gaps, 0.5), "gapP95": q(p.gaps, 0.95), "gapMax": p.gaps.max() ?? 0]
             }
             r["footprintMB"] = [m0, TestImagesMemory.footprintMB()]

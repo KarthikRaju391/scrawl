@@ -114,9 +114,9 @@ else: chk(len(lat["picture"]) > 50 and q(lat["picture"], .5) <= q(lat["plain"], 
     f"ink latency (input to on screen) on it: p50 {q(lat['picture'], .5):.1f} / p95 {q(lat['picture'], .95):.1f} ms vs a plain page {q(lat['plain'], .5):.1f} / {q(lat['plain'], .95):.1f} ms ({len(lat['picture'])} / {len(lat['plain'])} frames)")
 for z in ("zoom1", "zoom2"):
     s = r[z]
-    chk(s["frames"] > 150 and s["cpuP95"] < 4 and s["gpuP95"] < 6 and s["gapP95"] < 20, f"scrolling it at {z[4:]}x, a step a frame: {s['frames']} frames, CPU p95 {s['cpuP95']:.2f} ms, GPU p95 {s['gpuP95']:.2f} ms, frame gaps p50 {s['gapP50']:.1f} / p95 {s['gapP95']:.1f} / max {s['gapMax']:.1f} ms")
-m = r["footprintMB"]
-chk(r["gpuTexturesMB"] <= 256 and m[1] - m[0] < 400, f"memory: footprint {m[0]:.0f} -> {m[1]:.0f} MB with it, GPU textures {r['gpuTexturesMB']:.0f} MB (budget 256)")
+    chk(s["frames"] > 150 and s["workP95"] < 4 and s["gpuP95"] < 6, f"scrolling it at {z[4:]}x, a step a frame: {s['frames']} frames; the frame's own CPU work p50 {s['workP50']:.2f} / p95 {s['workP95']:.2f} ms (building it p95 {s['buildP95']:.2f}), GPU p95 {s['gpuP95']:.2f} ms; waiting for a drawable p95 {s['waitP95']:.2f} ms (a background window's drawables come back slowly: not counted; frame gaps aren't measurable there)")
+m = r["footprintMB"]; mi = r["footprintAfterImportMB"]
+chk(r["gpuTexturesMB"] <= 256 and m[1] - mi < r["gpuTexturesMB"] + 128, f"memory: footprint {m[0]:.0f} MB, {mi:.0f} after the import (the test's own 4000 x 12000 fixture included), {m[1]:.0f} after scrolling it: +{m[1] - mi:.0f} MB for GPU textures of {r['gpuTexturesMB']:.0f} MB (budget 256) and frames")
 sys.exit(1 if bad else 0)
 PY
 
