@@ -49,7 +49,9 @@ MUTANTS = {
     "nearMarker0": ("P4", "nearMarker 0 (only a crossing brings the next line)", [(WL, "static let nearMarker = 0.03", "static let nearMarker = 0.0", 1)]),
     "idotCancels": ("P4", "only the last stroke's end counts (an i-dot cancels the move)", [
         (WL, "let right = legacyStrokeEdge ? s.maxX : max(s.maxX, line.maxX)", "let right = s.maxX", 1)]),
-    "unclamped": ("P5", "the unclamped target is remembered (29 Oct bug 2)", [
+    # 0.1.6: the view isn't clamped at the page's edge any more, only at the canvas's reach (2 page widths), which the
+    # explored and fuzzed states don't reach: this one is expected to survive now (the bug it guarded can't happen).
+    "unclamped": ("P5", "the unclamped target is remembered (29 Oct bug 2; only at the canvas's reach since 0.1.6)", [
         (C, "var target = camera; target.center = c; target.clamp(); handRef = target.center", "var target = camera; target.center = c; handRef = c; target.clamp()", 2),
         (M, "var target = cam; target.center = c; target.clamp(); handRef = target.center", "var target = cam; target.center = c; handRef = c; target.clamp()", 2)]),
     "toMargin": ("P5", "the next line goes to the page's margin, not the block's start", [
@@ -64,8 +66,8 @@ MUTANTS = {
         (C, "} else if runStart.map({ abs(s.bounds.minX - $0) > camera.page.width * WritingLayout.newRunAway }) ?? true {", "} else {", 1),
         (M, "} else if runStart.map({ abs(s.minX - $0) > cam.page.width * WritingLayout.newRunAway }) ?? true {", "} else {", 1)]),
     "ownMoveIsHand": ("P6", "the app's own move counts as a hand move (handRef not updated)", [
-        (C, "var target = camera; target.center = c; target.clamp(); handRef = target.center", "var target = camera; target.center = c; target.clamp()", 1),
-        (M, "var target = cam; target.center = c; target.clamp(); handRef = target.center", "var target = cam; target.center = c; target.clamp()", 1)]),
+        (C, "var target = camera; target.center = c; target.clamp(); handRef = target.center", "var target = camera; target.center = c; target.clamp()", 2),
+        (M, "var target = cam; target.center = c; target.clamp(); handRef = target.center", "var target = cam; target.center = c; target.clamp()", 2)]),
     "undoResets": ("P6", "undo ends the block", [
         (C, "doc.undo(); endWritingLine(keepRun: true)", "doc.undo(); endWritingLine()", 1),
         (M, "        endWritingLine(keepRun: true)\n        let left", "        endWritingLine()\n        let left", 1)]),
