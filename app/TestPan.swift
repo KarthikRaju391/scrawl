@@ -86,6 +86,8 @@ enum TestPan {
                 // right by hand (the ½-page guide line is past the view's right edge here); once the ink crosses it,
                 // the next line comes and the view goes back to the block's start (30 Oct rules: no look-ahead).
                 canvas.clearPage()
+                // 0.1.6: lines are the width setting of the view; at 100% a line from 10% of the view runs past its right side.
+                var wideLine = canvas.tools; wideLine.lineWidthIndex = Camera.columnBound ? 0 : 2; canvas.tools = wideLine
                 canvas.setVisibleForReplay(x: 0, y: canvas.camera.page.height - canvas.camera.page.height / 2, w: pw / 2, z: 2)
                 canvas.flushInputForTest()
                 let nl0 = canvas.newLineCount, x0 = canvas.camera.visible.minX
