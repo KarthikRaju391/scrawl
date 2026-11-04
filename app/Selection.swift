@@ -30,6 +30,9 @@ final class SelectionBar: NSView {
     var fittingWidth: CGFloat { ceil(Self.pad * 2 + copy.fittingWidth + export.fittingWidth + Self.dividerGap) }
     override func layout() {
         super.layout()
+        // Before it's placed (a zero frame at launch) the capsule is a null rect with an infinite origin: laying the buttons
+        // out with it logged "NSLayoutConstraint … constant that exceeds internal limits" (autoresizing constraints).
+        guard bounds.width > 2 * Self.margin, bounds.height > 2 * Self.margin else { return }
         let c = capsule, h = c.height - 2 * Self.pad
         copy.frame = CGRect(x: c.minX + Self.pad, y: c.minY + Self.pad, width: copy.fittingWidth, height: h)
         export.frame = CGRect(x: copy.frame.maxX + Self.dividerGap, y: c.minY + Self.pad, width: export.fittingWidth, height: h)
