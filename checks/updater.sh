@@ -87,6 +87,8 @@ run() {
         "$A/Scrawl.app/Contents/MacOS/TrackpadDraw" --test-update "$@" >/dev/null 2>&1 &
     P=$!
     for _ in $(seq 1 240); do grep -q '"done" : true\|"restarting" : true' "$D/update-state.json" 2>/dev/null && break; sleep 0.25; done
+    # In /Applications, Spotlight registers the staged copy while it waits; do the same here, before the restart.
+    grep -q '"restarting" : true' "$D/update-state.json" 2>/dev/null && [ -d "$A/.Scrawl-update.app" ] && "$LS" -f "$A/.Scrawl-update.app" 2>/dev/null
     [ -n "$SHOT" ] && WN=$(python3 -c "import json;print(json.load(open('$D/update-state.json')).get('panelWindow',0))" 2>/dev/null) && [ "$WN" != 0 ] && screencapture -x -o -l"$WN" "$W/$S-panel.png"
     if grep -q '"restarting" : true' "$D/update-state.json" 2>/dev/null; then
         for _ in $(seq 1 160); do [ -f "$D/update-report.json" ] && grep -qE "updated to|didn't start" "$D/update.log" 2>/dev/null && break; sleep 0.25; done
@@ -96,6 +98,9 @@ run() {
     VERNOW=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$A/Scrawl.app/Contents/Info.plist" 2>/dev/null)
     NB1=$(python3 -c "import plistlib,sys; f=plistlib.load(open(sys.argv[1],'rb')); print(len(f['pages']), sum(len(p['strokes']) for p in f['pages']))" "$D/Notebook.tdnb" 2>/dev/null)
     LEFT=$(ls -a "$A" | grep -v '^\.\.\?$' | tr '\n' ' ')
+    # Bundles LaunchServices still knows inside this Applications folder, other than Scrawl.app itself (the staged copy
+    # and the backup must be forgotten once they're gone).
+    STALE=$("$LS" -dump 2>/dev/null | awk '/^path:/{sub(/^path: */,""); sub(/ \(0x[0-9a-f]+\)$/,""); print}' | grep -F "$(cd "$A" && pwd -P)/" | grep -v "^$(cd "$A" && pwd -P)/Scrawl.app$" | sort -u | tr '\n' ' ')
     chmod 755 "$A" 2>/dev/null
     for b in "$A"/*.app "$A"/.*.app "$A"/*.old-update; do [ -e "$b" ] && "$LS" -u "$b" 2>/dev/null; done
     pkill -f "$A/Scrawl.app/Contents/MacOS/TrackpadDraw" 2>/dev/null
@@ -106,6 +111,7 @@ ok='{"dmg":"good"}'
 
 if want happy; then SHOT=1 run happy "$ok" --update-restart; SHOT=
     R=$(cat "$W/happy/data/update-report.json" 2>/dev/null)
+    [ -z "$STALE" ] && pass "after the update LaunchServices knows nothing in that folder but Scrawl.app" || fail "after the update LaunchServices still knows: $STALE"
     echo "$STATES" | grep -q "offer > downloading > verifying > ready" && [ "$VERNOW" = $NEW ] && echo "$R" | grep -q "\"version\" : \"$NEW\"" && [ "$NB0" = "$NB1" ] && [ "$LEFT" = "Scrawl.app " ] \
         && pass "happy path: offer > download > verify > ready > restart; $NEW is installed and running and opened the same notebook ($NB1 pages/strokes); nothing left over ($LEFT)" \
         || fail "happy path: states [$STATES], installed $VERNOW, report $R, notebook $NB0 -> $NB1, left [$LEFT], log: $(cat "$W/happy/data/update.log" 2>/dev/null)"
@@ -136,6 +142,7 @@ if want readonly; then RO=1 run readonly "$ok"; RO=
 fi
 if want crash; then run crash '{"dmg":"crash"}' --update-restart
     R=$(cat "$W/crash/data/update-report.json" 2>/dev/null)
+    [ -z "$STALE" ] && pass "after the rollback LaunchServices knows nothing in that folder but Scrawl.app" || fail "after the rollback LaunchServices still knows: $STALE"
     [ "$VERNOW" = $OLD ] && echo "$R" | grep -q "\"version\" : \"$OLD\"" && grep -q "didn't start; putting the old one back" "$W/crash/data/update.log" && [ "$NB0" = "$NB1" ] \
         && pass "a new version that won't start: the old one is put back and reopened ($R)" || fail "crash: installed $VERNOW, report $R, log $(cat "$W/crash/data/update.log" 2>/dev/null)"
 fi

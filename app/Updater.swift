@@ -114,6 +114,11 @@ enum UpdateLocation {
         return nil
     }
     static var staged: String { ((bundle as NSString).deletingLastPathComponent as NSString).appendingPathComponent(".Scrawl-update.app") }
+    /// Remove a staged copy and make LaunchServices forget it (Spotlight registers it while it waits in the folder).
+    static func discardStaged() {
+        try? FileManager.default.removeItem(atPath: staged)
+        UpdateVerify.run("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-u", staged])
+    }
 }
 
 /// Downloads one file to a temp folder, with progress and cancel.
@@ -171,6 +176,11 @@ enum UpdateInstaller {
         guard let want = try? String(contentsOfFile: pendingPath, encoding: .utf8) else { return }
         try? FileManager.default.removeItem(atPath: pendingPath)
         try? "\(getpid()) \(AppInfo.version)".write(toFile: markerPath, atomically: true, encoding: .utf8)
+        // The helper of the version we updated from may predate forgetting these (0.1.6's does): forget them here too.
+        let ls = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        for p in [UpdateLocation.staged, UpdateLocation.bundle + ".old-update"] where !FileManager.default.fileExists(atPath: p) {
+            UpdateVerify.run(ls, ["-u", p])
+        }
         NSLog("Scrawl: started after an update to \(want.trimmingCharacters(in: .whitespacesAndNewlines))")
     }
 
@@ -181,20 +191,22 @@ enum UpdateInstaller {
         PID=$1; APP=$2; STAGED=$3; VER=$4; MARKER=$5; LOG=$6
         LS=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
         say() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*" >> "$LOG"; }
+        forget() { "$LS" -u "$1" >/dev/null 2>&1; }   # a path that's gone (or moved) mustn't stay registered
         launch() { if [ -n "$TRACKPAD_DRAW_DATA" ]; then "$1/Contents/MacOS/TrackpadDraw" $LAUNCH_ARGS >/dev/null 2>&1 & else /usr/bin/open -n "$1"; fi; }
-        i=0; while kill -0 "$PID" 2>/dev/null; do sleep 0.2; i=$((i+1)); [ $i -gt 600 ] && { say "old app still running after 120 s; update abandoned"; rm -rf "$STAGED"; exit 1; }; done
+        i=0; while kill -0 "$PID" 2>/dev/null; do sleep 0.2; i=$((i+1)); [ $i -gt 600 ] && { say "old app still running after 120 s; update abandoned"; rm -rf "$STAGED"; forget "$STAGED"; exit 1; }; done
         BACKUP="$APP.old-update"
         rm -rf "$BACKUP"
-        mv "$APP" "$BACKUP" || { say "couldn't move the old app aside"; rm -rf "$STAGED"; launch "$APP"; exit 1; }
-        if ! mv "$STAGED" "$APP"; then say "couldn't move the new app in; old one back"; mv "$BACKUP" "$APP"; launch "$APP"; exit 1; fi
+        mv "$APP" "$BACKUP" || { say "couldn't move the old app aside"; rm -rf "$STAGED"; forget "$STAGED"; launch "$APP"; exit 1; }
+        if ! mv "$STAGED" "$APP"; then say "couldn't move the new app in; old one back"; mv "$BACKUP" "$APP"; forget "$BACKUP"; launch "$APP"; exit 1; fi
+        forget "$STAGED"; forget "$BACKUP"
         "$LS" -f "$APP" >/dev/null 2>&1
         rm -f "$MARKER"
         launch "$APP"
         i=0; while [ $i -lt 100 ]; do [ -f "$MARKER" ] && grep -q " $VER\$" "$MARKER" && break; sleep 0.2; i=$((i+1)); done
-        if [ -f "$MARKER" ] && grep -q " $VER\$" "$MARKER"; then say "updated to $VER"; rm -rf "$BACKUP"; exit 0; fi
+        if [ -f "$MARKER" ] && grep -q " $VER\$" "$MARKER"; then say "updated to $VER"; rm -rf "$BACKUP"; forget "$BACKUP"; exit 0; fi
         say "the new version ($VER) didn't start; putting the old one back"
         pkill -f "$APP/Contents/MacOS/TrackpadDraw" 2>/dev/null
-        rm -rf "$APP"; mv "$BACKUP" "$APP"; "$LS" -f "$APP" >/dev/null 2>&1
+        rm -rf "$APP"; mv "$BACKUP" "$APP"; forget "$BACKUP"; "$LS" -f "$APP" >/dev/null 2>&1
         launch "$APP"
         exit 1
         """#
@@ -302,7 +314,7 @@ final class UpdatePanel: NSObject {
     }
     @objc func secondaryClicked() {
         if state == .downloading { download?.cancel(); return }
-        if state == .ready { try? FileManager.default.removeItem(atPath: UpdateLocation.staged) }
+        if state == .ready { UpdateLocation.discardStaged() }
         window.close()
     }
 
@@ -356,7 +368,7 @@ final class UpdatePanel: NSObject {
         }
     }
     private func fail(_ step: String, _ msg: String) {
-        try? FileManager.default.removeItem(atPath: UpdateLocation.staged)
+        UpdateLocation.discardStaged()
         state = .failed(msg)
         onFinished?(false, step)
     }
