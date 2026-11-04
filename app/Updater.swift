@@ -117,7 +117,13 @@ enum UpdateLocation {
     /// Remove a staged copy and make LaunchServices forget it (Spotlight registers it while it waits in the folder).
     static func discardStaged() {
         try? FileManager.default.removeItem(atPath: staged)
-        UpdateVerify.run("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-u", staged])
+        forget(staged)
+    }
+    /// lsregister -u for a path that may be gone: LaunchServices matches a missing bundle only by its resolved path
+    /// (/private/tmp, not /tmp), so resolve the folder it was in.
+    static func forget(_ path: String) {
+        let p = ((path as NSString).deletingLastPathComponent as NSString).resolvingSymlinksInPath + "/" + (path as NSString).lastPathComponent
+        UpdateVerify.run("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-u", p])
     }
 }
 
@@ -177,9 +183,8 @@ enum UpdateInstaller {
         try? FileManager.default.removeItem(atPath: pendingPath)
         try? "\(getpid()) \(AppInfo.version)".write(toFile: markerPath, atomically: true, encoding: .utf8)
         // The helper of the version we updated from may predate forgetting these (0.1.6's does): forget them here too.
-        let ls = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
         for p in [UpdateLocation.staged, UpdateLocation.bundle + ".old-update"] where !FileManager.default.fileExists(atPath: p) {
-            UpdateVerify.run(ls, ["-u", p])
+            UpdateLocation.forget(p)
         }
         NSLog("Scrawl: started after an update to \(want.trimmingCharacters(in: .whitespacesAndNewlines))")
     }
@@ -191,7 +196,7 @@ enum UpdateInstaller {
         PID=$1; APP=$2; STAGED=$3; VER=$4; MARKER=$5; LOG=$6
         LS=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
         say() { echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $*" >> "$LOG"; }
-        forget() { "$LS" -u "$1" >/dev/null 2>&1; }   # a path that's gone (or moved) mustn't stay registered
+        forget() { "$LS" -u "$(cd "$(dirname "$1")" 2>/dev/null && pwd -P)/$(basename "$1")" >/dev/null 2>&1; }   # a path that's gone (or moved) mustn't stay registered
         launch() { if [ -n "$TRACKPAD_DRAW_DATA" ]; then "$1/Contents/MacOS/TrackpadDraw" $LAUNCH_ARGS >/dev/null 2>&1 & else /usr/bin/open -n "$1"; fi; }
         i=0; while kill -0 "$PID" 2>/dev/null; do sleep 0.2; i=$((i+1)); [ $i -gt 600 ] && { say "old app still running after 120 s; update abandoned"; rm -rf "$STAGED"; forget "$STAGED"; exit 1; }; done
         BACKUP="$APP.old-update"
