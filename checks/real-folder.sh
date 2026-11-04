@@ -17,4 +17,5 @@ after=$(print)
 echo "bench exit $b, writing-verify exit $w (logs in /tmp/scrawl-realfolder-*.log)"
 if [ "$before" = "$after" ]; then echo "PASS nothing in $DIR changed during the bench, writing-verify and a test-mode app run"; echo "RESULT: PASS"
 else echo "FAIL $DIR changed:"; diff <(echo "$before") <(echo "$after") | head -10; echo "RESULT: FAIL (1)"; fi
-[ -n "$SELF" ] && rm -rf "$DIR"
+[ -z "$SELF" ] || rm -rf "$DIR"
+[ "$before" = "$after" ]   # the exit status is the check
