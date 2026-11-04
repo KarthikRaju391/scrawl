@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.6 (2026-11-05, build 11)
+
 - **Pictures on a page.** Paste an image (⌘V), drop one on the page, or File › Insert Image… (⇧⌘I): it lands on the
   page you're on, under your ink. With the Select tool, click it to move it, drag a corner to resize it (Shift for free
   proportions), ⌫ to delete it, ⌥⌘] / ⌥⌘[ to bring it forward or send it back, ⌘C to copy it. Every change can be
