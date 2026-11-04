@@ -72,9 +72,10 @@ func exportPageChecks(_ check: (Bool, String) -> Void) {
     c.testAddStroke(wave(300, -700))                       // below the first screen
     c.testAddStroke(wave(1450, 600, 30))                   // runs off the page's right edge
     let top = c.camera.page.height
-    // The page area, worked out independently: full width, from the top to 20 below the lowest ink.
-    let lowest = c.doc.strokes.map(\.bounds.minY).min()!
-    let pageRect = CGRect(x: 0, y: lowest - 20, width: 1600, height: top - (lowest - 20))
+    // The page area, worked out independently: full width, from the top to 20 below the lowest ink; on the infinite canvas
+    // (0.1.6) also to 20 past ink that runs off the column's side (the wave at 1450 does).
+    let lowest = c.doc.strokes.map(\.bounds.minY).min()!, rightmost = c.doc.strokes.map(\.bounds.maxX).max()!
+    let pageRect = CGRect(x: 0, y: lowest - 20, width: max(1600, rightmost + 20), height: top - (lowest - 20))
 
     func export(_ o: ExportOptions, _ name: String) -> Data? {
         let url = URL(fileURLWithPath: dir + "/" + name)

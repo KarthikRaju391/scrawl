@@ -113,7 +113,7 @@ final class ThumbnailCache {
         if w / h < a { w = h * a } else { h = w / a }
         if w < page.width / 3 { w = page.width / 3; h = w / a }
         // Content inside the page's column (every page before 0.1.6): exactly as before.
-        if Camera.columnBound || (ink.minX >= 0 && ink.maxX <= page.width && ink.maxY <= page.height) {
+        if Camera.columnBound || (ink.minX >= -0.5 && ink.maxX <= page.width + 0.5 && ink.maxY <= page.height + 0.5) {
             if w > page.width { w = page.width; h = w / a }
             let x = min(max(ink.midX - w / 2, 0), page.width - w)
             let tall = ink.height + 2 * m > h + 0.5
@@ -122,6 +122,8 @@ final class ThumbnailCache {
         }
         // The infinite canvas: content anywhere, wider than the page too (then the tile is wider in page units); a tall
         // page still shows from its content's top, as it reads.
+        let widest = max(page.width, ink.width + 2 * m)   // tall content: as wide as it is (top-anchored below), not shrunk to fit
+        if w > widest { w = widest; h = w / a }
         let x = ink.midX - w / 2
         let tall = ink.height + 2 * m > h + 0.5
         let maxY = tall ? ink.maxY + m : ink.midY + h / 2

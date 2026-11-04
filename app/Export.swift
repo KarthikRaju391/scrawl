@@ -439,7 +439,14 @@ extension CanvasView {
         }
         var r = CGRect(x: 0, y: lowest, width: camera.page.width, height: camera.page.height - lowest)
         if !Camera.columnBound {
-            for s in d.strokes { r = r.union(s.bounds.insetBy(dx: -20, dy: -20)) }
+            // Grown only on the sides where content goes past the column: ink by 20 units more, pictures to their edges.
+            let W = camera.page.width, top = camera.page.height
+            for s in d.strokes {
+                let b = s.bounds
+                if b.minX < 0 { r = r.union(CGRect(x: b.minX - 20, y: r.minY, width: 0, height: 0)) }
+                if b.maxX > W { r = r.union(CGRect(x: b.maxX + 20, y: r.minY, width: 0, height: 0)) }
+                if b.maxY > top { r = r.union(CGRect(x: r.minX, y: b.maxY + 20, width: 0, height: 0)) }
+            }
             for i in d.images { r = r.union(i.frame) }
         }
         return r

@@ -11,8 +11,14 @@ func settingsChecks(_ check: (Bool, String) -> Void) {
     var cam2 = before
     cam2.navigate(from: CGPoint(x: 0.5, y: 0.5), to: CGPoint(x: 0.5, y: 0.5), ratio: 1.8, zoomLocked: false)
     check(abs(cam2.zoom - 5.4) < 1e-9, "zoom unlocked: pinch ratio 1.8 zooms 3 -> 5.4")
+    Camera.columnBound = true
     var wide = Camera(page: page); wide.zoom = 3; wide.center = CGPoint(x: -500, y: 500); wide.clamp()
-    check(wide.visible.minX == 0, "view stays inside the page's sides (no writing off the page edge)")
+    check(wide.visible.minX == 0, "--column-bound (before 0.1.6): the view stays inside the page's sides")
+    Camera.columnBound = false
+    var free = Camera(page: page); free.zoom = 3; free.center = CGPoint(x: -500, y: 1500); free.clamp()
+    var far = Camera(page: page); far.zoom = 0.1; far.center = CGPoint(x: -50_000, y: 50_000); far.clamp()
+    check(free.center == CGPoint(x: -500, y: 1500) && far.zoom == Camera.minZoom && far.center.x == -Camera.reach * page.width && far.center.y == page.height + Camera.reach * page.width,
+          "the infinite canvas: the view goes past the page's left side and above its top (\(free.center)); zoom stops at 25% and the view within \(Int(Camera.reach)) page widths of the page (\(far.center))")
 
     let suite = "trackpad-draw-bench-\(getpid())"
     let d = UserDefaults(suiteName: suite)!

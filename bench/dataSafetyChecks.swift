@@ -5,11 +5,12 @@ import AppKit
 
 func dataSafetyChecks(_ check: (Bool, String) -> Void) {
     let real = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!.path + "/Scrawl"
-    check(!AppPaths.persists, "the bench can't save (persists \(AppPaths.persists))")
+    // Run with a throwaway TRACKPAD_DRAW_DATA (as every run should be), the bench saves there and only there.
+    check(!AppPaths.persists || (AppPaths.override != nil && AppPaths.dataDir != real), "the bench can't save, or only to its own TRACKPAD_DRAW_DATA folder (persists \(AppPaths.persists), \(AppPaths.dataDir))")
     check(AppPaths.override != nil || AppPaths.dataDir != real, "a development build's notebook isn't the real one (\(AppPaths.dataDir))")
     // A dirty canvas with the run loop running (what the image checks did) saves nothing. Only tried once saving is
     // provably off: before that, this would be the very write we guard against.
-    if !AppPaths.persists && AppPaths.dataDir != real {
+    if AppPaths.dataDir != real {
         let attrs = { (try? FileManager.default.attributesOfItem(atPath: real + "/Notebook.tdnb")) as NSDictionary? }
         let before = attrs()?.fileModificationDate()
         let c = CanvasView(frame: NSRect(x: 0, y: 0, width: 600, height: 400), device: nil)
