@@ -33,7 +33,15 @@ enum TestMenus {
         var r: [String: Any] = [:]
         if app.canvas.drawMode { app.exitDrawMode("test") }
         app.window.makeFirstResponder(app.canvas)
+        // The test pasteboard is shared by every test run (a named pasteboard outlives the process): another check's Copy
+        // leaves an image there, and with nothing on it Paste must be dimmed; with an image, Paste puts it on the page.
+        AppDelegate.pasteboard.clearContents()
         r["onPage"] = dump()
+        let png = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 4, pixelsHigh: 4, bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                   colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)?.representation(using: .png, properties: [:])
+        AppDelegate.pasteboard.clearContents(); if let png { AppDelegate.pasteboard.setData(png, forType: .png) }
+        r["pasteWithImage"] = dump().first { ($0["menu"] as? String) == "Edit" && ($0["title"] as? String) == "Paste" }?["enabled"] as? Bool ?? false
+        AppDelegate.pasteboard.clearContents()
         let vm = NSApp.mainMenu?.items.first { $0.submenu?.title == "View" }?.submenu
         r["fullScreenItems"] = (vm?.items ?? []).filter { $0.action == #selector(NSWindow.toggleFullScreen(_:)) }
             .map { "\($0 === app.ownFullScreenItem ? "ours" : "system") key=\($0.keyEquivalent) mask=\($0.keyEquivalentModifierMask.rawValue)" }

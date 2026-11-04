@@ -26,7 +26,8 @@ chk(len(fs) == 1, f"View has one Enter Full Screen (macOS sets its shortcut): {r
 chk(edit("copyPageAction").get("title") == "Copy", "in the search field ⌘C reads Copy (its text), not Copy Page as Image")
 chk(r["selectAllHandled"] and r["selected"] == "{0, 11}", f"⌘A in the search field selects its text ({r['selected']})")
 chk(page.get(("Edit", "Copy Page as Image"), {}).get("key") == "⌘C" and not page.get(("Edit", "Paste"), {}).get("enabled", True),
-    "on a page: ⌘C is Copy Page as Image; Paste is dimmed (nothing to paste into)")
+    "on a page with nothing on the pasteboard: ⌘C is Copy Page as Image; Paste is dimmed")
+chk(r.get("pasteWithImage") is True, "on a page with an image on the pasteboard: Paste is enabled (it puts the picture on the page)")
 dupes = {}
 for i in r["onPage"]:
     if i["key"]: dupes.setdefault(i["key"], []).append(i["title"])
