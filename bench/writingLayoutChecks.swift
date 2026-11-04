@@ -67,4 +67,51 @@ func writingLayoutChecks(_ check: (Bool, String) -> Void) {
     var nm = cam; nm.center = nc
     let fromTop = (nm.visible.maxY - 760) / nm.visible.height
     check(abs(fromTop - 0.575) < 1e-9, String(format: "new line: the next line sits %.3f of the way down the view", fromTop))
+
+    blockWidthChecks(check)
+}
+
+/// 0.1.6, the infinite canvas: a block's lines are the width setting of the view's width when it started (`blockWidth`),
+/// from its start, with no page-edge cap and no 93% zone; the view follows a line longer than itself.
+func blockWidthChecks(_ check: (Bool, String) -> Void) {
+    let pageW = 1600.0
+    func L(_ start: Double, _ bw: Double, width: Double = 1) -> WritingLayout { var l = WritingLayout(); l.lineWidth = width; l.segmentStart = start; l.blockWidth = bw; return l }
+    func ink(_ x0: Double, _ x1: Double, y: Double = 500) -> CGRect { CGRect(x: x0, y: y, width: x1 - x0, height: 30) }
+    func kind(_ m: WritingLayout.Move) -> String { m.kind }
+    // At zoom 3 a 100% block from 1200 is 533 long: its end at 1733, past the page's edge (no 95% cap).
+    let v3 = CGRect(x: 1150, y: 300, width: 1600.0 / 3, height: 984.6 / 3)
+    let l = L(1200, 1600.0 / 3)
+    check(abs(l.lineEnd(lineLeft: 1200, pageWidth: pageW) - (1200 + 1600.0 / 3)) < 1e-9, "a block's line ends at its start + its width (1200 + 533 = 1733), past the page's edge: no 95% cap")
+    // Ink at 94% of the page (the old 93% near-edge zone) is no line end any more; only ink near the block's own end is.
+    let at94 = ink(1450, 0.94 * pageW)
+    check(kind(l.after(stroke: at94, line: at94, lineStrokes: [at94], lineLeft: 1200, visible: CGRect(x: 1150, y: 300, width: 1600, height: 984.6), pageWidth: pageW)) == "none",
+          "ink at 94% of the page, well before the block's end: no next line (the 93% rule is gone)")
+    let near = ink(1450, 1733 - 0.02 * 533), short = ink(1450, 1733 - 0.04 * 533)
+    let wide = CGRect(x: 1100, y: 300, width: 1000, height: 600)   // a view the line fits in: no follow either
+    check(kind(l.after(stroke: near, line: near, lineStrokes: [near], lineLeft: 1200, visible: wide, pageWidth: pageW)) == "newLine"
+          && kind(l.after(stroke: short, line: short, lineStrokes: [short], lineLeft: 1200, visible: wide, pageWidth: pageW)) == "none",
+          "ink within 3% of the block's line before its end: the next line; 4% before it: none")
+    // The block's width doesn't depend on the zoom now: the same layout at zoom 1 and zoom 6 gives the same end.
+    check(L(300, 800).lineEnd(lineLeft: 300, pageWidth: pageW) == 1100, "the end depends only on the block (its start and its width), not on the view now")
+    // A line longer than the view: the view follows once the ink is within 12% of its right side, to put the ink's end in the
+    // middle, and never past the line's end + 5% of the view.
+    let v = CGRect(x: 1000, y: 300, width: 400, height: 246)
+    let lf = L(1050, 1200)   // ends at 2250
+    let mid = ink(1060, 1300), edgeInk = ink(1060, 1360)
+    check(kind(lf.after(stroke: mid, line: mid, lineStrokes: [mid], lineLeft: 1050, visible: v, pageWidth: pageW)) == "none", "ink at 75% of the view: no follow yet")
+    if case .follow(let c) = lf.after(stroke: edgeInk, line: edgeInk, lineStrokes: [edgeInk], lineLeft: 1050, visible: v, pageWidth: pageW) {
+        check(abs(c.x - (1360 - 0.5 * 400 + 200)) < 1e-9 && abs(c.y - v.midY) < 1e-9, "ink within 12% of the view's right side: the view follows, the ink's end to its middle, at the same height (centre x \(c.x))")
+    } else { check(false, "ink within 12% of the view's right side: expected a follow") }
+    let lshort = L(1050, 360)   // ends at 1410: the view goes no further than 1410 + 5% of it
+    let e2 = ink(1060, 1365)
+    let m2 = lshort.after(stroke: e2, line: e2, lineStrokes: [e2], lineLeft: 1050, visible: v, pageWidth: pageW)
+    if case .follow(let c) = m2 { check(c.x + 200 <= 1410 + 20 + 1e-9, "the view never follows past the line's end + 5% of it (right edge \(c.x + 200))") }
+    else { check(kind(m2) != "follow", "near its end the line's next line or nothing, never a follow past it (\(kind(m2)))") }
+    // Next line: back to the block's start, which may be left of the page (negative): not clamped to the page's edge.
+    let nc = WritingLayout.newLineCenter(lineLeft: -300, lineMidY: 500, pitch: 40, visible: v, bounded: false)
+    check(abs(nc.x - (-300 - 0.05 * 400 + 200)) < 1e-9, "the next line goes back to a block start left of the page (x -300), not to the page's edge")
+    // Before 0.1.6 (no blockWidth): the 95% cap and the 93% zone as they were.
+    var old = WritingLayout(); old.lineWidth = 1; old.segmentStart = 1200
+    check(abs(old.lineEnd(lineLeft: 1200, pageWidth: pageW) - 0.95 * pageW) < 1e-9 && kind(old.after(stroke: at94, line: at94, lineStrokes: [at94], lineLeft: 1200, visible: v3, pageWidth: pageW)) == "newLine",
+          "--column-bound (no blockWidth): the old rules stand (end at 95% of the page, ink at 94% is a line end)")
 }
