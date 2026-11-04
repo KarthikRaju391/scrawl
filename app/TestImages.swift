@@ -89,7 +89,9 @@ enum TestImages {
     }
 
     /// A screenshot of this window, taken by the script (it watches for shot-<name>.req).
-    static func shot(_ name: String) {
+    static func shot(_ name: String, app: AppDelegate? = nil) {
+        // A background window presents nothing by itself: draw the canvas now, in this transaction, so the screenshot shows it.
+        if let app, !app.galleryShown { app.canvas.drawNowWithTransaction(); CATransaction.flush(); spin(0.15) }
         try? name.write(toFile: dir + "/shot-\(name).req", atomically: true, encoding: .utf8)
         wait(5) { FileManager.default.fileExists(atPath: dir + "/shot-\(name).done") }
     }
@@ -116,7 +118,19 @@ enum TestImages {
             r["pasteOnPage"] = canvas.pages.count == n0 && canvas.pageIndex == 0
             r["pasteSelected"] = canvas.tools.tool == .select && canvas.selectedImageId == canvas.doc.images.first?.id
             r["pasteHeader"] = app.container.hint.stringValue
-            spin(0.3); shot("import")
+            // What the canvas draws right after the paste (its own offscreen render, reduced to 160 x 100): the share of it that is
+            // the card's blue (paper and desk are grey or white).
+            if let snap = canvas.snapshot(scale: 1) {
+                let w = 160, h = 100
+                let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                ctx.draw(snap, in: CGRect(x: 0, y: 0, width: w, height: h))
+                let p = ctx.data!.assumingMemoryBound(to: UInt8.self)
+                var blue = 0
+                for k in 0..<(w * h) where Int(p[k * 4 + 2]) > Int(p[k * 4]) + 30 { blue += 1 }
+                let f = canvas.doc.images.first.map { $0.frame.width * $0.frame.height / (canvas.renderRect.width * canvas.renderRect.height) } ?? 0
+                r["pasteRendered"] = [Double(blue) / Double(w * h), f]   // blue share, the picture's share of the view
+            }
+            spin(0.3); shot("import", app: app)
             // 2. A JPEG file dropped on the window at a point: on the page, centred there.
             let jpgURL = URL(fileURLWithPath: fx + "/Holiday photo.jpg")
             try? encode(card(1200, 900, hue: 0.08), .jpeg).write(to: jpgURL)
@@ -160,7 +174,7 @@ enum TestImages {
                 r["resizeByPointer"] = b !== a && abs(b.frame.width / b.frame.height - a.frame.width / a.frame.height) < 1e-6 && b.frame.width > a.frame.width
                     && abs(b.frame.minX - a.frame.minX) < 1e-6 && abs(b.frame.maxY - a.frame.maxY) < 1e-6
             } else { r["resizeByPointer"] = false }
-            spin(0.2); shot("attach")
+            spin(0.2); shot("attach", app: app)
             _ = app.copySelectedPicture()
             r["copyPicture"] = pb.data(forType: NSPasteboard.PasteboardType("public.jpeg")).map { sha($0) == sha(photo.asset.data() ?? Data()) } ?? false
             let del = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: app.window.windowNumber, context: nil,
@@ -185,7 +199,7 @@ enum TestImages {
             r["inboxWhileRunning"] = wait(10) { canvas.pages.contains { $0.importId == "while-running" } }
             r["inboxDone"] = wait(10) { FileManager.default.fileExists(atPath: AppPaths.dataDir + "/Inbox/while-running.done.json") }
             r["inboxHeader"] = app.container.hint.stringValue
-            shot("inbox")
+            shot("inbox", app: app)
             // The overview: picture pages' tiles (from their tops), then back to the page.
             app.showGallery(); spin(0.8); shot("gallery")
             app.openPage(canvas.pageIndex); spin(0.6)
@@ -224,7 +238,7 @@ enum TestImages {
             if let d = AppDelegate.pasteboard.data(forType: .png) { try? d.write(to: URL(fileURLWithPath: dir + "/copy.png")) }
             // The window as it is (the script's screenshot of this window).
             app.exitDrawMode("test")
-            spin(0.3); shot("writing")
+            spin(0.3); shot("writing", app: app)
             write(r, "images-write.json")
             // 8. Saved; the expected state; then mid-stroke until the script's kill -9.
             canvas.setNeedsRender()
