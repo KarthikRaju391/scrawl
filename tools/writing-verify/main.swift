@@ -34,7 +34,7 @@ if let d = arg("--explore").flatMap(Int.init) {
         q.waitUntilAllOperationsAreFinished()
         out(String(format: "EXPLORE wait %.0f ms, depth %d, %d starts, %d events: %d distinct states, %d transitions, %d recovery runs, %.0f s",
                    w, d, starts.count, (core ? WExplore.coreAlphabet(w / 1000) : WExplore.fullAlphabet(w / 1000)).count, total.states, total.transitions, total.recoveries, Date().timeIntervalSince(t0)))
-        for p in ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8a", "P8b", "P8c"] {
+        for p in ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8a", "P8b", "P8c", "P9"] {
             guard let (start, path, msg) = found[p] else { out("  \(p): holds within the bound"); continue }
             failures += 1
             let small = WExplore.shrink(start, path, prop: p)
@@ -63,7 +63,7 @@ if let n = arg("--fuzz").flatMap(Int.init) {
         out(String(format: "FUZZ wait %.0f ms: %d runs x %d events (%d steps) on the real CanvasView, %.0f s", w, n, len, steps, Date().timeIntervalSince(t0)))
         out("  reached: " + WFuzz.stats.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", "))
         WFuzz.stats = [:]
-        for p in ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8a", "P8b", "P8c", "model"] {
+        for p in ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8a", "P8b", "P8c", "P9", "model"] {
             guard let (start, evs, _) = fails[p] else { out("  \(p): no failure"); continue }
             failures += 1
             let small = WFuzz.shrink(start, evs, waitMs: w, prop: p)
