@@ -75,6 +75,7 @@ final class PageMapView: NSView {
         for i in c.doc.images { r = r.union(i.frame) }
         let m = page.width * 0.02
         r = r.insetBy(dx: -m, dy: -m)
+        if !Camera.columnBound { return r }   // the infinite canvas: everything there is, above the page's top too
         return CGRect(x: r.minX, y: r.minY, width: r.width, height: min(r.maxY, page.height + m) - r.minY)
     }
 

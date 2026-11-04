@@ -20,9 +20,21 @@ struct WritingLayout {
     var legacyStrokeEdge = false   // replays of old sessions: the edge check used only the last stroke
 
     enum Move: Equatable {
-        case none, newLine(CGPoint)
-        var kind: String { switch self { case .none: return "none"; case .newLine: return "newLine" } }
+        /// `follow`: the line runs on past the view's right side, the view goes along with it (0.1.6; camera only).
+        case none, newLine(CGPoint), follow(CGPoint)
+        var kind: String { switch self { case .none: return "none"; case .newLine: return "newLine"; case .follow: return "follow" } }
     }
+
+    // MARK: 0.1.6, the infinite canvas: the page's edge is no limit
+    // A block's lines are as long as the width setting (50 / 75 / 100%) of the view's width when the block started, from the
+    // block's start (where its first stroke landed): `blockWidth`, fixed for the block (zooming in or out while writing it
+    // doesn't change it; the next block takes the zoom then). No 95% cap, no 93% near-edge rule: the only early trigger is
+    // ink just short of the marker (`nearMarker` of the line). A line longer than the view: the view follows it as it fills
+    // (`follow`), at the same pause as a next line. Nil `blockWidth`: the rules before 0.1.6 (`--column-bound`).
+    var blockWidth: Double?
+    /// The view follows a line once its ink is within this share of the view's width from the view's right side, and goes
+    /// so that the ink is at `followTo` of the view.
+    static let followWithin = 0.12, followTo = 0.5
 
     /// Where this line started, if a deliberate hand pan moved it (Canvas decides that): the line then ends ½ or
     /// ¾ of the page after this point instead of after the left margin. Auto-pans never move it.
@@ -31,7 +43,8 @@ struct WritingLayout {
     var wordHint: Double?
     /// The limit for this line (page units).
     func lineEnd(lineLeft: Double, pageWidth: Double) -> Double {
-        min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageWidth * Self.rightCap)
+        if let bw = blockWidth { return (segmentStart ?? lineLeft) + bw }
+        return min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageWidth * Self.rightCap)
     }
     /// The limit never goes past 95% of the page width (Karthik, 29 Oct): at 97% ink often stopped short of it (no next
     /// line) and the guide line hugged the page's edge; at 92% his lines (he writes to 95-100% of the page) crossed it
@@ -51,7 +64,8 @@ struct WritingLayout {
     /// Where the "full line" zone starts: `nearMarker` of the line width before the marker; with the marker near the
     /// page's edge (past 93%), at 93% of the page (never before: he once wrote a word more after one ending at 92.99%).
     func nearMarkerStart(lineEnd: Double, pageWidth: Double) -> Double {
-        lineEnd > pageWidth * Self.nearEdge ? pageWidth * Self.nearEdge : lineEnd - Self.nearMarker * lineWidth * pageWidth
+        if let bw = blockWidth { return lineEnd - Self.nearMarker * bw }
+        return lineEnd > pageWidth * Self.nearEdge ? pageWidth * Self.nearEdge : lineEnd - Self.nearMarker * lineWidth * pageWidth
     }
     /// A hand pan counts as deliberate when the view moved sideways by at least this much of its width.
     static let deliberatePan = 0.10
@@ -65,15 +79,15 @@ struct WritingLayout {
     /// `line` = bounds of the current line's ink (incl. this stroke); `lineStrokes` = its strokes;
     /// `lineLeft` = where lines start (the app passes `lineStart`).
     func after(stroke s: CGRect, line: CGRect, lineStrokes: [CGRect], lineLeft: Double, visible v: CGRect, pageWidth: Double) -> Move {
-        let pageEnd = pageWidth * Self.rightCap
         // A hard limit: 50 / 75 / 100% of the page width from where the writing run began (the app passes it as
-        // `segmentStart`; without one, from the page's left edge), capped at the page's right margin.
-        let lineEnd = min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageEnd)
+        // `segmentStart`; without one, from the page's left edge), capped at the page's right margin. 0.1.6: the block's
+        // own width from its start, no cap.
+        let lineEnd = self.lineEnd(lineLeft: lineLeft, pageWidth: pageWidth)
         // The line's rightmost ink, not just this stroke: an i-dot or t-cross placed back inside the
         // word must not cancel a move that the word's end already called for.
         let right = legacyStrokeEdge ? s.maxX : max(s.maxX, line.maxX)
         let pitch = max(line.height * 1.35, v.height * 0.12)
-        let next = Self.newLineCenter(lineLeft: lineLeft, lineMidY: line.midY, pitch: pitch, visible: v)
+        let next = Self.newLineCenter(lineLeft: lineLeft, lineMidY: line.midY, pitch: pitch, visible: v, bounded: blockWidth == nil)
         if legacyStrokeEdge {
             if right >= lineEnd { return .newLine(next) }
         } else if right >= lineEnd {
@@ -87,13 +101,20 @@ struct WritingLayout {
         }
         // (No look-ahead any more: breaking before a word that "wouldn't fit" moved the page before Karthik reached the
         // end of the line, 29 Oct. The line goes to the next once its ink crosses the limit.)
+        // 0.1.6: a line running on past the view's right side, the view follows (only sideways; never past the line's end).
+        if blockWidth != nil, right > v.maxX - Self.followWithin * v.width {
+            let cx = min(right - Self.followTo * v.width + v.width / 2, lineEnd + v.width * 0.05 - v.width / 2)
+            if cx > v.midX + 1e-9 { return .follow(CGPoint(x: cx, y: v.midY)) }
+        }
         return .none
     }
 
     /// The view after a new line: one line (`pitch`) down, the line `lineFromTop` down the view, with the
     /// line start 5% in from the left.
-    static func newLineCenter(lineLeft: Double, lineMidY: Double, pitch: Double, visible v: CGRect) -> CGPoint {
-        CGPoint(x: max(lineLeft - v.width * 0.05, 0) + v.width / 2, y: lineMidY - pitch + (lineFromTop - 0.5) * v.height)
+    /// `bounded` (before 0.1.6): the view never left of the page's edge.
+    static func newLineCenter(lineLeft: Double, lineMidY: Double, pitch: Double, visible v: CGRect, bounded: Bool = true) -> CGPoint {
+        let left = lineLeft - v.width * 0.05
+        return CGPoint(x: (bounded ? max(left, 0) : left) + v.width / 2, y: lineMidY - pitch + (lineFromTop - 0.5) * v.height)
     }
 
     /// Whether the line's last word looks unfinished: much shorter (< 60%) than this line's typical word, so a

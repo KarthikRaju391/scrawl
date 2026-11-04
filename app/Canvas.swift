@@ -198,6 +198,15 @@ struct Camera {
     var zoom = 1.0          // 1 = whole page visible
     var center: CGPoint
     static let maxZoom = 12.0
+    /// 0.1.6, the infinite canvas: the view goes past the page's sides and above its top (ink and pictures can go there), and
+    /// zooms out to 25%: four page widths across, the most where handwriting written at 100% can still be told apart.
+    static let minZoom = 0.25
+    /// How far past the page's sides and top the view's centre may go, in page widths: room to work around the page without
+    /// getting lost (zoomed out to 25%, the view is four page widths wide).
+    static let reach = 2.0
+    /// The view kept on the page's column, as before 0.1.6 (replays of sessions recorded then: `--column-bound`).
+    nonisolated(unsafe) static var columnBound = CommandLine.arguments.contains("--column-bound")
+    var minZoom: Double { Self.columnBound ? 1 : Self.minZoom }
 
     init(page: CGSize) { self.page = page; center = CGPoint(x: page.width / 2, y: page.height / 2) }
     /// The edge guard's band (fraction of the pad per side). The pad inside it maps onto the whole view;
@@ -219,23 +228,30 @@ struct Camera {
     /// The page is `page.width` wide, its top edge is at y = page.height, and it is infinitely long
     /// downwards (y keeps decreasing). `page.height` is the visible height at zoom 1.
     mutating func clamp() {
-        zoom = min(max(zoom, 1), Self.maxZoom)
+        zoom = min(max(zoom, minZoom), Self.maxZoom)
         let v = visible
-        center.x = min(max(center.x, v.width / 2), page.width - v.width / 2)
-        center.y = min(center.y, page.height - v.height / 2)
+        if Self.columnBound {
+            center.x = min(max(center.x, v.width / 2), page.width - v.width / 2)
+            center.y = min(center.y, page.height - v.height / 2)
+        } else {
+            let r = Self.reach * page.width
+            center.x = min(max(center.x, -r), page.width + r)
+            center.y = min(center.y, page.height + r)
+        }
     }
     /// Two-finger gesture: the canvas point under the previous centroid follows the fingers; the
     /// zoom changes by `ratio` unless the zoom is locked (then it only pans).
     mutating func navigate(from prev: CGPoint, to now: CGPoint, ratio: Double, zoomLocked: Bool) {
         let anchor = canvas(fromPad: prev)
-        if !zoomLocked { zoom = min(max(zoom * ratio, 1), Self.maxZoom) }
+        if !zoomLocked { zoom = min(max(zoom * ratio, minZoom), Self.maxZoom) }
         let v = visible, a = Self.active(now)
         center = CGPoint(x: anchor.x - a.x * v.width + v.width / 2, y: anchor.y - a.y * v.height + v.height / 2)
         clamp()
     }
 
     /// Top-left of the page at the current zoom.
-    mutating func home() { let v = visible; center = CGPoint(x: v.width / 2, y: page.height - v.height / 2) }
+    /// Zoomed out past 100%, the page's column in the middle.
+    mutating func home() { let v = visible; center = CGPoint(x: v.width >= page.width ? page.width / 2 : v.width / 2, y: page.height - v.height / 2) }
     /// Pad position (0...1, y up) -> canvas point. This is the absolute mapping.
     func canvas(fromPad p: CGPoint) -> CGPoint {
         let v = visible, n = Self.active(p)
@@ -898,12 +914,20 @@ final class CanvasView: MTKView {
     /// line goes back to it, and every line's width counts from it. A run starts with the first stroke after writing
     /// mode turns on, a page change, a deliberate hand pan to write somewhere new, or writing well above or below the
     /// line; a pause doesn't start one.
-    private var runStart: Double?
+    private var runStart: Double? {
+        didSet { if runStart != oldValue { blockViewWidth = runStart == nil ? nil : camera.visible.width } }
+    }
+    /// 0.1.6: the view's width (page units) when the block started; its lines are the width setting of it, whatever the
+    /// zoom later (WritingLayout.blockWidth). Nil with `--column-bound` (the rules before).
+    private var blockViewWidth: Double?
+    /// The block's line length now (the width setting x the view's width at the block's start), nil before a block.
+    var blockWidth: Double? { Camera.columnBound ? nil : blockViewWidth.map { $0 * ToolState.lineWidths[tools.lineWidthIndex] } }
     /// Where the next-line pan comes for the current line (page x): its width limit, moved along when a deliberate hand
     /// pan moved the line's start. Nil outside writing mode (no width chosen). Drawn as a faint line.
     var lineLimitX: Double? {
         guard writingMode else { return nil }
         var l = WritingLayout(); l.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]; l.segmentStart = segmentStart
+        if !Camera.columnBound { guard let bw = blockWidth else { return nil }; l.blockWidth = bw }   // no block yet: no limit
         return l.lineEnd(lineLeft: l.lineStart(pageWidth: camera.page.width), pageWidth: camera.page.width)
     }
     static let limitLineColor = SIMD4<Float>(0.10, 0.45, 0.91, 0.22)
@@ -926,6 +950,16 @@ final class CanvasView: MTKView {
         }
     }
     private var limitTargetAlpha: Double {
+        // 0.1.6: the limit shows for the whole block (Karthik judges the rule by seeing it), a little lighter until the ink nears it.
+        if !Camera.columnBound, lineLimitX != nil {
+            var near = 0.0
+            if let r = lineRight, let lim = lineLimitX, let bw = blockWidth {
+                let k: Double = 1 - (lim - r) / (Self.limitShowWithin * bw)
+                near = min(max(k, 0), 1)
+            }
+            let full = Double(Self.limitLineColor.w)
+            return full * (0.6 + 0.4 * near)
+        }
         guard let lim = lineLimitX, let right = lineRight else { return 0 }
         let within = Self.limitShowWithin * ToolState.lineWidths[tools.lineWidthIndex] * camera.page.width
         return Double(Self.limitLineColor.w) * min(max(1 - (lim - right) / within, 0), 1)
@@ -970,7 +1004,7 @@ final class CanvasView: MTKView {
         let v = camera.visible, layout = WritingLayout()
         let midY = lineInk?.midY ?? v.midY
         let pitch = max((lineInk?.height ?? 0) * 1.35, v.height * 0.12)
-        applyMove(.newLine(WritingLayout.newLineCenter(lineLeft: runStart ?? layout.lineStart(pageWidth: camera.page.width), lineMidY: midY, pitch: pitch, visible: v)))
+        applyMove(.newLine(WritingLayout.newLineCenter(lineLeft: runStart ?? layout.lineStart(pageWidth: camera.page.width), lineMidY: midY, pitch: pitch, visible: v, bounded: Camera.columnBound)))
     }
 
 
@@ -1029,7 +1063,7 @@ final class CanvasView: MTKView {
         let sameAsExit = viewAtDrawExit.map { abs($0.center.x - camera.center.x) < 0.5 && abs($0.center.y - camera.center.y) < 0.5 && abs($0.zoom - camera.zoom) < 1e-3 } ?? true
         guard sameAsExit || camera.zoom <= 1.05 else { return nil }
         var t = camera
-        if !tools.zoomLocked { t.zoom = max(info.zoom, 1) }
+        if !tools.zoomLocked { t.zoom = max(info.zoom, camera.minZoom) }
         let w = t.page.width / t.zoom, h = t.page.height / t.zoom
         t.center = CGPoint(x: info.point.x + 0.1 * w, y: info.point.y + (WritingLayout.lineFromTop - 0.5) * h)
         t.clamp()
@@ -1642,6 +1676,7 @@ final class CanvasView: MTKView {
             layout.legacyStrokeEdge = legacyWriting
             layout.segmentStart = segmentStart
             layout.wordHint = typicalWordWidth
+            layout.blockWidth = blockWidth
             let start = legacyWriting ? legacyLineLeft ?? s.minX : (runStart ?? layout.lineStart(pageWidth: camera.page.width))
             let move = layout.after(stroke: s, line: line, lineStrokes: lineStrokes, lineLeft: start,
                                     visible: camera.visible, pageWidth: camera.page.width)
@@ -1691,6 +1726,11 @@ final class CanvasView: MTKView {
     private func applyMove(_ move: WritingLayout.Move) {
         switch move {
         case .none: break
+        case .follow(let c):
+            // The line runs on past the view's right side: the view goes along (the line stays open; ink never moves).
+            act("follow", ["toX": c.x])
+            var target = camera; target.center = c; target.clamp(); handRef = target.center
+            slideCamera(to: c, src: "follow")
         case .newLine(let c):
             if let line = lineInk {
                 let ws = WritingLayout.words(lineStrokes, gap: WritingLayout.wordGap(lineStrokes, visible: camera.visible)).map { $0.end - $0.start }.sorted()
@@ -1930,7 +1970,7 @@ final class CanvasView: MTKView {
 
     // MARK: zoom as a percentage (100% = the page's width fills the view)
 
-    static let zoomPresets: [Double] = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8]
+    static let zoomPresets: [Double] = [0.25, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8]
     /// "300%": rounded to 10% (5% under 200%), so it reads cleanly and is easy to pick again.
     static func zoomText(_ z: Double) -> String {
         let p = z * 100, step = p < 200 ? 5.0 : 10.0
@@ -1939,7 +1979,7 @@ final class CanvasView: MTKView {
     /// Zoom to `z`, keeping the middle of the view where it is (the zoom menu).
     func setZoom(_ z: Double, src: String = "zoomMenu") {
         guard !tools.zoomLocked else { NSSound.beep(); return }
-        var t = camera; t.zoom = min(max(z, 1), Camera.maxZoom); t.clamp()
+        var t = camera; t.zoom = min(max(z, camera.minZoom), Camera.maxZoom); t.clamp()
         animateCamera(to: t, src: src, duration: 0.2)
         finishSlideSoon()
     }

@@ -26,7 +26,8 @@ enum PageImage {
         ctx.scaleBy(x: sx, y: sy)
         ctx.translateBy(x: -rect.minX, y: -rect.minY)
         ctx.setFillColor(.white)
-        let paper = CGRect(x: 0, y: rect.minY - 1, width: pageWidth, height: pageTop - rect.minY + 1)
+        // The infinite canvas: paper everywhere; `--column-bound`: the desk around the page.
+        let paper = Camera.columnBound ? CGRect(x: 0, y: rect.minY - 1, width: pageWidth, height: pageTop - rect.minY + 1) : rect.insetBy(dx: -1, dy: -1)
         ctx.fill(paper)
         if background != 0 {   // the canvas's paper pattern (as in the background shader): lines at multiples of `spacing`
             ctx.saveGState(); ctx.clip(to: paper)
@@ -111,10 +112,19 @@ final class ThumbnailCache {
         var w = ink.width + 2 * m, h = ink.height + 2 * m
         if w / h < a { w = h * a } else { h = w / a }
         if w < page.width / 3 { w = page.width / 3; h = w / a }
-        if w > page.width { w = page.width; h = w / a }
-        let x = min(max(ink.midX - w / 2, 0), page.width - w)
+        // Content inside the page's column (every page before 0.1.6): exactly as before.
+        if Camera.columnBound || (ink.minX >= 0 && ink.maxX <= page.width && ink.maxY <= page.height) {
+            if w > page.width { w = page.width; h = w / a }
+            let x = min(max(ink.midX - w / 2, 0), page.width - w)
+            let tall = ink.height + 2 * m > h + 0.5
+            let maxY = tall ? min(ink.maxY + page.width * 0.02, page.height) : min(ink.midY + h / 2, page.height)
+            return CGRect(x: x, y: maxY - h, width: w, height: h)
+        }
+        // The infinite canvas: content anywhere, wider than the page too (then the tile is wider in page units); a tall
+        // page still shows from its content's top, as it reads.
+        let x = ink.midX - w / 2
         let tall = ink.height + 2 * m > h + 0.5
-        let maxY = tall ? min(ink.maxY + page.width * 0.02, page.height) : min(ink.midY + h / 2, page.height)
+        let maxY = tall ? ink.maxY + m : ink.midY + h / 2
         return CGRect(x: x, y: maxY - h, width: w, height: h)
     }
     /// The bottom 14% of a thumbnail fading into the paper (white), so a long page reads as "more below".

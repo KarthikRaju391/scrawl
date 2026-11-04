@@ -95,8 +95,10 @@ struct PageExport {
     static func shadowAlpha(_ px: Double) -> Double { 0.6 * exp(-px / 10) }
 
     /// The page's paper inside `rect`, and the desk around it if `rect` reaches off the page.
-    private var pageInRect: CGRect { rect.intersection(CGRect(x: 0, y: rect.minY - 1, width: pageWidth, height: pageTop - rect.minY + 1)) }
-    private var reachesOffPage: Bool { rect.minX < 0 || rect.maxX > pageWidth || rect.maxY > pageTop }
+    /// The infinite canvas (0.1.6): paper everywhere (the column is only a guide on screen); `--column-bound`: the page's
+    /// paper, and the desk around it.
+    private var pageInRect: CGRect { Camera.columnBound ? rect.intersection(CGRect(x: 0, y: rect.minY - 1, width: pageWidth, height: pageTop - rect.minY + 1)) : rect }
+    private var reachesOffPage: Bool { Camera.columnBound && (rect.minX < 0 || rect.maxX > pageWidth || rect.maxY > pageTop) }
 
     // MARK: PNG
 
@@ -428,12 +430,19 @@ struct SVGOut {
 extension CanvasView {
     /// The part of a page to export, in page units (y up): full width, top of the page to the lowest ink.
     /// A page with pictures: down to the lowest picture's bottom edge, or 20 units below the lowest ink if that is lower.
+    /// On the infinite canvas, also everything outside the column (ink 20 units around, pictures to their edges): the area
+    /// is the page's column joined with all the content.
     func exportRect(_ d: Document) -> CGRect {
         var lowest = min(d.strokes.map(\.bounds.minY).min() ?? 0, 0) - 20
         if let pictures = d.images.map(\.frame.minY).min() {
             lowest = min(pictures, (d.strokes.map(\.bounds.minY).min() ?? .infinity) - 20)
         }
-        return CGRect(x: 0, y: lowest, width: camera.page.width, height: camera.page.height - lowest)
+        var r = CGRect(x: 0, y: lowest, width: camera.page.width, height: camera.page.height - lowest)
+        if !Camera.columnBound {
+            for s in d.strokes { r = r.union(s.bounds.insetBy(dx: -20, dy: -20)) }
+            for i in d.images { r = r.union(i.frame) }
+        }
+        return r
     }
 
     /// The area an export of the current page covers.
