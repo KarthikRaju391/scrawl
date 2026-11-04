@@ -1,4 +1,4 @@
-// --test-arrowkeys: arrow keys pan the canvas (10% of the view, Shift: one view; clamped at the page's sides
+// --test-arrowkeys: arrow keys pan the canvas (10% of the view, Shift: one view; clamped at the canvas's reach, 2 page widths past the page's sides and top (0.1.6; before: the page's sides
 // and top; zoom lock, draw mode and writing mode; never a new line or a page change; not while a text
 // field has focus), and move a selection in the pages overview (Return / Space opens it).
 import AppKit
@@ -41,7 +41,7 @@ enum TestArrowKeys {
                     for _ in 0..<40 { press("up", shift: true) }; row["topAfterUps"] = canvas.camera.visible.maxY; row["pageTop"] = canvas.camera.page.height
                     for _ in 0..<40 { press("left", shift: true) }; row["leftAfterLefts"] = canvas.camera.visible.minX
                     for _ in 0..<40 { press("right", shift: true) }; row["rightAfterRights"] = canvas.camera.visible.maxX; row["pageWidth"] = pw
-                    row["zoomAfter"] = canvas.camera.zoom
+                    row["zoomAfter"] = canvas.camera.zoom; row["reach"] = Camera.columnBound ? 0 : Camera.reach
                     pans.append(row)
                 }
             }

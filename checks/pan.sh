@@ -18,7 +18,8 @@ for c in r["cases"]:
         f"{tag}: two-finger pan both ways in draw mode (x {t['start']:.0f} -> {t['afterFingersLeft']:.0f} -> {t['afterFingersRight']:.0f}, want ±{t['want']:.0f})")
     chk(w["newLines"] == 0 and abs(w["afterWritingAndPause"] - w["afterPan"]) < 1, f"{tag}: writing after panning right by hand stays there "
         f"(x {w['afterPan']:.0f} -> {w['afterWritingAndPause']:.0f}, new lines {w['newLines']})")
-    chk(not a["autoMoves"] and a["handPans"] >= 1 and a["newLines"] == 1 and abs(a["viewXAfterNewLine"] - a["wantAfterNewLine"]) < 1,
-        f"{tag}: writing along a zoomed-in line, the view moves sideways only when panned by hand ({a['handPans']} pans; other moves {a['autoMoves'][:3]}); once the ink crosses the guide line one new line comes, back at the block's start (x {a['viewXAfterNewLine']:.0f}, want {a['wantAfterNewLine']:.0f}, new lines {a['newLines']})")
+    fol = a.get("follows", [])
+    chk(not a["autoMoves"] and all(m > 0 for m in fol) and (a["handPans"] + len(fol)) >= 1 and a["newLines"] == 1 and abs(a["viewXAfterNewLine"] - a["wantAfterNewLine"]) < 1,
+        f"{tag}: writing along a zoomed-in line, the view moves sideways only by hand or following the line rightwards (0.1.6) ({a['handPans']} pans, {len(fol)} follows {[round(m) for m in fol[:3]]}; other moves {a['autoMoves'][:3]}); once the ink reaches the line's end one new line comes, back at the block's start (x {a['viewXAfterNewLine']:.0f}, want {a['wantAfterNewLine']:.0f}, new lines {a['newLines']})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
 PY

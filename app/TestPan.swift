@@ -89,20 +89,22 @@ enum TestPan {
                 canvas.setVisibleForReplay(x: 0, y: canvas.camera.page.height - canvas.camera.page.height / 2, w: pw / 2, z: 2)
                 canvas.flushInputForTest()
                 let nl0 = canvas.newLineCount, x0 = canvas.camera.visible.minX
-                var x = canvas.camera.visible.minX + canvas.camera.visible.width * 0.1, n = 0, handPans = 0, autoMoves: [Double] = []
+                var x = canvas.camera.visible.minX + canvas.camera.visible.width * 0.1, n = 0, handPans = 0, autoMoves: [Double] = [], follows: [Double] = []
                 while canvas.newLineCount == nl0 && n < 200 {
-                    let v0 = canvas.camera.visible.minX
+                    let v0 = canvas.camera.visible.minX, f0 = canvas.writingStateForTest.follows
                     letter(x: x, y: y, w: lw); n += 1; x += lw * 1.25
                     if n % 4 == 0 { x += lw * 1.5; wait(0.7) } else { wait(0.12) }
                     let moved = canvas.camera.visible.minX - v0
-                    if canvas.newLineCount == nl0 && abs(moved) > 0.5 { autoMoves.append(moved) }   // a move nobody asked for
+                    // 0.1.6: the view following the line (WritingLayout.Move.follow) is the app's own move, rightward only
+                    if canvas.newLineCount == nl0 && abs(moved) > 0.5 { if canvas.writingStateForTest.follows > f0 { follows.append(moved) } else { autoMoves.append(moved) } }
                     if canvas.newLineCount == nl0 && x + lw * 3 > canvas.camera.visible.maxX - canvas.camera.visible.width * 0.08 {
                         twoFingerPan(-30); handPans += 1   // near the view's edge: pan right by hand
                     }
                 }
                 wait(0.7)
-                s["alongLine"] = ["startX": x0, "handPans": handPans, "autoMoves": autoMoves, "newLines": canvas.newLineCount - nl0,
-                                "viewXAfterNewLine": canvas.camera.visible.minX, "wantAfterNewLine": max((canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - canvas.camera.visible.width * 0.05, 0)]   // back to the block's start
+                let blockLeft = (canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - canvas.camera.visible.width * 0.05
+                s["alongLine"] = ["startX": x0, "handPans": handPans, "autoMoves": autoMoves, "follows": follows, "newLines": canvas.newLineCount - nl0,
+                                "viewXAfterNewLine": canvas.camera.visible.minX, "wantAfterNewLine": Camera.columnBound ? max(blockLeft, 0) : blockLeft]   // back to the block's start
                 out.append(s)
             }
         }

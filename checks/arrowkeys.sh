@@ -19,14 +19,21 @@ for p in r["pans"]:
     (b4, a4) = p["left"]; lx = b4[0] - a4[0]
     (b5, a5) = p["shift-right"]; sx = a5[0] - b5[0]
     (b6, a6) = p["shift-down"]; sy = b6[1] - a6[1]
-    if p["zoom"] == 1:
+    reach = p.get("reach", 0) * p["pageWidth"]   # 0.1.6: the view goes this far past the page's sides and top
+    if p["zoom"] == 1 and reach == 0:
         ok = near(dx, 0) and near(lx, 0) and near(sx, 0) and near(dy, 0.1 * h) and near(uy, 0.1 * h) and near(sy, h)
         what = f"← → do nothing (the page fits), ↓ ↑ {dy:.0f} units (10% of {h:.0f}), Shift+↓ {sy:.0f} (one view)"
     else:
         ok = near(dx, 0.1 * w) and near(lx, 0.1 * w) and near(dy, 0.1 * h) and near(uy, 0.1 * h) and near(sx, w) and near(sy, h)
         what = f"→ ← {dx:.0f} units (10% of {w:.0f}), ↓ ↑ {dy:.0f}, Shift+→ {sx:.0f}, Shift+↓ {sy:.0f} (one view)"
-    clamp = near(p["topAfterUps"], p["pageTop"]) and near(p["leftAfterLefts"], 0) and near(p["rightAfterRights"], p["pageWidth"]) and near(p["zoomAfter"], p["zoom"], 1e-6)
-    chk(ok and clamp, f"{tag}: {what}; stops at the page top and sides; zoom unchanged")
+    if reach == 0:
+        clamp = near(p["topAfterUps"], p["pageTop"]) and near(p["leftAfterLefts"], 0) and near(p["rightAfterRights"], p["pageWidth"])
+        where = "stops at the page top and sides"
+    else:   # the view's centre stops `reach` past the page's sides and top
+        clamp = near(p["topAfterUps"], p["pageTop"] + reach + h / 2) and near(p["leftAfterLefts"], -reach - w / 2) and near(p["rightAfterRights"], p["pageWidth"] + reach + w / 2)
+        where = f"stops {reach:.0f} units past the page's top and sides (the canvas's reach)"
+    clamp = clamp and near(p["zoomAfter"], p["zoom"], 1e-6)
+    chk(ok and clamp, f"{tag}: {what}; {where}; zoom unchanged")
 d = r["drawWriting"]
 chk(d["moved"] and d["newLines"] == 0 and d["page"] == d["page0"] and d["pages"] == d["pages0"] and d["drawMode"], "draw mode + writing mode: arrows pan; no new line, no page change")
 t = r["textField"]

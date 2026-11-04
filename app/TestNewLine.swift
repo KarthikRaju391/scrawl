@@ -63,7 +63,7 @@ enum TestNewLine {
                             let v = canvas.camera.visible
                             // The next line goes back to where this block's first line began (its first letter).
                             let margin = canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? WritingLayout().margin * canvas.camera.page.width
-                            let want = min(max(margin - v.width * 0.05, 0), canvas.camera.page.width - v.width)   // the view stops at the page's edge
+                            let want = Camera.columnBound ? min(max(margin - v.width * 0.05, 0), canvas.camera.page.width - v.width) : margin - v.width * 0.05   // 0.1.6: the view isn't stopped at the page's edge
                             results.append(["lineWidth": ["½", "¾", "full"][lw], "zoom": zoom,
                                             "locked": locked, "start": start, "letters": n, "strokes": canvas.doc.strokes.count, "newLines": canvas.newLineCount - lines0,
                                             "viewMinX": v.minX, "wantMinX": want, "zoomAfter": canvas.camera.zoom,
@@ -82,9 +82,11 @@ enum TestNewLine {
             canvas.setVisibleForReplay(x: canvas.camera.page.width * 2 / 3, y: canvas.camera.page.height - canvas.camera.page.height / 3, w: canvas.camera.page.width / 3, z: 3)
             let v0 = canvas.camera.visible, lines0 = canvas.newLineCount
             let lw_ = v0.width * 0.035
-            var x = v0.minX + v0.width * 0.55
-            // The block starts at 85% of the page, so its limit is the page's right margin (97%): write up to it, quickly.
-            while x < v0.minX + v0.width * 0.95 && canvas.newLineCount == lines0 {
+            var x = v0.minX + v0.width * 0.3
+            // Write, quickly, until the ink is past the guide line (the line's end: 0.1.6, the block's start + half the view's
+            // width; before, the page's 95%), all within the view.
+            letter(x: x, y: v0.midY, w: lw_); x += lw_ * 1.25; wait(0.12)
+            while x < (canvas.lineLimitX ?? v0.maxX) + lw_ && canvas.newLineCount == lines0 {
                 letter(x: x, y: v0.midY, w: lw_); x += lw_ * 1.25; wait(0.12)
             }
             // The line end was reached; now the palm lands on the right edge band and rests there for a second.
@@ -97,7 +99,7 @@ enum TestNewLine {
             canvas.flushInputForTest()
             let v = canvas.camera.visible
             palmCase = ["newLines": canvas.newLineCount - lines0, "viewMinX": v.minX,
-                        "wantMinX": min(max((canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - v.width * 0.05, 0), canvas.camera.page.width - v.width), "movedDown": v0.midY - v.midY]
+                        "wantMinX": Camera.columnBound ? min(max((canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - v.width * 0.05, 0), canvas.camera.page.width - v.width) : (canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - v.width * 0.05, "movedDown": v0.midY - v.midY]
             for _ in 0..<3 { frame(nil) }
         }
         // The wait is a setting (Karthik, 1 Nov): untouched it's 400 ms; set to 700 ms with the Settings slider, the page
@@ -108,10 +110,10 @@ enum TestNewLine {
             var t = canvas.tools; t.lineWidthIndex = 0; t.zoomLocked = false; canvas.tools = t
             canvas.setVisibleForReplay(x: canvas.camera.page.width * 2 / 3, y: canvas.camera.page.height - canvas.camera.page.height / 3, w: canvas.camera.page.width / 3, z: 3)
             let v0 = canvas.camera.visible, lines0 = canvas.newLineCount, lw_ = v0.width * 0.035
-            var x = v0.minX + v0.width * 0.55
+            var x = v0.minX + v0.width * 0.3
             while true {
                 letter(x: x, y: v0.midY, w: lw_); x += lw_ * 1.25
-                if x >= v0.minX + v0.width * 0.95 { break }
+                if x >= (canvas.lineLimitX ?? v0.maxX) + lw_ { break }   // past the guide line, within the view
                 wait(0.12)
             }
             let lift = vt - 0.016   // letter() lifts at the first of its three empty frames
@@ -137,7 +139,7 @@ enum TestNewLine {
         wait(0.7)
         let vr = canvas.camera.visible
         let r: [String: Any] = ["cases": results, "palmOnEdgeDuringPause": palmCase, "waitDefault": waitDefault, "wait700": wait700,
-                                "returnKey": ["viewMinX": vr.minX, "wantMinX": min(max((canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - vr.width * 0.05, 0), canvas.camera.page.width - vr.width),
+                                "returnKey": ["viewMinX": vr.minX, "wantMinX": Camera.columnBound ? min(max((canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - vr.width * 0.05, 0), canvas.camera.page.width - vr.width) : (canvas.doc.strokes.first.map { Double($0.bounds.minX) } ?? 0) - vr.width * 0.05,
                                               "movedDown": v0.midY - vr.midY]]
         try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/test-newline.json"))
         try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
