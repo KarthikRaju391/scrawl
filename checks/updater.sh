@@ -6,7 +6,10 @@
 #   checks/updater.sh [scenario ...]      (default: all)
 cd "$(dirname "$0")/.."
 LS=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-W=$(mktemp -d /tmp/scrawl-updater.XXXX); OLD=1.0.0; NEW=1.0.1; BAD=0
+W=$(mktemp -d /tmp/scrawl-updater.XXXX); W=$(cd "$W" && pwd -P); OLD=1.0.0; NEW=1.0.1; BAD=0
+# Everything LaunchServices knows under this run's folder (resolved paths: a deleted bundle is matched only by them).
+registered_here() { "$LS" -dump 2>/dev/null | awk '/^path:/{sub(/^path: */,""); sub(/ \(0x[0-9a-f]+\)$/,""); print}' | grep -F "$W/" | sort -u; }
+forget_all() { registered_here | while read -r b; do "$LS" -u "$b" 2>/dev/null; done; }
 pass() { echo "PASS $*"; }; fail() { echo "FAIL $*"; BAD=$((BAD + 1)); }
 [ -x build/Scrawl.app/Contents/MacOS/TrackpadDraw ] || { echo "build first (./build.sh)"; exit 2; }
 swiftc -O -o "$W/update-sign" tools/update-sign.swift || exit 2
@@ -28,6 +31,7 @@ mkdmg() {   # mkdmg <name> <version> [bundle id] [crash]
 }
 mkdmg good $NEW; mkdmg older 0.9.0; mkdmg wrongid $NEW com.example.not-scrawl; mkdmg crash $NEW "" crash
 for d in good older wrongid crash; do "$W/update-sign" --sign "$W/test.key" "$W/$d.dmg"; done
+forget_all
 cp "$W/good.dmg" "$W/other.bin"; echo x >> "$W/other.bin"; "$W/update-sign" --sign "$W/test.key" "$W/other.bin"   # a valid signature of other bytes
 SEED=$(ls -t build/robot-*/data/Notebook.tdnb ~/code/trackpad-draw/build/robot-*/data/Notebook.tdnb 2>/dev/null | head -1)
 
@@ -104,6 +108,7 @@ run() {
     chmod 755 "$A" 2>/dev/null
     for b in "$A"/*.app "$A"/.*.app "$A"/*.old-update; do [ -e "$b" ] && "$LS" -u "$b" 2>/dev/null; done
     pkill -f "$A/Scrawl.app/Contents/MacOS/TrackpadDraw" 2>/dev/null
+    forget_all
 }
 want() { [ -z "$ONLY" ] || echo " $ONLY " | grep -q " $1 "; }
 ONLY="$*"
@@ -147,5 +152,8 @@ if want crash; then run crash '{"dmg":"crash"}' --update-restart
         && pass "a new version that won't start: the old one is put back and reopened ($R)" || fail "crash: installed $VERNOW, report $R, log $(cat "$W/crash/data/update.log" 2>/dev/null)"
 fi
 for s in happy badsig; do [ -f "$W/$s-panel.png" ] && cp "$W/$s-panel.png" /tmp/scrawl-update-panel-$s.png && echo "panel screenshot: /tmp/scrawl-update-panel-$s.png"; done
+forget_all
+left=$(registered_here)
+[ -z "$left" ] && pass "LaunchServices knows nothing under $W after the run" || fail "LaunchServices still knows: $(echo $left)"
 echo "work: $W"
 echo "RESULT: $([ $BAD = 0 ] && echo PASS || echo "FAIL ($BAD)")"
