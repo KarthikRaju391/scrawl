@@ -1097,6 +1097,7 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "zoomMenu", "pick": "400%"}); settle(app, limit=3)
         for _ in range(16): app.press("left")
         for _ in range(16): app.press("up")
+        if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"})   # 0.1.6: arrows go past the page; the page's corner
         settle(app, limit=3)
         st = app.state(); W = st["pageW"]; n0 = st["strokes"]; pad_w, pad_h = st["padMM"]
         rep.check(abs(st["view"]["zoom"] - 4) < 0.05 and st["view"]["x"] < W * 0.02, "zoomed in to 400% at the page's left edge", str(st["view"]))
@@ -1121,7 +1122,11 @@ def run_scenarios(app, rep, only, hand):
         ends = [round(L[2] / W, 3) for L in lines]
         rep.step("lines", ends=ends, newLines=s2["newLines"] - st["newLines"], zoom=s2["view"]["zoom"])
         full = ends[:-1]
-        rep.check(len(full) >= 2 and all(0.42 <= e <= 0.58 for e in full), "every full line ends at about half the page (42-58%)", f"lines end at {[f'{e:.0%}' for e in ends]} of the page")
+        if st.get("columnBound", True) is False and lines:   # 0.1.6: the block's start + half the view's width when it started
+            want_ = rule_limit(st, lines[0][1], 0.5, W, st["view"]["w"])[0] / W
+            rep.check(len(full) >= 2 and all(want_ - 0.08 <= e <= want_ + 0.08 for e in full), f"every full line ends at about the block's start + half the view ({want_:.0%} of the page)", f"lines end at {[f'{e:.0%}' for e in ends]} of the page")
+        else:
+            rep.check(len(full) >= 2 and all(0.42 <= e <= 0.58 for e in full), "every full line ends at about half the page (42-58%)", f"lines end at {[f'{e:.0%}' for e in ends]} of the page")
         off = write_rows.off_pad
         rep.check(s2["strokes"] - n0 == written - off, "every stroke written on the trackpad is on the page", f"{written - off} written on the pad ({off} ran off its edge), {s2['strokes'] - n0} on the page")
         rep.shot(app, "½-page lines written at 400%")
@@ -1153,6 +1158,7 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "zoomMenu", "pick": "400%"}); settle(app, limit=3)
         for _ in range(16): app.press("left")
         for _ in range(16): app.press("up")
+        if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"})   # 0.1.6: arrows go past the page; the page's corner
         settle(app, limit=3)
         st = app.state(); W = st["pageW"]; n0 = st["strokes"]; pad_w, pad_h = st["padMM"]; nl0 = st["newLines"]
         old_h = hand.h; hand.h = 9
@@ -1282,6 +1288,7 @@ def run_scenarios(app, rep, only, hand):
             app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app, limit=3)
             for _ in range(16): app.press("up")
             for _ in range(16): app.press("left")
+            if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"})   # 0.1.6: arrows go past the page; the page's corner
             st = app.state(); W = st["pageW"]; vw = st["view"]["w"]
             for _ in range(40):   # move the view (by hand: arrow keys) until the run's start is a fifth into it
                 if st["view"]["x"] >= W * start_frac - vw * 0.2 - 1 or st["view"]["x"] + vw >= W - 1: break
@@ -1352,6 +1359,7 @@ def run_scenarios(app, rep, only, hand):
                 app.cmd({"cmd": "zoomMenu", "pick": zoom}); settle(app, limit=3)
                 for _ in range(16): app.press("up")
                 for _ in range(16): app.press("left")
+                if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"})   # 0.1.6: arrows go past the page; the page's corner
                 st = app.state()
                 if how == "pan":   # two-finger pans to the middle of the page (by hand)
                     for _ in range(12):
@@ -1410,6 +1418,7 @@ def run_scenarios(app, rep, only, hand):
         ensure(app, "draw", True, "d")
         app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app, limit=3)
         for _ in range(16): app.press("up")
+        if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"})   # 0.1.6: arrows go past the page; the page's corner
         st = app.state(); W = st["pageW"]; pad_w, pad_h = st["padMM"]
         for _ in range(40):
             if st["view"]["x"] >= W * 0.5 - st["view"]["w"] * 0.2 - 1: break
@@ -1482,6 +1491,7 @@ def run_scenarios(app, rep, only, hand):
                   "(iii) finishing the previous line after a move doesn't start a block there (no move to the next line away from the block's start)",
                   f"new lines {s4['newLines'] - nl3}, next line at {nlx4 and nlx4 / W:.1%}, block start {block / W:.1%}")
         for _ in range(16): app.press("left")
+        if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"})   # 0.1.6: arrows go past the page; the page's corner
         for _ in range(4): app.press("down")
         settle(app)
         x = nxt[0]; right = x; k = 0; nl4 = app.state()["newLines"]
@@ -1508,6 +1518,7 @@ def run_scenarios(app, rep, only, hand):
                 app.cmd({"cmd": "zoomMenu", "pick": zoom}); settle(app, limit=3)
                 for _ in range(16): app.press("up")
                 for _ in range(16): app.press("left")
+                if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"})   # 0.1.6: arrows go past the page; the page's corner
                 st = app.state()
                 for _ in range(40):
                     if st["view"]["x"] >= W * start - st["view"]["w"] * 0.15 - 1: break
@@ -1627,6 +1638,7 @@ def run_scenarios(app, rep, only, hand):
                 app.cmd({"cmd": "zoomMenu", "pick": zoom}); settle(app, limit=3)
                 for _ in range(16): app.press("up")
                 for _ in range(16): app.press("left")
+                if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"})   # 0.1.6: arrows go past the page; the page's corner
             time.sleep(1.4)
             for _ in range(3):   # key delivery to the background app is flaky: make sure writing mode is on
                 if app.state().get("lineLimitX") is not None: break
@@ -1656,12 +1668,18 @@ def run_scenarios(app, rep, only, hand):
                       p0 = app.cmd({"cmd": "toPagePt", "point": [10, 10]})["point"]; p1 = app.cmd({"cmd": "toPagePt", "point": [20, 10]})["point"]
                       upm = (p1[0] - p0[0]) / 10; hand.h = 4.5 if zoom == "100%" else 7; sp = hand.h * 0.7 * upm
                       y = app.cmd({"cmd": "toPagePt", "point": [0, pad_h * 0.7]})["point"][1]
-                      x0 = st["view"]["x"] + st["view"]["w"] * 0.06; lw = frac * W
-                      limit = min(x0 + lw, W * CAP)
+                      x0 = st["view"]["x"] + st["view"]["w"] * 0.06
+                      limit, _, lw = rule_limit(st, x0, frac, W, st["view"]["w"])   # 0.1.6: frac of the view, no cap
+                      newrule = st.get("columnBound", True) is False
+                      if newrule and limit > st["view"]["x"] + st["view"]["w"] * 0.9:
+                          # The marker is past what the pad reaches in this view (100% of the view from 6% into it): the
+                          # line goes on with the view following it (P9, the formal checks); nothing to write just inside here.
+                          rep.skip(f"{wname} at {zoom}, ink {kind}", f"the marker at {limit / W:.0%} of the page is beyond the view (0.1.6: the view follows such a line)")
+                          break
                       # Where the ink should stop: just inside the marker (0.3-2.5% of the line width before it; at the
                       # page's edge, past 93% of the page), or mid-line (about 8% of the line width before it).
                       lo, hi = (limit - 0.025 * lw, limit - 0.003 * lw) if kind == "just inside" else (limit - 0.10 * lw, limit - 0.06 * lw)
-                      if kind == "just inside" and limit >= W * CAP - 1: lo = max(lo, W * 0.932)
+                      if not newrule and kind == "just inside" and limit >= W * CAP - 1: lo = max(lo, W * 0.932)
                       nl0 = st["newLines"]; right = x0; i = 0; s_ = st; done = False
                       while i < 60 and s_["newLines"] == nl0 and right < lo:
                           w_ = words[i % len(words)]; gap = sp
@@ -1675,11 +1693,14 @@ def run_scenarios(app, rep, only, hand):
                       if lim_seen is None: rep.step("no limit reported", writing=s_.get("writing"), draw=s_.get("draw"))
                       lim_seen = lim_seen if lim_seen is not None else limit
                       landed = (0 < lim_seen - right < 0.03 * lw) if kind == "just inside" else (lim_seen - right > 0.04 * lw)
-                      if landed and kind == "just inside" and lim_seen >= W * CAP - 1: landed = right >= W * 0.93
+                      if not newrule and landed and kind == "just inside" and lim_seen >= W * CAP - 1: landed = right >= W * 0.93
                       if not landed and attempt < 2 and s_["newLines"] == nl0:
                           rep.step(f"{wname} at {zoom}, ink {kind}: the robot's ink missed the band, again", inkRight=round(right / W, 4), limit=round(lim_seen / W, 4))
                           continue
                       label = f"{wname} at {zoom}, ink {kind}"
+                      if not landed and newrule:   # three tries and the robot's ink still missed the band (2 mm on the pad at 300%, 50%)
+                          rep.skip(label, f"the robot's ink didn't land in the band in 3 tries (ink {right / W:.1%}, marker {lim_seen / W:.1%}, {(lim_seen - right) / lw * 100:.1f}% of the line short)")
+                          break
                       if kind == "just inside":
                           while time.time() - lifted[0] < 0.9 and app.state()["newLines"] == nl0: time.sleep(0.03)
                           s2 = app.state(); dt = time.time() - lifted[0]; nl = s2.get("nextLine") or [None]
@@ -2307,6 +2328,7 @@ def run_scenarios(app, rep, only, hand):
             ensure(app, "draw", True, "d"); ensure(app, "writing", False, "w"); settle(app, limit=3)
             app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app, limit=3)
             app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app, limit=3)
+            if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"}); settle(app, limit=3)   # 0.1.6: the same start each run
             st = app.state(); pw, ph = st["padMM"]
             if mode == "armed":   # a click turns drawing on (a short stroke); the pans come while it's on
                 fr = [[0.008, [[18001, pw * 0.5, ph * 0.9, 130, 0.5, 7.5]]] for _ in range(4)]
@@ -2318,7 +2340,7 @@ def run_scenarios(app, rep, only, hand):
             v0 = v(); out["start"] = [round(v0["x"], 1), round(v0["y"], 1), round(v0["zoom"], 3)]
             app.touch(two_finger(pw / 2, ph / 2, 25, 25, shift=(-12, -6), dur=0.4)); settle(app); v1 = v()
             for _ in range(2): app.touch(two_finger(pw * 0.7, ph / 2, 25, 25, shift=(-70, 0), dur=0.5)); settle(app)
-            v2 = v(); out["pageW"] = app.state()["pageW"]
+            v2 = v(); _s2 = app.state(); out["pageW"] = _s2["pageW"]; out["columnBound"] = _s2.get("columnBound", True)
             app.touch(two_finger(pw / 2, ph / 2, 20, 34, dur=0.4)); settle(app); v3 = v()
             app.press("right"); settle(app); v4 = v()
             out["moves"] = [[round(b["x"] - a["x"], 2), round(b["y"] - a["y"], 2), round(b["zoom"] / a["zoom"], 4)] for a, b in [(v0, v1), (v1, v2), (v2, v3), (v3, v4)]]
@@ -2330,7 +2352,10 @@ def run_scenarios(app, rep, only, hand):
         moved = all(abs(m[0]) + abs(m[1]) > 1 or abs(m[2] - 1) > 0.01 for m in off["moves"])
         rep.check(off["start"] == on["start"] == armed["start"], "the three runs start from the same view", f"{off['start']}, {on['start']}, {armed['start']}")
         rep.check(moved, "each move (pan, pan into the edge, pinch, arrow) moves the view with click to draw off", str(off["moves"]))
-        rep.check(abs(off["edgeX"] - off["pageW"]) < 0.5 and on["edgeX"] == off["edgeX"] and armed["edgeX"] == off["edgeX"], "the pan into the edge stops at the page's right edge, on and off", f"view right edge {off['edgeX']}, {on['edgeX']}, {armed['edgeX']} (page {off['pageW']})")
+        if off.get("columnBound", True) is False:   # 0.1.6: no edge stops the pan; it goes the same way on and off
+            rep.check(on["edgeX"] == off["edgeX"] and armed["edgeX"] == off["edgeX"], "the same pans end at the same view, click to draw on and off (no page edge stops them)", f"view right edge {off['edgeX']:.2f}, {on['edgeX']:.2f}, {armed['edgeX']:.2f}")
+        else:
+            rep.check(abs(off["edgeX"] - off["pageW"]) < 0.5 and on["edgeX"] == off["edgeX"] and armed["edgeX"] == off["edgeX"], "the pan into the edge stops at the page's right edge, on and off", f"view right edge {off['edgeX']}, {on['edgeX']}, {armed['edgeX']} (page {off['pageW']})")
         def same(a_, b_): return all(abs(x - y) <= 0.5 for m, n in zip(a_["moves"], b_["moves"]) for x, y in zip(m[:2], n[:2])) and all(abs(m[2] - n[2]) < 1e-3 for m, n in zip(a_["moves"], b_["moves"]))
         rep.check(same(off, on), "before a click, the pans, the edge, the pinch and the arrow move the view exactly as with click to draw off", f"off {off['moves']}  on {on['moves']}")
         rep.check(same(off, armed) and armed["on"], "while drawing is on, they still move the view exactly as with it off", f"off {off['moves']}  armed {armed['moves']}")

@@ -155,6 +155,12 @@ final class Robot {
             var ok = false
             ok = { app.settingsWindow.setSwitchForTest(c["index"] as? Int ?? 0, c["on"] as? Bool ?? true); return true }()   // robot:needs class SettingsWindow
             done(ok ? ["ok": true] : ["error": "no settings window"])
+        case "pageCorner":   // 0.1.6: the view's top-left at the page's top-left, zoom kept (arrow keys no longer stop at the page's edge)
+            let cam = canvas.camera, v = cam.visible
+            if c["left"] as? Bool ?? true { canvas.setVisibleForReplay(x: 0, y: (c["top"] as? Bool ?? true) ? cam.page.height - v.height : v.minY, w: v.width, z: cam.zoom) }
+            else { canvas.setVisibleForReplay(x: v.minX, y: cam.page.height - v.height, w: v.width, z: cam.zoom) }
+            canvas.flushInputForTest()
+            done(["view": Self.view(canvas)])
         case "tileMenu":   // the overview tile's context menu: its items, then "Delete Page" picked
             var r: [String: Any] = ["error": "no tile menu"]
             r = app.robotTileMenu(c["index"] as? Int ?? 0)   // robot:needs func robotTileMenu
