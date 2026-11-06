@@ -10,7 +10,7 @@ Stability: fixes from an audit of the app's hidden states (`docs/release-notes-0
   started is ignored until it lifts: the click that turned drawing on no longer drew a dot, or erased under the
   finger with the Eraser. (With click to draw on, a resting finger still aims and a click draws with it.)
 - **Two-finger pans don't zoom.** A two-finger gesture is now a pan or a pinch, decided once and kept until you lift:
-  a pan never changes the zoom; a pinch zooms as before. On Karthik's 45 recorded sessions, 1,936 pans changed the
+  a pan never changes the zoom; a pinch zooms as before. On 45 recorded writing sessions, 1,936 pans changed the
   zoom; now none do, and all 346 pinches still zoom.
 - **Draw mode never starts behind the pages overview.** ⌃⌥D there closes the overview into the page first, then you
   draw. A page from the browser extension arriving while the overview is up becomes a new tile. Closing Settings only
