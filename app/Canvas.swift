@@ -325,6 +325,12 @@ final class GestureEngine {
     func ignoresAtEdge(_ c: Contact) -> Bool { edgeIgnored.contains(c.id) || (!seen.contains(c.id) && Self.inBand(c.norm, edgeGuard())) }
     /// Whether this contact counts for anything: not in the edge band, and not already down when draw mode started.
     func ignores(_ c: Contact) -> Bool { preexisting.contains(c.id) || ignoresAtEdge(c) }
+    /// A palm's or thumb's size (the palm-rejection thresholds, whether or not palm rejection is on).
+    func palmSized(_ c: Contact) -> Bool { c.major > palmMajor || c.size > palmTotal }
+    private lazy var palmMajor = settings.palmMajor
+    private lazy var palmTotal = settings.palmSize
+    /// The stroke being drawn was a finger of a multi-finger tap (its other finger in the edge band): no ink.
+    func cancelStroke() { guard case .drawing = mode else { return }; onEnd?(false); mode = .waitLift }
     /// Extra palm signal (macOS resting-touch classification), checked per contact per frame.
     var isPalm: (Contact) -> Bool = { _ in false }
     /// Called once per contact when it lifts: (id, was classified palm, drew a stroke).
@@ -675,6 +681,7 @@ final class CanvasView: MTKView {
             // frame recounts.
             if countedContacts > 0 { countedContacts = 0; onTouching?(false) }
             gestures.reset(); contacts = []; needsRender = true
+            edgeDownAt = [:]
             // Contacts already down (the finger that clicked Draw) never ink until they lift. With click to draw a touch never
             // inks without a click anyway, and a finger resting there is how you aim: Karthik pressed E with it down, then
             // clicked to erase (session 2 Nov 19:02), so they stay usable.
@@ -1221,13 +1228,16 @@ final class CanvasView: MTKView {
         // Only fingers the edge guard counts: a palm resting on the edge must neither cancel nor hold
         // back a pending page move. Nor does a contact that was already down when draw mode started.
         let counted = contacts.filter { !gestures.ignores($0) }
+        if countedContacts == 0 && !counted.isEmpty { tapEpisodeBefore = (doc, Document.State(strokes: doc.strokes, images: doc.images)) }
         if (countedContacts > 0) != !counted.isEmpty { onTouching?(!counted.isEmpty) }
         countedContacts = counted.count
         if countedContacts > 0 { finishSlide(); cancelPendingMove() }
         // Multi-finger taps: the view at the start of each touch episode, to undo any nudge a tap gave it.
         if !counted.isEmpty && tapViewAnchor == nil { tapViewAnchor = camera }
-        if let ev = taps.frame(counted, t: arrival) {
+        if let ev = taps.frame(counted, edge: tapEdgeCandidates(at: arrival), t: arrival) {
             if let c = tapViewAnchor { changing("tap") { camera = c } }   // a tap is not a pan or a pinch
+            if case .tap = ev { previousTapBefore = tapEpisodeBefore }
+            if case .doubleTap = ev, taps.lastUsedEdge { dropEdgeTapDots() }   // the dots its counted finger drew, before the undo / redo
             switch ev {
             case .hold(2):
                 // Undo scrub: slide left to step back through history, right to step forward, live.
@@ -1269,6 +1279,35 @@ final class CanvasView: MTKView {
         if counted.isEmpty { tapViewAnchor = nil; if pinchedThisTouch { snapZoomAfterPinch() }; pinchedThisTouch = false }
         gestures.frame(cs, t: arrival)
         needsRender = true
+    }
+
+    // MARK: taps with a finger in the edge band (0.1.7, Taps.swift)
+    /// Edge-band contacts and when each touched down (the tap detector's candidates are drawn from them).
+    private var edgeDownAt: [Int32: Double] = [:]
+    /// The page when this touch episode began, and when the previous tap's did (a tap's counted finger may draw a dot).
+    private var tapEpisodeBefore: (doc: Document, state: Document.State)?
+    private var previousTapBefore: (doc: Document, state: Document.State)?
+    /// The edge contacts the tap detector may take as a finger: in the edge band (drawing, pans and waiting moves ignore them),
+    /// not in its bottom part (the heel of the hand), not palm-sized, not down when draw mode started.
+    private func tapEdgeCandidates(at t: Double) -> [(contact: Contact, down: Double)] {
+        let edge = contacts.filter { gestures.ignoresAtEdge($0) }
+        edgeDownAt = edgeDownAt.filter { id, _ in edge.contains { $0.id == id } }
+        for c in edge where edgeDownAt[c.id] == nil { edgeDownAt[c.id] = t }
+        return edge.filter { !gestures.preexisting.contains($0.id) && !gestures.palmSized($0) && $0.norm.y >= edgeGuardFraction }
+            .map { ($0, edgeDownAt[$0.id] ?? t) }
+    }
+    /// A double tap with an edge finger: its counted finger drew a dot in each tap (one may still be live). They go, with their undo
+    /// steps, so the undo / redo acts on what was there before.
+    private func dropEdgeTapDots() {
+        gestures.cancelStroke()
+        let marks = [previousTapBefore, tapEpisodeBefore].compactMap { $0 }.filter { $0.doc === doc }.map(\.state)
+        guard let first = marks.first else { return }
+        var dropped = 0
+        while dropped < 2, !first.same(Document.State(strokes: doc.strokes, images: doc.images)),
+              let last = doc.undoStackForSave.last, marks.contains(where: { $0.same(last) }) {
+            doc.rollbackLastSnapshot(); dropped += 1
+        }
+        if dropped > 0 { pruneWritingLine(); cancelPendingMove(); updateScreensFilled(); markDirty(); needsRender = true; act("tapDotsDropped", ["count": dropped]) }
     }
 
     // NSTouch fallback (public API, no pressure): used when MultitouchSupport is unavailable, turned
