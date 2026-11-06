@@ -62,7 +62,7 @@ struct CutoffSpec {
     /// (WritingLayout.reachRight). --no-reach-cap: the spec without it (for builds before the fix).
     nonisolated(unsafe) static var reachCap = !CommandLine.arguments.contains("--no-reach-cap")
     static func capped(_ start: Double, _ bw: Double, _ cam: Camera) -> Double {
-        reachCap ? min(start + bw, max(wPage.width * (1 + Camera.reach) + cam.visible.width * 0.45, start + 0.1 * bw)) : start + bw
+        reachCap ? min(start + bw, max(wPage.width * (1 + Camera.reach) + cam.visible.width * 0.45, start)) : start + bw
     }
     static func near(_ a: Double, _ b: Double, _ tol: Double = 1e-6) -> Bool { abs(a - b) <= tol * max(1, abs(a), abs(b)) }
 

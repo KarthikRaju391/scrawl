@@ -28,9 +28,6 @@ Abs(x) == IF x < 0 THEN -x ELSE x
 \* The camera's reach (Camera.clamp): its centre at most 2 page widths past the page's right side, so the view's left edge at most this.
 ReachCenter == 3 * W
 ClampX(x, z) == IF x + Vw(z) \div 2 > ReachCenter THEN ReachCenter - Vw(z) \div 2 ELSE x
-\* The proposed fix: the cutoff never past the furthest ink can go at any zoom (the reach + half the most zoomed-in view).
-CapX == ReachCenter + (Vw(zoom) * 45) \div 100
-Capped(x, b, bw) == IF Mut = "reachCap" /\ x > CapX THEN Max(CapX, b + bw \div 10) ELSE x
 Max(a, b) == IF a > b THEN a ELSE b
 Min(a, b) == IF a < b THEN a ELSE b
 
@@ -46,6 +43,10 @@ vars == <<writing, w, zoom, camX, camRow, bs, m0, lineL, lineR, lineRow, hist, r
           pending, age, ftarget, counted, edge, handPan, gm0, quiet, dropped, act, moved, steps>>
 
 V == Vw(zoom)
+\* The fix (WritingLayout.reachRight): a line never ends past where the view can reach at the zoom now (5% inside the
+\* view's edge there), and never before the block's start.
+CapX == ReachCenter + (V * 45) \div 100
+Capped(x, b, bw) == IF Mut = "reachCap" /\ x > CapX THEN Max(CapX, b) ELSE x
 \* The measure a block starting now gets: the app's, and the spec's.
 ImplMeasure == IF Rule = "A" \/ Mut = "visibleWidth" THEN V ELSE W
 SpecMeasure == IF Rule = "A" THEN V ELSE W
@@ -276,9 +277,9 @@ P5touch == ~P5Stuck("touch")
 P5undo == ~P5Stuck("undo")
 P5width == ~P5Stuck("width")
 P5never == ~P5Stuck("")
-\* P8 (reach): the marker is somewhere ink can get to: at most the right edge of the view at its reach, at this zoom, plus the
-\* edge band a stroke may run into. If not, no stroke can ever be due and no next line comes (a wedge).
-P8Reach == writing /\ bs # Nil => 100 * Cut - 3 * BW <= 100 * (ReachCenter + V \div 2 + V \div 20)
+\* P8 (reach): the marker is somewhere ink can get to (at most the right edge of the view at its reach, at this zoom, plus the
+\* edge band a stroke may run into), or the ink is already past it. If not, no stroke can ever be due: no next line (a wedge).
+P8Reach == writing /\ bs # Nil => (100 * Cut - 3 * BW <= 100 * (ReachCenter + V \div 2 + V \div 20) \/ (lineR # Nil /\ 100 * lineR >= 100 * Cut - 3 * BW))
 \* P6: the guide shows iff the ink is within 15% of the line of the cutoff; it's at the cutoff; hidden after the move.
 P6 == (GuideShown <=> SpecGuide) /\ (GuideShown => Cut = SCut)
 \* P7: an edge contact never cancels or delays a waiting move.
