@@ -535,6 +535,13 @@ struct WSpec {
         } else if committed == nil {
             switch e {
             case .toggle, .page: if post.runStart != nil { fail("P6", "block kept after \(e)") }
+            case .redo where pre.runStart == nil && !Camera.columnBound:
+                // 0.1.7: with no block, the ink a redo brings back onto the line starts one at its left (it fell back to the
+                // rules before 0.1.6); with no line ink back, still no block.
+                let want: Double? = post.lineInk.map { Double($0.minX) }
+                if post.runStart != want && !(post.runStart != nil && want != nil && Self.near(post.runStart!, want!)) {
+                    fail("P6", "redo with no block: block start \(post.runStart.map { String(format: "%.1f", $0) } ?? "nil"), want the line's left \(want.map { String(format: "%.1f", $0) } ?? "nil")")
+                }
             default:
                 if pre.runStart != post.runStart { fail("P6", "block start changed by \(e): \(pre.runStart.map { String(format: "%.1f", $0) } ?? "nil") -> \(post.runStart.map { String(format: "%.1f", $0) } ?? "nil")") }
             }
