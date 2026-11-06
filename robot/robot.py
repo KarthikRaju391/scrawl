@@ -1766,11 +1766,16 @@ def run_scenarios(app, rep, only, hand):
                       nl0 = st["newLines"]; right = x0; i = 0; s_ = st; done = False
                       while i < 60 and s_["newLines"] == nl0 and right < lo:
                           w_ = words[i % len(words)]; gap = sp
-                          if i > 0 and right + sp + hand.width(w_) * upm > hi:
+                          aim = (lo + hi) / 2   # the band's middle: the robot's word widths run a little short of its ink
+                          if i > 0 and right + sp + hand.width(w_) * upm > aim:
                               # A short last word to land in the band, with a tight space if a normal one won't fit.
-                              w_, gap = next(((c, g) for g in (sp, sp * 0.4, sp * 0.15) for c in ("an", "a", "i") if right + g + hand.width(c) * upm <= hi), (None, 0))
+                              w_, gap = next(((c, g) for edge in (aim, hi) for g in (sp, sp * 0.4, sp * 0.15) for c in ("an", "a", "i") if right + g + hand.width(c) * upm <= edge), (None, 0))
                               if w_ is None: break
                           s_, right = word_at(w_, x0 if i == 0 else right + gap, y); i += 1
+                          if i == 1 and s_.get("lineLimitX") is not None:   # aim at the app's own marker (from where the ink really began)
+                              m_ = s_["lineLimitX"]
+                              lo, hi = (m_ - 0.025 * lw, m_ - 0.003 * lw) if kind == "just inside" else (m_ - 0.10 * lw, m_ - 0.06 * lw)
+                              if not newrule and kind == "just inside" and m_ >= W * CAP - 1: lo = max(lo, W * 0.932)
                           time.sleep(0.05)
                       lim_seen = s_.get("lineLimitX")
                       if lim_seen is None: rep.step("no limit reported", writing=s_.get("writing"), draw=s_.get("draw"))
@@ -1782,6 +1787,10 @@ def run_scenarios(app, rep, only, hand):
                           continue
                       label = f"{wname} at {zoom}, ink {kind}" + (" (marker beyond the first view)" if beyond else "")
                       if beyond: rep.step(f"{label}: the view went along", follows=s_.get("follows", 0) - f0, viewMovedRight=round((s_["view"]["x"] - vx0) / W, 3), marker=round(limit / W, 3))
+                      if newrule:   # the marker itself, before any "the robot missed" skip: a wrong marker is a failure, not a miss
+                          rep.check(s_.get("lineLimitX") is not None and abs(s_["lineLimitX"] - limit) < 0.01 * W and (kind == "mid-line" or s_["newLines"] == nl0 or right >= limit - 0.03 * lw),
+                                    f"{label}: the marker is at the block's start + {wname} x 1,600 units (rule B), and no next line came before its last 3%",
+                                    f"marker {pct(s_.get('lineLimitX'), W)}, want {limit / W:.1%}; ink {right / W:.1%}, new lines {s_['newLines'] - nl0}")
                       if not landed and newrule:   # three tries and the robot's ink still missed the band (2 mm on the pad at 300%, 50%)
                           rep.skip(label, f"the robot's ink didn't land in the band in 3 tries (ink {right / W:.1%}, marker {lim_seen / W:.1%}, {(lim_seen - right) / lw * 100:.1f}% of the line short)")
                           break
