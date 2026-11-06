@@ -3,7 +3,7 @@
 # "Applications" folder checks a local fake GitHub (release JSON, DMG, SHA256SUMS.txt, .sig), downloads, verifies,
 # stages, restarts into the new version, and the new version opens the same notebook (its own TRACKPAD_DRAW_DATA).
 # Then every way it can go wrong. Signed with a throwaway key, never the release key.
-#   checks/updater.sh [scenario ...]      (default: all)
+#   checks/updater.sh [scenario ...]      (default: all)   NO_SHOTS=1: skip the panel screenshots (the sheet never shows)
 cd "$(dirname "$0")/.."
 LS=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 W=$(mktemp -d /tmp/scrawl-updater.XXXX); W=$(cd "$W" && pwd -P); OLD=1.0.0; NEW=1.0.1; BAD=0
@@ -81,6 +81,7 @@ sleep 0.5
 # run <scenario> <mode json> [app flags...]: fresh Applications + data folders, launch the old app, wait for it to finish.
 run() {
     S=$1; MODE=$2; shift 2
+    [ -n "$NO_SHOTS" ] && SHOT=   # NO_SHOTS=1: no panel screenshots, so nothing is ever put on screen (--offscreen throughout)
     A="$W/$S/Applications"; D="$W/$S/data"; mkdir -p "$A" "$D"
     mkapp "$A/Scrawl.app" $OLD
     [ -n "$SEED" ] && cp "$SEED" "$D/Notebook.tdnb"
