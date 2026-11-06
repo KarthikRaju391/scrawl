@@ -626,7 +626,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // From a run-loop timer, not the main queue: the test waits (spinning the run loop) for imports that finish with
         // DispatchQueue.main.async, which can't run while a main-queue block is running.
         if let i = a.firstIndex(of: "--test-images"), i + 1 < a.count { Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [self] _ in TestImages.run(a[i + 1], app: self) } }
-        if a.contains("--test-stability") { Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [self] _ in TestStability.run(app: self) } }   // 0.1.6.1 (checks/stability.sh)
+        if let i = a.firstIndex(of: "--test-stability-thumbs"), i + 1 < a.count { Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [self] _ in TestStabilityThumbs.run(app: self, phase: a[i + 1]) } }
+        else if a.contains("--test-stability") { Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [self] _ in TestStability.run(app: self) } }   // 0.1.6.1 (checks/stability.sh)
         if a.contains("--test-page") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPage.run(app: self) } }
         if a.contains("--test-newline") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestNewLine.run(app: self) } }
         if a.contains("--test-keys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestKeys.run(app: self) } }

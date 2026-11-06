@@ -2006,6 +2006,8 @@ def run_scenarios(app, rep, only, hand):
             time.sleep(0.03)
         open_ms = app.state().get("galleryOpenMs", 0)
         rep.step("timeline (ms, blank tiles)", points=timeline[:12] + timeline[-2:], pages=n)
+        if seen_open is None:   # G never opened the overview: say whether the posted key could reach the window at all
+            st = app.state(); rep.step("G never opened the overview: keys not delivered?", windowKey=st.get("windowKey"), appActive=st.get("appActive"), keyWindowIsOurs=st.get("keyWindowIsOurs"))
         rep.check(open_ms < 250, "the overview opens at once (its own work under 250 ms)", f"{open_ms:.0f} ms of the app's work; seen open after {seen_open and round(seen_open)} ms")
         rep.check(first_all is not None and first_all - (seen_open or 0) <= 600, "every thumbnail shows within about half a second of opening",
                   f"all {n} up to date {round(first_all - (seen_open or 0)) if first_all else 'never (15 s)'} ms after the overview appeared")

@@ -196,3 +196,63 @@ enum TestStability {
         try? FileManager.default.moveItem(atPath: tmp, toPath: inbox + "/" + id + ".scrawlpage")
     }
 }
+
+/// --test-stability-thumbs seed|open (checks/stability.sh): the robot's gallery-thumbs scenario through the app's own key handler
+/// (app.key), off screen, so it doesn't depend on how the window server routes posted keys. `seed`: 9 pages of writing
+/// (as the robot's seed), the overview, a page deleted and undone, saved, quit. `open` (a new process on the same notebook,
+/// like the robot's relaunch): G opens the overview and every tile is up to date within 600 ms; again with nothing cached;
+/// a page edited, then G: its tile is up to date.
+enum TestStabilityThumbs {
+    static func run(app: AppDelegate, phase: String) {
+        let canvas = app.canvas, dir = AppPaths.dataDir, cache = ThumbnailCache.shared
+        var r: [String: Any] = ["phase": phase]
+        func spin(_ s: Double) { RunLoop.current.run(until: Date().addingTimeInterval(s)) }
+        func key(_ ch: String, _ code: UInt16) {
+            if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: app.window.windowNumber, context: nil,
+                                        characters: ch, charactersIgnoringModifiers: ch, isARepeat: false, keyCode: code) { _ = app.key(e) }
+        }
+        func allFresh() -> Bool { canvas.pages.allSatisfy { cache.cached($0).fresh } }
+        /// ms from G until every tile is up to date (nil: not within 15 s).
+        func openAndWait() -> Double? {
+            let t0 = CACurrentMediaTime()
+            key("g", 5); app.finishTransitionNow()
+            guard app.galleryShown else { return nil }
+            while CACurrentMediaTime() - t0 < 15 { if allFresh() { return (CACurrentMediaTime() - t0) * 1000 }; spin(0.01) }
+            return nil
+        }
+        func close() { if app.galleryShown { key("\u{1b}", 53); app.finishTransitionNow() } }
+        func strokes(_ n: Int, y: Double) {
+            for j in 0..<n {
+                let x0: Double = 60 + Double(j % 15) * 100, y0: Double = y - Double(j / 15) * 30
+                canvas.testAddStroke((0..<60).map { i in StrokePoint(p: CGPoint(x: x0 + Double(i) * 1.2, y: y0 + sin(Double(i) / 3) * 10), pressure: 0.6) })
+            }
+            canvas.markDirty()
+        }
+        app.warmsThumbnails = true; app.warmThumbnails()   // as the robot hook does at launch
+        if phase == "seed" {
+            for k in 0..<9 { if k > 0 || !canvas.doc.strokes.isEmpty { canvas.newPage() }; strokes(k < 6 ? 450 : 30, y: 940) }
+            r["seedOpenMs"] = openAndWait() ?? -1
+            // Delete a page from the overview and bring it back (⌘Z), then reorder by editing an old page.
+            if let g = app.gallery { app.deletePage(g.selected); app.undo() }
+            close(); canvas.goToPage(2); strokes(5, y: 300)
+            r["afterDeleteUndoEditMs"] = openAndWait() ?? -1
+            close()
+            canvas.autosaver.saveNow(sync: true)
+            r["pages"] = canvas.pages.count
+        } else {
+            r["pages"] = canvas.pages.count
+            r["openMs"] = openAndWait() ?? -1                     // after a relaunch: nothing cached but what the launch warmed
+            close(); cache.dropAll()
+            r["nothingCachedMs"] = openAndWait() ?? -1            // nothing cached at all
+            close()
+            strokes(3, y: 200)                                    // edit the open page
+            let t0 = CACurrentMediaTime(); key("g", 5); app.finishTransitionNow()
+            var ok = false
+            while CACurrentMediaTime() - t0 < 3 { if cache.cached(canvas.doc).fresh { ok = true; break }; spin(0.01) }
+            r["editedFreshMs"] = ok ? (CACurrentMediaTime() - t0) * 1000 : -1
+            close()
+        }
+        if let d = try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]) { try? d.write(to: URL(fileURLWithPath: dir + "/test-stability-thumbs-\(phase).json")) }
+        try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
+    }
+}

@@ -33,5 +33,24 @@ show("#6 deleted page's tile on a new page", r["deletedTile"])
 sys.exit(1 if bad else 0)
 PY
 else echo "FAIL the app wrote no test-stability.json"; fail=1; fi
+echo "== app (--test-stability-thumbs: the robot's gallery-thumbs through app.key, a real relaunch in between)"
+mkdir -p "$D/thumbs"
+for ph in seed open; do
+  rm -f "$D/thumbs/ui-step.txt"
+  TRACKPAD_DRAW_DRYLOCK=1 TRACKPAD_DRAW_DATA=$D/thumbs "$APP" --test-stability-thumbs $ph --offscreen >/dev/null 2>&1 &
+  P=$!; for _ in $(seq 1 600); do [ -f "$D/thumbs/ui-step.txt" ] && break; kill -0 $P 2>/dev/null || break; sleep 0.1; done
+  kill -TERM $P 2>/dev/null; wait $P 2>/dev/null
+done
+python3 -I - "$D/thumbs/test-stability-thumbs-seed.json" "$D/thumbs/test-stability-thumbs-open.json" <<'PY' || fail=1
+import json, sys
+try: s, o = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
+except Exception as e: print("FAIL #6 thumbs flow: no result", e); sys.exit(1)
+bad = 0
+for name, v in [("9 pages written, G: every tile up to date", s["seedOpenMs"]), ("a page deleted and undone, another edited, G", s["afterDeleteUndoEditMs"]),
+                ("relaunched, G: every tile up to date", o["openMs"]), ("nothing cached, G", o["nothingCachedMs"]), ("the open page edited, G: its tile", o["editedFreshMs"])]:
+    ok = 0 <= v <= 600; bad += not ok
+    print(("PASS" if ok else "FAIL"), f"#6 thumbs flow: {name} in {v:.0f} ms (want <= 600)")
+sys.exit(1 if bad else 0)
+PY
 rm -rf "$D"
 exit $fail

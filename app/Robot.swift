@@ -324,6 +324,9 @@ final class Robot {
         if let g = app.gallery, app.galleryShown {   // robot:needs class GalleryView
             s["thumbs"] = canvas.pages.map { d -> Int in let c = g.thumbnails.cached(d); return c.image == nil ? 0 : (c.fresh ? 2 : 1) }   // 0 blank, 1 old, 2 up to date
         }
+        // Where posted keys can go: CGEvents posted to a background app reach only its key window (0.1.6.1 gate: a relaunched
+        // copy that never got a key window ignored every key of a scenario).
+        s["windowKey"] = app.window.isKeyWindow; s["appActive"] = NSApp.isActive; s["keyWindowIsOurs"] = NSApp.keyWindow === app.window
         s["galleryOpenMs"] = ((app.lastTransition["stepsMs"] as? [String: Double]) ?? [:]).values.reduce(0, +)
         s["cursorLocked"] = CursorLock.locked
         s["mapRegion"] = { let r = app.container.pageMap.regionForTest; return [r.minX, r.minY, r.maxX, r.maxY] }()   // robot:needs var regionForTest
