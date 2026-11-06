@@ -293,10 +293,15 @@ final class GestureEngine {
     private var palm = Set<Int32>()
     /// Contacts that touched down in the edge band: ignored until they lift (never draw, pan or pinch).
     private(set) var edgeIgnored = Set<Int32>()
+    /// Contacts already on the pad when draw mode started (the finger that clicked the toolbar's Draw button, a resting palm or
+    /// thumb): ignored until they lift, whatever the palm-rejection setting. They never draw, erase, pan or pinch.
+    private(set) var preexisting = Set<Int32>()
     var edgeGuard: () -> Double = { Settings.defaultEdgeGuard }
     static func inBand(_ n: CGPoint, _ g: Double) -> Bool { g > 0 && (n.x < g || n.x > 1 - g || n.y < g || n.y > 1 - g) }
     /// Whether the guard ignores this contact (already ignored, or touching down in the band now).
     func ignoresAtEdge(_ c: Contact) -> Bool { edgeIgnored.contains(c.id) || (!seen.contains(c.id) && Self.inBand(c.norm, edgeGuard())) }
+    /// Whether this contact counts for anything: not in the edge band, and not already down when draw mode started.
+    func ignores(_ c: Contact) -> Bool { preexisting.contains(c.id) || ignoresAtEdge(c) }
     /// Extra palm signal (macOS resting-touch classification), checked per contact per frame.
     var isPalm: (Contact) -> Bool = { _ in false }
     /// Called once per contact when it lifts: (id, was classified palm, drew a stroke).
@@ -311,7 +316,16 @@ final class GestureEngine {
     /// 25 ms after they began moving (median; p95 158 ms, slow drifts). A 4% distance rule caught 23 taps.
     static let deadZoneMM = 2.0
     private var navStart: (ids: [Int32], centroidMM: CGPoint, dist: Double)?
-    private var navLive = false
+    /// A two-finger gesture is a pan or a pinch, decided once when it leaves the dead zone and kept until the fingers lift
+    /// (Karthik: pans kept zooming, every frame's change of finger spread was a zoom). Whichever leaves the dead zone first
+    /// decides: the centroid (pan) or the spread, which must be clear for a pinch (more than 1.5x the centroid's travel; a
+    /// pinch with one finger still moves the centroid half the spread). A pan never zooms. Same rule as web annotate (59c7e47).
+    /// A pan is provisional for its first `panLockMM` of travel: a pinch whose fingers set off together moves the centroid
+    /// first (14 of 346 pinches in Karthik's sessions); a clear spread then (`pinchUpgrade` of the distance and 3 mm) still
+    /// makes it a pinch. Real pans never spread that much (under 8% in every recorded one).
+    enum NavKind: Equatable { case undecided, panProvisional, pan, pinch }
+    private(set) var navKind = NavKind.undecided
+    static let pinchSpreadOverTravel = 1.5, panLockMM = 10.0, pinchUpgrade = 0.15, pinchUpgradeMM = 3.0
     var settings = Settings()
     lazy var inkThreshold = settings.inkThreshold
 
@@ -323,7 +337,7 @@ final class GestureEngine {
 
     func reset() {
         if case .drawing = mode { onEnd?(false) }
-        mode = .idle; palm.removeAll(); edgeIgnored.removeAll(); navPrev = nil; navStart = nil; navLive = false; drewIds.removeAll(); seen.removeAll()
+        mode = .idle; palm.removeAll(); edgeIgnored.removeAll(); preexisting.removeAll(); navPrev = nil; navStart = nil; navKind = .undecided; drewIds.removeAll(); seen.removeAll()
     }
 
     /// Click to draw: false while it's off, so a finger only aims (hovers) and never inks by touch.
@@ -343,9 +357,10 @@ final class GestureEngine {
         return true
     }
 
-    /// Contacts already on the pad when draw mode starts (a resting palm) never draw.
     lazy var palmRejection = settings.palmRejection
-    func ignoreUntilLifted(_ ids: Set<Int32>) { guard palmRejection else { return }; palm.formUnion(ids); seen.formUnion(ids) }
+    /// Contacts already on the pad when draw mode starts never draw, erase, pan or pinch until they lift. This used to be
+    /// part of palm rejection, so with it off (the default since 85af6ac) the finger that clicked Draw inked at once.
+    func ignoreUntilLifted(_ ids: Set<Int32>) { preexisting.formUnion(ids); seen.formUnion(ids) }
 
     func frame(_ contacts: [Contact], t: Double) {
         if case let .drawing(id, _) = mode, bridgesLift(), contacts.contains(where: { $0.id == id && ($0.state == 5 || $0.state == 6) }) {
@@ -359,13 +374,14 @@ final class GestureEngine {
         let g = edgeGuard()
         for c in down where !seen.contains(c.id) && Self.inBand(c.norm, g) { edgeIgnored.insert(c.id) }
         edgeIgnored = edgeIgnored.intersection(ids)
+        preexisting = preexisting.intersection(ids)
         seen = ids
         drewIds = drewIds.intersection(ids)
         palm = palm.intersection(ids)
         if palmRejection {
             for c in down where c.major > settings.palmMajor || c.size > settings.palmSize || isPalm(c) { palm.insert(c.id) }
         }
-        let fingers = down.filter { !palm.contains($0.id) && !edgeIgnored.contains($0.id) }.sorted { $0.id < $1.id }
+        let fingers = down.filter { !palm.contains($0.id) && !edgeIgnored.contains($0.id) && !preexisting.contains($0.id) }.sorted { $0.id < $1.id }
         lastT = t; aiming = fingers.count == 1 ? fingers[0] : nil
 
         switch mode {
@@ -387,7 +403,7 @@ final class GestureEngine {
                 mode = fingers.isEmpty ? .idle : .waitLift
             }
         case .navigating:
-            if fingers.count >= 2 { navigate(fingers) } else { navPrev = nil; navStart = nil; navLive = false; mode = fingers.isEmpty ? .idle : .waitLift }
+            if fingers.count >= 2 { navigate(fingers) } else { navPrev = nil; navStart = nil; navKind = .undecided; mode = fingers.isEmpty ? .idle : .waitLift }
         case .waitLift:
             if fingers.isEmpty { mode = .idle }
         }
@@ -406,16 +422,23 @@ final class GestureEngine {
         let c = CGPoint(x: (a.norm.x + b.norm.x) / 2, y: (a.norm.y + b.norm.y) / 2)
         let d = hypot(a.mm.x - b.mm.x, a.mm.y - b.mm.y)
         defer { navPrev = ([a.id, b.id], c, Double(d)) }
-        if !navLive {
+        if navKind == .undecided {
             // In the dead zone: measured from where this pair landed; a new pair starts it again.
             let cmm = CGPoint(x: (a.mm.x + b.mm.x) / 2, y: (a.mm.y + b.mm.y) / 2)
             guard let s = navStart, s.ids == [a.id, b.id] else { navStart = ([a.id, b.id], cmm, Double(d)); return }
-            guard hypot(cmm.x - s.centroidMM.x, cmm.y - s.centroidMM.y) > Self.deadZoneMM || abs(Double(d) - s.dist) > Self.deadZoneMM else { return }
-            navLive = true
+            let moved = Double(hypot(cmm.x - s.centroidMM.x, cmm.y - s.centroidMM.y)), spread = abs(Double(d) - s.dist)
+            if spread > Self.deadZoneMM && spread > Self.pinchSpreadOverTravel * moved { navKind = .pinch }
+            else if moved > Self.deadZoneMM { navKind = .panProvisional }
             return   // out of it: moves count from here (navPrev = now), no jump
         }
+        if navKind == .panProvisional, let s = navStart, s.ids == [a.id, b.id] {
+            let cmm = CGPoint(x: (a.mm.x + b.mm.x) / 2, y: (a.mm.y + b.mm.y) / 2)
+            let spread = abs(Double(d) - s.dist)
+            if spread > Self.pinchUpgradeMM && spread > Self.pinchUpgrade * s.dist { navKind = .pinch }
+            else if hypot(cmm.x - s.centroidMM.x, cmm.y - s.centroidMM.y) > Self.panLockMM { navKind = .pan }
+        }
         guard let p = navPrev, p.ids == [a.id, b.id] else { return }
-        let ratio = p.dist > 5 && d > 5 ? Double(d) / p.dist : 1
+        let ratio = navKind == .pinch && p.dist > 5 && d > 5 ? Double(d) / p.dist : 1
         onNavigate?(p.centroid, c, ratio)
     }
 }
@@ -579,7 +602,7 @@ final class CanvasView: MTKView {
     /// The mark of the one finger down, if exactly one is (test hook).
     var markForTest: CGPoint? { contacts.count == 1 ? markPoint(contacts[0]) : nil }
     private func updateAim() {
-        let fingers = contacts.filter { !gestures.ignoresAtEdge($0) }
+        let fingers = contacts.filter { !gestures.ignores($0) }
         if Self.clickToDraw, fingers.count == 1 { aimMM = fingers[0].mm }
     }
     private(set) var clickDrawOn = false
@@ -1152,8 +1175,8 @@ final class CanvasView: MTKView {
         contacts = cs.filter(\.isDown)
         updateAim()
         // Only fingers the edge guard counts: a palm resting on the edge must neither cancel nor hold
-        // back a pending page move.
-        let counted = contacts.filter { !gestures.ignoresAtEdge($0) }
+        // back a pending page move. Nor does a contact that was already down when draw mode started.
+        let counted = contacts.filter { !gestures.ignores($0) }
         if (countedContacts > 0) != !counted.isEmpty { onTouching?(!counted.isEmpty) }
         countedContacts = counted.count
         if countedContacts > 0 { finishSlide(); cancelPendingMove() }
@@ -1225,7 +1248,9 @@ final class CanvasView: MTKView {
 
     /// Touches from NSTouch (or a test). Device size is in points (1/72 in).
     func touchSamples(_ ts: [NSTouchSample], timestamp: Double, now: Double = CACurrentMediaTime()) {
-        guard drawMode else { return }
+        // Outside draw mode the public touch path still reports which contacts are down (handle() keeps `downIds` and returns),
+        // so the ones already down when draw mode starts are ignored until they lift, as with MultitouchSupport.
+        guard drawMode || !usingMT else { return }
         if usingMT {  // MT draws; NSTouch only contributes Apple's resting flags for palm rejection
             restingNorm = ts.filter(\.resting).map(\.norm)
             restingAt = now
