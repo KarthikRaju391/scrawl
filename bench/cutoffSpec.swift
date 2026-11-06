@@ -58,6 +58,12 @@ struct CutoffSpec {
         q(g.schedAt.map { clock - $0 }); h.combine(g.touchedSinceSched)
     }
 
+    /// The amendment (cutoff-verify's reach fix): the cutoff never past the furthest ink can go at any zoom
+    /// (WritingLayout.reachRight). --no-reach-cap: the spec without it (for builds before the fix).
+    nonisolated(unsafe) static var reachCap = !CommandLine.arguments.contains("--no-reach-cap")
+    static func capped(_ start: Double, _ bw: Double, _ cam: Camera) -> Double {
+        reachCap ? min(start + bw, max(wPage.width * (1 + Camera.reach) + cam.visible.width * 0.45, start + 0.1 * bw)) : start + bw
+    }
     static func near(_ a: Double, _ b: Double, _ tol: Double = 1e-6) -> Bool { abs(a - b) <= tol * max(1, abs(a), abs(b)) }
 
     static func countedTouch(_ e: WEv) -> Bool { switch e { case .write, .down, .pan, .pinch, .scratch: return true; default: return false } }
@@ -122,14 +128,17 @@ struct CutoffSpec {
 
         // C1: the cutoff, from the start and the width of the view the block started in.
         var cutoff: Double?, bw: Double?
-        if let s = g.start, let v0 = g.vw0 { bw = post.width * v0; cutoff = s + bw! }
+        if let s = g.start, let v0 = g.vw0 { bw = post.width * v0; cutoff = Self.capped(s, bw!, post.cam) }
         if post.writing {
             switch (post.limit, cutoff) {
             case let (lim?, c?): if !Self.near(lim, c) { fail("C1", String(format: "cutoff %.2f, want start %.2f + %.0f%% x Vw0 %.2f = %.2f (zoom now %.2f, view x %.0f-%.0f)", lim, g.start!, post.width * 100, g.vw0!, c, post.cam.zoom, post.cam.visible.minX, post.cam.visible.maxX)) }
             case (nil, nil): break
             default: fail("C1", "cutoff \(post.limit.map { String(format: "%.1f", $0) } ?? "none") with block start \(g.start.map { String(format: "%.1f", $0) } ?? "none")")
             }
-            if pre.writing && !fresh && pre.runStart == post.runStart && pre.width == post.width, let a = pre.limit, let b = post.limit, !Self.near(a, b) {
+            // The reach cap (the amendment) moves the cutoff with the zoom, and only while it caps it.
+            let s0 = g.start ?? 0, v0 = g.vw0 ?? 0
+            let capChanged = Self.reachCap && ((pre.limit ?? .infinity) < s0 + pre.width * v0 - 1e-6 || (post.limit ?? .infinity) < s0 + post.width * v0 - 1e-6)
+            if pre.writing && !fresh && !capChanged && pre.runStart == post.runStart && pre.width == post.width, let a = pre.limit, let b = post.limit, !Self.near(a, b) {
                 fail("C1", String(format: "cutoff moved %.2f -> %.2f during %@ (same block, same setting)", a, b, wName(e)))
             }
         }
@@ -241,29 +250,29 @@ func cutoffP2(runs: Int, len: Int, waitMs: Double, seed: UInt64) -> (checked: In
             let first = CGRect(x: v.minX + f * v.width, y: v.maxY - WritingLayout.lineFromTop * v.height - h / 2, width: min(h * 3, v.maxX - v.minX - f * v.width - 1), height: h)
             _ = real.apply(.write(.at(f)), place: first)
             guard let s0 = real.obs.runStart else { fails.append("no block after the first stroke"); continue }
-            var rel: [Double?] = [real.obs.limit.map { $0 - s0 }]
+            var rel: [Double?] = [real.obs.limit.map { $0 - s0 }], widths: [Double] = [real.obs.width], cams: [Camera] = [real.obs.cam]
             for e in evs {
                 let pre = real.obs
                 let place: CGRect? = { switch e { case .write(let p), .down(let p): return wPlace(p, pre); default: return nil } }()
-                if case .write = e, place == nil { rel.append(nil); continue }
-                if case .down = e, place == nil { rel.append(nil); continue }
+                if case .write = e, place == nil { rel.append(nil); widths.append(pre.width); cams.append(pre.cam); continue }
+                if case .down = e, place == nil { rel.append(nil); widths.append(pre.width); cams.append(pre.cam); continue }
                 _ = real.apply(e, place: place)
                 let o = real.obs
-                rel.append(o.runStart == s0 ? o.limit.map { $0 - s0 } : nil)
+                rel.append(o.runStart == s0 ? o.limit.map { $0 - s0 } : nil); widths.append(o.width); cams.append(o.cam)
                 if o.runStart != s0 { break }
             }
-            rels.append(rel); labels.append(String(format: "camera %+.1f page widths, start at %.0f%% of the view", off, f * 100))
             let vw0 = CutoffSpec.rule == .b ? wPage.width : wPage.width / zoom
-            let want = ToolState.lineWidths[wi] * vw0
-            for (k, r) in rel.enumerated() { if let r { checked += 1; if !CutoffSpec.near(r, want) && !CutoffSpec.near(r, ToolState.lineWidths[real.canvas.tools.lineWidthIndex] * vw0) {
-                fails.append(String(format: "%@, zoom %.2f, width %.0f%%: after event %d the cutoff is start %+.2f, want %+.2f (%.0f%% x %.1f)", labels.last!, zoom, ToolState.lineWidths[wi] * 100, k, r, want, ToolState.lineWidths[wi] * 100, vw0)); break } } }
+            rels.append(rel.indices.map { k in rel[k].flatMap { r in CutoffSpec.near(r, widths[k] * vw0) ? r / widths[k] : (CutoffSpec.reachCap ? nil : r / widths[k]) } }); labels.append(String(format: "camera %+.1f page widths, start at %.0f%% of the view", off, f * 100))
+            for (k, r) in rel.enumerated() { if let r { checked += 1; let wnt = CutoffSpec.capped(s0, widths[k] * vw0, cams[k]) - s0; if !CutoffSpec.near(r, wnt) {
+                fails.append(String(format: "%@, zoom %.2f: after event %d the cutoff is start %+.2f, want %+.2f (%.0f%% x %.1f)", labels.last!, zoom, k, r, wnt, widths[k] * 100, vw0)); break } } }
         } }
-        // Across runs: the same relative cutoff at every step all of them reach within their first block.
+        // Across runs: the same relative cutoff per unit of setting (the measure) at every step all of them reach within their
+        // first block (the setting itself can differ: a width change is refused while one run has a finger held).
         let n = rels.map(\.count).min() ?? 0
         for k in 0..<n {
             let vals = rels.compactMap { $0[k] }
             if vals.count == rels.count, let a = vals.min(), let b = vals.max(), !CutoffSpec.near(a, b) {
-                fails.append(String(format: "zoom %.2f: after event %d the relative cutoff differs between runs: %.2f to %.2f", zoom, k, a, b)); break
+                fails.append(String(format: "zoom %.2f: after event %d the cutoff relative to the start, per unit of setting, differs between runs: %.2f to %.2f", zoom, k, a, b)); break
             }
         }
     }
@@ -328,7 +337,7 @@ func cutoffReachChecks(waitMs: Double) -> [String] {
         while words < 60 && steps < 200 && real.canvas.newLineCount == n0 {
             steps += 1
             let o = real.obs
-            if let r = wPlace(.next, o), r.maxX <= o.cam.visible.maxX + o.cam.visible.width * 0.04 { _ = real.apply(.write(.next), place: r); words += 1 } else { _ = real.apply(.pan(0.5), place: nil) }
+            if let r = wPlace(.next, o), r.maxX <= o.cam.visible.maxX + o.cam.visible.width * 0.05 + 1e-6 { _ = real.apply(.write(.next), place: r); words += 1 } else { _ = real.apply(.pan(0.5), place: nil) }
             real.tick(1.5 * wait)
         }
         let o = real.obs

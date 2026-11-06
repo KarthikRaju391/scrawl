@@ -937,7 +937,7 @@ final class CanvasView: MTKView {
     var lineLimitX: Double? {
         guard writingMode else { return nil }
         var l = WritingLayout(); l.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]; l.segmentStart = segmentStart
-        if !Camera.columnBound { guard let bw = blockWidth else { return nil }; l.blockWidth = bw }   // no block yet: no limit
+        if !Camera.columnBound { guard let bw = blockWidth else { return nil }; l.blockWidth = bw; l.reachRight = WritingLayout.reachRight(pageWidth: camera.page.width, visibleWidth: camera.visible.width) }   // no block yet: no limit
         return l.lineEnd(lineLeft: l.lineStart(pageWidth: camera.page.width), pageWidth: camera.page.width)
     }
     static let limitLineColor = SIMD4<Float>(0.10, 0.45, 0.91, 0.22)
@@ -1721,6 +1721,7 @@ final class CanvasView: MTKView {
             layout.segmentStart = segmentStart
             layout.wordHint = typicalWordWidth
             layout.blockWidth = blockWidth
+            if !Camera.columnBound { layout.reachRight = WritingLayout.reachRight(pageWidth: camera.page.width, visibleWidth: camera.visible.width) }
             let start = legacyWriting ? legacyLineLeft ?? s.minX : (runStart ?? layout.lineStart(pageWidth: camera.page.width))
             let move = layout.after(stroke: s, line: line, lineStrokes: lineStrokes, lineLeft: start,
                                     visible: camera.visible, pageWidth: camera.page.width)

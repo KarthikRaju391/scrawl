@@ -105,6 +105,7 @@ struct WModel {
 
     var obs: WObs {
         var l = WritingLayout(); l.lineWidth = width; l.segmentStart = segmentStart; l.blockWidth = blockWidth
+        if !Camera.columnBound { l.reachRight = WritingLayout.reachRight(pageWidth: wPage.width, visibleWidth: cam.visible.width) }
         let lim: Double? = !writing || (!Camera.columnBound && blockWidth == nil) ? nil : l.lineEnd(lineLeft: l.lineStart(pageWidth: wPage.width), pageWidth: wPage.width)
         let nl = pending.flatMap { $0.follow ? nil : $0 }, fl = pending.flatMap { $0.follow ? $0.target : nil }
         return WObs(writing: writing, width: width, cam: cam, runStart: runStart, lineInk: lineInk, lineStrokes: lineStrokes, prevLine: prevLine?.ink,
@@ -163,6 +164,7 @@ struct WModel {
         layout.lineWidth = width
         layout.segmentStart = segmentStart
         layout.blockWidth = blockWidth
+        if !Camera.columnBound { layout.reachRight = WritingLayout.reachRight(pageWidth: cam.page.width, visibleWidth: cam.visible.width) }
         let start = runStart ?? layout.lineStart(pageWidth: cam.page.width)
         let move = layout.after(stroke: s, line: line, lineStrokes: lineStrokes, lineLeft: start, visible: cam.visible, pageWidth: cam.page.width)
         if move == .none || lineHeld { pending = nil }

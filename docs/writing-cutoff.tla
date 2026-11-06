@@ -29,8 +29,8 @@ Abs(x) == IF x < 0 THEN -x ELSE x
 ReachCenter == 3 * W
 ClampX(x, z) == IF x + Vw(z) \div 2 > ReachCenter THEN ReachCenter - Vw(z) \div 2 ELSE x
 \* The proposed fix: the cutoff never past the furthest ink can go at any zoom (the reach + half the most zoomed-in view).
-CapX == ReachCenter + Vw(250) \div 2
-Capped(x) == IF Mut = "reachCap" /\ x > CapX THEN CapX ELSE x
+CapX == ReachCenter + (Vw(zoom) * 45) \div 100
+Capped(x, b, bw) == IF Mut = "reachCap" /\ x > CapX THEN Max(CapX, b + bw \div 10) ELSE x
 Max(a, b) == IF a > b THEN a ELSE b
 Min(a, b) == IF a < b THEN a ELSE b
 
@@ -53,9 +53,9 @@ SpecMeasure == IF Rule = "A" THEN V ELSE W
 BW == (w * m0) \div 100
 Cut == Capped(CASE Mut = "lineLeft" -> lineL + BW
                  [] Mut = "currentZoom" -> bs + (w * V) \div 100
-                 [] OTHER -> bs + BW)
+                 [] OTHER -> bs + BW, bs, BW)
 SBW == (w * gm0) \div 100
-SCut == IF Mut = "reachCap" THEN Capped(bs + SBW) ELSE bs + SBW   \* (the amendment, with the fix)
+SCut == IF Mut = "reachCap" THEN Capped(bs + SBW, bs, SBW) ELSE bs + SBW   \* (the amendment, with the fix)
 \* Due: the line's ink at or past cutoff - 3% of the line (scaled by 100: no fractions).
 ImplDue == lineR # Nil /\ 100 * lineR >= 100 * Cut - NearMarker * BW
 SpecDue == lineR # Nil /\ bs # Nil /\ 100 * lineR >= 100 * SCut - 3 * SBW
@@ -75,7 +75,7 @@ Init ==
 \* Returns the pending move and the follow target as a record.
 Decide(b, m, l, r, h, cx) ==
     LET bw == (w * m) \div 100
-        cut == Capped(CASE Mut = "lineLeft" -> l + bw [] Mut = "currentZoom" -> b + (w * V) \div 100 [] OTHER -> b + bw)
+        cut == Capped(CASE Mut = "lineLeft" -> l + bw [] Mut = "currentZoom" -> b + (w * V) \div 100 [] OTHER -> b + bw, b, bw)
         due == 100 * r >= 100 * cut - NearMarker * bw
         tx == ClampX(Min(r - V \div 2, cut + V \div 20 - V), zoom)
         fol == 100 * r > 100 * (cx + V) - 12 * V /\ tx > cx
@@ -248,10 +248,10 @@ TypeOK == pending \in {"none", "nl", "follow"} /\ counted \in {0, 1} /\ edge \in
 \* P1: the cutoff is the block's start + the setting x the spec's measure (the page width; rule A: the view's width when the block started).
 P1 == writing /\ bs # Nil => Cut = SCut
 \* P1 (stability): within a block, with the setting unchanged, nothing moves the cutoff (pans, zooms, follows, moves, undo, the guide).
-P1Stable == [][(writing /\ writing' /\ bs # Nil /\ bs' = bs /\ w' = w /\ ~(act' = "write" /\ gm0' # gm0)) => Cut' = Cut]_vars
+P1Stable == [][(writing /\ writing' /\ bs # Nil /\ bs' = bs /\ w' = w /\ ~(act' = "write" /\ gm0' # gm0) /\ ~(Mut = "reachCap" /\ zoom' # zoom)) => Cut' = Cut]_vars
 \* P2: the cutoff relative to the start is the setting x the measure, whatever the camera: no camX in it.
 \* (With the reach fix, the amendment: never past CapX.)
-P2 == writing /\ bs # Nil => Cut - bs = Capped(bs + (w * (IF Rule = "B" THEN W ELSE gm0)) \div 100) - bs
+P2 == writing /\ bs # Nil => Cut - bs = Capped(bs + (w * (IF Rule = "B" THEN W ELSE gm0)) \div 100, bs, (w * (IF Rule = "B" THEN W ELSE gm0)) \div 100) - bs
 \* P3: the block's start changes only by a stroke (first of a block, written well off the line, or after a deliberate hand
 \* move away), writing mode, a page change, or a redo with no block; never by a tick (the app's moves), Return, a pan, undo.
 P3 == [][bs' # bs => act' \in {"write", "page", "toggle"} \/ (act' = "redo" /\ bs = Nil)]_vars

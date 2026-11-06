@@ -42,6 +42,12 @@ struct WritingLayout {
     /// The view follows a line once its ink is within this share of the view's width from the view's right side, and goes
     /// so that the ink is at `followTo` of the view.
     static let followWithin = 0.12, followTo = 0.5
+    /// The furthest right the view can show at the zoom now (the camera's reach): a line never ends past it. A block started
+    /// near the reach (a 100% line from past x 4,080 at 100%, a 50% line from past 4,320 at 250%) had its end where the view
+    /// couldn't follow and no stroke could get, so no next line ever came (cutoff-verify: P8Reach, the reach check). Only
+    /// there does the end depend on the zoom. Never closer than 10% of the line to its start. Nil: no cap (unit checks).
+    var reachRight: Double?
+    static func reachRight(pageWidth: Double, visibleWidth: Double) -> Double { pageWidth * (1 + Camera.reach) + visibleWidth * 0.45 }   // 5% inside the view at its reach: room for the word that crosses
 
     /// Where this line started, if a deliberate hand pan moved it (Canvas decides that): the line then ends ½ or
     /// ¾ of the page after this point instead of after the left margin. Auto-pans never move it.
@@ -50,7 +56,11 @@ struct WritingLayout {
     var wordHint: Double?
     /// The limit for this line (page units).
     func lineEnd(lineLeft: Double, pageWidth: Double) -> Double {
-        if let bw = blockWidth { return (segmentStart ?? lineLeft) + bw }
+        if let bw = blockWidth {
+            let end = (segmentStart ?? lineLeft) + bw
+            guard let r = reachRight else { return end }
+            return min(end, max(r, (segmentStart ?? lineLeft) + 0.1 * bw))
+        }
         return min(segmentStart.map { $0 + lineWidth * pageWidth } ?? lineWidth * pageWidth, pageWidth * Self.rightCap)
     }
     /// The limit never goes past 95% of the page width (Karthik, 29 Oct): at 97% ink often stopped short of it (no next
