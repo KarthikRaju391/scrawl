@@ -141,6 +141,11 @@ struct WModel {
         let line = lineInk.map { $0.union(s) } ?? s
         lineInk = line
         lineStrokes.append(s)
+        decideMove(after: s, line: line)
+    }
+
+    /// CanvasView.decideMove: the move the line calls for (after a commit, or a redo bringing ink back).
+    mutating func decideMove(after s: CGRect, line: CGRect) {
         var layout = WritingLayout()
         layout.lineWidth = width
         layout.segmentStart = segmentStart
@@ -191,8 +196,18 @@ struct WModel {
         if writing, let first = left.first { lineStrokes = left; lineInk = left.dropFirst().reduce(first) { $0.union($1) } }
     }
 
+    /// 0.1.6.1: the ink a redo brings back is on the line again (if it's on it, or no line is open), and the move is decided again.
     mutating func redo() {
+        let before = strokes
         if let s = pages[pageIdx].redo.popLast() { pages[pageIdx].undo.append(pages[pageIdx].strokes); pages[pageIdx].strokes = s }
+        guard writing else { return }
+        let vh = cam.visible.height
+        var pool = before   // what came back: the strokes not in `before`, counted (two strokes can have the same bounds)
+        let back = strokes.filter { r in if let i = pool.firstIndex(of: r) { pool.remove(at: i); return false }; return true }
+        for s in back where lineInk.map({ abs(s.midY - $0.midY) <= max($0.height, vh * 0.12) * 1.2 }) ?? true {
+            lineInk = lineInk.map { $0.union(s) } ?? s; lineStrokes.append(s)
+        }
+        if let line = lineInk, let last = lineStrokes.last { decideMove(after: last, line: line) }
     }
 
     /// A camera move by hand: two fingers (counted: a pending move is dropped), with `pan` the sideways part
@@ -472,7 +487,7 @@ struct WSpec {
         if committed != nil, post.writing { mon.refX = post.cam.center.x; mon.panSum = 0 }
         if moved > 0 { mon.refX = post.cam.center.x; mon.panSum = 0 }
         switch e { case .toggle, .page, .undo: mon.panSum = 0; default: break }
-        if committed != nil, let t = post.pendingLiftAt { mon.schedAt = t; mon.downSinceSched = false }
+        if committed != nil || e == .redo, let t = post.pendingLiftAt { mon.schedAt = t; mon.downSinceSched = false }   // a redo decides the move too (0.1.6.1)
         else if post.pendingLiftAt == nil { mon.schedAt = nil }
         return bad
     }

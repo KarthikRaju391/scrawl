@@ -8,6 +8,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import QuartzCore
 
 func stabilityChecks(_ check: (Bool, String) -> Void) {
     let pad = Multitouch.padMM
@@ -58,6 +59,24 @@ func stabilityChecks(_ check: (Bool, String) -> Void) {
         for k in 0..<40 { frame(c, [contact(10, 0.40 + 0.006 * Double(k), 0.50)]) }
         frame(c, [])
         check(c.doc.strokes.isEmpty, "#1 a fresh eraser touch over the ink erases it (strokes \(c.doc.strokes.count))")
+    }
+
+    do {
+        // Click to draw: a finger resting on the pad when draw mode starts aims, and a click then starts the stroke there.
+        let was = CanvasView.clickToDraw
+        CanvasView.clickToDraw = true
+        t = CACurrentMediaTime()   // clickDown stamps real time; a stroke that ends within 50 ms of it is a tap
+        let c = newCanvas()
+        for _ in 0..<5 { frame(c, [contact(11, 0.45, 0.50)]) }
+        c.drawMode = true
+        for _ in 0..<5 { frame(c, [contact(11, 0.45, 0.50)]) }
+        let aimedNoInk = c.doc.strokes.isEmpty
+        c.clickDown()
+        for k in 0..<30 { frame(c, [contact(11, 0.45 + 0.006 * Double(k), 0.50)]) }
+        frame(c, [])
+        c.drawMode = false
+        CanvasView.clickToDraw = was
+        check(aimedNoInk && c.doc.strokes.count == 1, "#1 click to draw: a finger already down aims (no ink), and a click draws with it (strokes \(c.doc.strokes.count))")
     }
 
     // MARK: #2 pan or pinch, decided once

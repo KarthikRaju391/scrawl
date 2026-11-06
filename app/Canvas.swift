@@ -659,7 +659,10 @@ final class CanvasView: MTKView {
             // frame recounts.
             if countedContacts > 0 { countedContacts = 0; onTouching?(false) }
             gestures.reset(); contacts = []; needsRender = true
-            if drawMode { gestures.ignoreUntilLifted(downIds) }
+            // Contacts already down (the finger that clicked Draw) never ink until they lift. With click to draw a touch never
+            // inks without a click anyway, and a finger resting there is how you aim: Karthik pressed E with it down, then
+            // clicked to erase (session 2 Nov 19:02), so they stay usable.
+            if drawMode && !Self.clickToDraw { gestures.ignoreUntilLifted(downIds) }
             // No App Nap / timer coalescing while drawing: input and frames must not be throttled.
             if drawMode, activity == nil {
                 activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .latencyCritical], reason: "drawing")
@@ -1893,8 +1896,7 @@ final class CanvasView: MTKView {
         let back = doc.strokes.filter { s in !before.contains { $0 === s } }
         let vh = camera.visible.height
         for s in back where lineInk.map({ abs(s.bounds.midY - $0.midY) <= max($0.height, vh * 0.12) * 1.2 }) ?? true {
-            lineInk = lineInk.map { $0.union(s.bounds) } ?? s.bounds; lineStrokes.append(s.bounds)
-            if runStart == nil { runStart = s.bounds.minX; segmentStart = runStart }
+            lineInk = lineInk.map { $0.union(s.bounds) } ?? s.bounds; lineStrokes.append(s.bounds)   // (a block starts only by its rules: not here)
         }
         if scrub == nil, let line = lineInk, let last = lineStrokes.last { decideMove(after: last, line: line) }   // a scrub decides as it ends
     }
