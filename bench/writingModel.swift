@@ -68,6 +68,7 @@ struct WObs {
     var pendingFollow: CGPoint? = nil
     var blockView: Double? = nil  // the implementation's own block view width: only seeds the oracle for a run that starts mid-block
     var guide: Double? = nil      // the guide line's target strength (0: hidden); nil if not observed
+    var inkRight: Double? = nil   // the line's rightmost ink with the stroke being drawn (CanvasView.lineRight)
 }
 
 // MARK: - The model (CanvasView's writing logic)
@@ -109,7 +110,8 @@ struct WModel {
         return WObs(writing: writing, width: width, cam: cam, runStart: runStart, lineInk: lineInk, lineStrokes: lineStrokes, prevLine: prevLine?.ink,
                     lineHeld: lineHeld, handRef: handRef, pendingTarget: nl?.target, pendingLiftAt: nl?.liftAt, counted: counted, edge: edge,
                     clock: clock, strokes: strokes, limit: lim, newLines: newLines, page: pageIdx, follows: follows, pendingFollow: fl, blockView: blockView,
-                    guide: { guard let l = lim, let r = lineInk?.maxX, let bw = blockWidth else { return 0 }; return 0.22 * min(max(1 - (l - r) / (CanvasView.limitShowWithin * bw), 0), 1) }())
+                    guide: { guard let l = lim, let r = lineInk?.maxX, let bw = blockWidth else { return 0 }; return 0.22 * min(max(1 - (l - r) / (CanvasView.limitShowWithin * bw), 0), 1) }(),
+                    inkRight: lineInk.map { Double($0.maxX) })
     }
 
     private mutating func addStroke(_ s: CGRect) {

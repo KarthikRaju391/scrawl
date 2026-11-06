@@ -90,7 +90,7 @@ struct CutoffSpec {
         // Contacts: a counted touch in this event, and when the last one lifted.
         let touched = Self.countedTouch(e) || post.counted > 0 || pre.counted > 0
         if touched && post.counted == 0 { g.lastUp = post.clock }
-        if Self.handMove(e) { g.hand += abs(post.cam.center.x - pre.cam.center.x) }
+        if Self.handMove(e) { g.hand += abs(post.cam.center.x - pre.cam.center.x); if g.dropCause == "touch" { g.dropCause = "hand" } }   // the touch that dropped it was a pan or pinch
 
         // C3: the block's start changes only by the rules.
         var fresh = false
@@ -101,10 +101,13 @@ struct CutoffSpec {
                 if !Self.near(post.runStart!, s.minX) { fail("C3", String(format: "block start %.1f, not the stroke's start %.1f", post.runStart!, s.minX)) }
                 let vw = pre.cam.visible.width
                 let ok = pre.runStart == nil || !pre.writing || Self.wellOff(pre, s) ||
-                    (g.hand >= Self.deliberate * vw * (1 - 1e-9) && abs(s.minX - pre.runStart!) > Self.newRun * wPage.width * (1 - 1e-9))
+                    (g.hand >= Self.deliberate * vw * (1 - 1e-9) && (abs(s.minX - pre.runStart!) > Self.newRun * wPage.width * (1 - 1e-9) ||
+                        pre.lineInk.map { l in s.maxX < l.minX - max(l.height * 1.5, vw * 0.08) * (1 - 1e-9) } == true))   // away: 10% of the page, or left of the line
                 if !ok { fail("C3", String(format: "block start %.1f -> %.1f with no cause (hand move %.0f%% of the view, stroke %.1f-%.1f, line %@)", pre.runStart!, s.minX,
                                            g.hand / vw * 100, s.minX, s.maxX, pre.lineInk.map { String(format: "%.0f-%.0f y %.0f", $0.minX, $0.maxX, $0.midY) } ?? "none")) }
                 fresh = true
+            } else if e == .redo, pre.runStart == nil, post.writing, let l = post.lineInk, Self.near(post.runStart!, l.minX) {
+                fresh = true   // 3cfa1a5: a redo with no block (writing mode off/on, a page change, Clear) starts one at the ink it brings back
             } else {
                 fail("C3", "block start changed by \(wName(e)) (\(pre.runStart.map { String(format: "%.1f", $0) } ?? "nil") -> \(post.runStart.map { String(format: "%.1f", $0) } ?? "nil"))\(auto ? ", the app's own move" : "")")
                 fresh = true
@@ -135,7 +138,7 @@ struct CutoffSpec {
 
         // C4: the next line.
         if post.pendingLiftAt != nil && post.pendingFollow != nil { fail("C4", "two moves pending") }
-        if (committed != nil || e == .redo), post.writing, !post.lineHeld, let m = marker, let r = right ?? committed?.maxX {
+        if (committed != nil || e == .redo), post.writing, !post.lineHeld, let m = marker, let r = right ?? committed.map({ Double($0.maxX) }) {
             let want = r >= m - 1e-6
             let has = post.pendingLiftAt != nil || moved > 0
             if want != has { fail("C4", String(format: "line's ink to %.2f, marker %.2f (cutoff %.2f): next line %@, want %@ [%@]", r, m, cutoff!, has ? "pending" : "none", want ? "pending" : "none", wName(e))) }
@@ -173,7 +176,7 @@ struct CutoffSpec {
 
         // C6: the guide.
         if post.writing, let gd = post.guide, let c = cutoff, let b = bw {
-            let r = post.lineInk.map { Double($0.maxX) }
+            let r = post.inkRight ?? post.lineInk.map { Double($0.maxX) }   // with the stroke being drawn
             let want = r.map { c - $0 < Self.showWithin * b - 1e-6 } ?? false
             let edgeCase = r.map { abs(c - $0 - Self.showWithin * b) < 1e-6 } ?? false
             if !edgeCase && want != (gd > 1e-9) { fail("C6", String(format: "guide %@, want %@: ink to %@, cutoff %.1f, show within %.1f%@", gd > 1e-9 ? "shown" : "hidden", want ? "shown" : "hidden", r.map { String(format: "%.1f", $0) } ?? "none", c, Self.showWithin * b, auto ? " (just after the move)" : "")) }
@@ -265,4 +268,74 @@ func cutoffP2(runs: Int, len: Int, waitMs: Double, seed: UInt64) -> (checked: In
         }
     }
     return (checked, fails)
+}
+
+// MARK: - The explorer's grid for the cutoff spec
+
+extension WExplore {
+    /// Starts: 3 settings x 4 zooms (50% to 400%) x 3 camera positions (left of the page, at its left, past its right).
+    static func cutoffStarts(waitMs: Double) -> [WModel] {
+        var out: [WModel] = []
+        for wi in 0..<3 { for z in [0.5, 1.0, 2.5, 4.0] { for off in [-1.3, 0.0, 1.1] {
+            var m = WModel(); m.waitMs = waitMs; m.widthIdx = wi
+            m.cam.zoom = z; m.cam.home()
+            m.cam.center.x += off * wPage.width; m.cam.clamp()
+            out.append(m)
+        } } }
+        return out
+    }
+    /// Blocks started at 5%, 50% and 90% of the view; words up to, into and across the marker; the pause; edge contacts;
+    /// a held finger; hand pans and pinches; arrows; undo/redo; Return; page; writing mode off/on; the setting.
+    static func cutoffAlphabet(_ W: Double) -> [WEv] {
+        [.write(.at(0.05)), .write(.at(0.5)), .write(.at(0.9)), .write(.next), .write(.short), .write(.zone), .write(.cross), .write(.idot),
+         .write(.nextLine), .write(.prevEnd), .write(.farRight), .write(.above), .tick(0.5 * W), .tick(1.1 * W), .edgeDown, .edgeUp,
+         .down(.next), .up, .pan(0.3), .pan(-0.3), .pinch(1.5), .pinch(1 / 1.5), .arrow(1), .undo, .redo, .ret, .page, .toggle, .width(0), .width(2)]
+    }
+    /// The events around the move itself, for deeper runs.
+    static func cutoffCore(_ W: Double) -> [WEv] {
+        [.write(.at(0.5)), .write(.next), .write(.zone), .write(.cross), .write(.prevEnd), .write(.nextLine), .tick(1.1 * W), .edgeDown,
+         .down(.next), .up, .pan(0.3), .pinch(1.5), .undo, .redo]
+    }
+}
+
+/// Run-on: how far lines' ink went past their cutoff (in line widths), by what besides writing on allowed it.
+func cutoffRunOnReport() -> String {
+    let r = CutoffSpec.runOns
+    guard !r.isEmpty else { return "  run-on: no line went past its cutoff" }
+    var byCause: [String: [Double]] = [:]
+    for x in r { byCause[x.causes.isEmpty ? "writing on (every gap under the wait)" : x.causes, default: []].append(x.over) }
+    return "  run-on past the cutoff (lines, median / max in line widths): " + byCause.sorted { $0.key < $1.key }.map { k, v in
+        let s = v.sorted(); return String(format: "%@: %d, %.2f / %.2f", k, s.count, s[s.count / 2], s.last!) }.joined(separator: "; ")
+}
+
+// MARK: - Targeted checks on the real canvas
+
+/// A block started where its cutoff is past the furthest the view can go (the camera's reach): the follow stops at the
+/// reach, ink can't get to the marker, and no next line ever comes. Writes words to the right (panning on when out of
+/// room) for 60 words; returns failures.
+func cutoffReachChecks(waitMs: Double) -> [String] {
+    var bad: [String] = []
+    for (wi, zoom) in [(0, 2.5), (2, 1.0), (1, 4.0)] {
+        let real = WReal(waitMs: waitMs, widthIdx: wi, zoom: zoom, viewX: 0)
+        var c = real.canvas.camera; c.center.x = .infinity; c.clamp()   // as far right as the view goes
+        let v = c.visible
+        real.canvas.setVisibleForReplay(x: v.minX, y: v.minY, w: v.width, z: zoom)
+        let h = min(max(v.height * 0.06, 6), 60)
+        _ = real.apply(.write(.at(0.05)), place: CGRect(x: v.minX + 0.05 * v.width, y: v.maxY - 0.5 * v.height - h / 2, width: h * 3, height: h))
+        let n0 = real.canvas.newLineCount
+        let wait = waitMs / 1000
+        var words = 0, steps = 0
+        while words < 60 && steps < 200 && real.canvas.newLineCount == n0 {
+            steps += 1
+            let o = real.obs
+            if let r = wPlace(.next, o), r.maxX <= o.cam.visible.maxX + o.cam.visible.width * 0.04 { _ = real.apply(.write(.next), place: r); words += 1 } else { _ = real.apply(.pan(0.5), place: nil) }
+            real.tick(1.5 * wait)
+        }
+        let o = real.obs
+        if real.canvas.newLineCount == n0 {
+            bad.append(String(format: "width %.0f%%, zoom %.1f: block at %.0f, cutoff %.0f, but the view stops at x %.0f (its reach): %d words and no next line; ink to %.0f",
+                              ToolState.lineWidths[wi] * 100, zoom, o.runStart ?? .nan, o.limit ?? .nan, o.cam.visible.maxX, words, o.lineInk?.maxX ?? .nan))
+        }
+    }
+    return bad
 }

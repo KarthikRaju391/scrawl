@@ -21,7 +21,11 @@ func wPlace(_ p: WPlace, _ o: WObs) -> CGRect? {
     let h = min(max(v.height * 0.06, 6), 60), ww = h * 3, gap = h * 0.6
     let lineY = o.lineInk?.midY ?? (v.maxY - v.height * WritingLayout.lineFromTop)
     let rs = o.runStart ?? W * 0.03
-    let limit = WSpec.limit(o.runStart, o.width), zone = WSpec.zone(limit, o.width)
+    var limit = WSpec.limit(o.runStart, o.width), zone = WSpec.zone(limit, o.width)
+    if CutoffSpec.enabled {   // aim at the spec's cutoff and marker (bench/cutoffSpec.swift), not the capped rule before 0.1.6
+        let bw = o.width * (CutoffSpec.rule == .b ? W : (o.blockView ?? v.width))
+        limit = rs + bw; zone = limit - CutoffSpec.nearMarker * bw
+    }
     let pitch = max((o.lineInk?.height ?? h) * 1.35, v.height * 0.12)
     func word(_ x: Double, _ y: Double, _ w: Double = ww) -> CGRect { CGRect(x: x, y: y - h / 2, width: w, height: h) }
     var r: CGRect
@@ -255,7 +259,7 @@ final class WReal {
                     lineStrokes: s.lineStrokes, prevLine: s.prevLine, lineHeld: s.lineHeld, handRef: s.handRef, pendingTarget: s.pending?.target,
                     pendingLiftAt: s.pending?.liftAt, counted: s.countedContacts, edge: edge == nil ? 0 : 1, clock: vclock,
                     strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex, handPanX: s.handPanX,
-                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth, guide: canvas.limitTargetAlphaForTest)
+                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth, guide: canvas.limitTargetAlphaForTest, inkRight: canvas.lineRightForTest)
     }
 
     private func contact(_ id: Int32, page p: CGPoint) -> Contact {
@@ -320,6 +324,11 @@ final class WReal {
             for _ in 0..<150 {
                 if canvas.newLineCount > n0 { return true }
                 let o = obs
+                if ProcessInfo.processInfo.environment["CUTOFF_RECOVER_LOG"] != nil {
+                    print(String(format: "  recover: view %.0f-%.0f z %.2f, start %@, line %@, limit %@, pending %@, follow %@, held %@", o.cam.visible.minX, o.cam.visible.maxX, o.cam.zoom,
+                                 o.runStart.map { String(format: "%.0f", $0) } ?? "nil", o.lineInk.map { String(format: "%.0f-%.0f y %.0f", $0.minX, $0.maxX, $0.midY) } ?? "nil",
+                                 o.limit.map { String(format: "%.0f", $0) } ?? "nil", o.pendingLiftAt != nil ? "yes" : "no", o.pendingFollow != nil ? "yes" : "no", o.lineHeld ? "yes" : "no"))
+                }
                 if o.pendingLiftAt != nil { tick(1.1 * wait); continue }
                 let lim = WSpec.limit(o.runStart, o.width), zone = WSpec.zone(lim, o.width), vv = o.cam.visible
                 if let r = wPlace(.zone, o), zone + (lim - zone) * 0.5 <= vv.maxX + vv.width * 0.05 - 1, (o.lineInk?.maxX ?? 0) < zone { _ = apply(.write(.zone), place: r) }
@@ -598,7 +607,7 @@ func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
                     lineStrokes: s.lineStrokes, prevLine: s.prevLine, lineHeld: s.lineHeld, handRef: s.handRef, pendingTarget: s.pending?.target,
                     pendingLiftAt: s.pending?.liftAt, counted: s.countedContacts, edge: 0, clock: vclock,
                     strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex,
-                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth, guide: canvas.limitTargetAlphaForTest)
+                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth, guide: canvas.limitTargetAlphaForTest, inkRight: canvas.lineRightForTest)
     }
     var afterWidth: (old: Double, at: Double)?
     var heldFrom: Double?
@@ -624,7 +633,11 @@ func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
     }
     var lastIds = Set<Int32>()
     var commits = 0
-    canvas.onAct = { a, _ in if a == "commit" { commits += 1 } }
+    let actLog = ProcessInfo.processInfo.environment["CUTOFF_ACTS"] != nil
+    // A two- or three-finger double tap replayed from the touch frames undoes or redoes by itself; the recorded "undo" /
+    // "redo" act that follows it is the same command (it was applied twice: every gesture undo undid two strokes).
+    var gestureDone = (undo: 0, redo: 0)
+    canvas.onAct = { a, x in if a == "commit" { commits += 1 }; if a == "gestureUndo" { gestureDone.undo += 1 }; if a == "gestureRedo" { gestureDone.redo += 1 }; if actLog, a != "strokeBegin", a != "strokeEnd", a != "click" { print(String(format: "ACT %.3f %@ %@", vclock - (rows.first?["m"] as? Double ?? 0), a, x.isEmpty ? "" : "\(x)")) } }
     for r in rows {
         vclock = r["m"] as? Double ?? vclock
         do { let pre = obs(); canvas.advanceClock(); canvas.flushInputForTest(); check(.tick(0), pre, nil) }
@@ -660,8 +673,8 @@ func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
                 if canvas.tools.lineWidthIndex != w0 { e = .width(canvas.tools.lineWidthIndex) }
             case "writingMode": let was = canvas.writingMode; canvas.writingMode = r["on"] as? Bool ?? false; if was != canvas.writingMode { e = .toggle }
             case "drawMode": drawing = r["on"] as? Bool ?? false; canvas.drawMode = drawing
-            case "undo": canvas.undo(); e = .undo
-            case "redo": canvas.redo(); e = .redo
+            case "undo": if gestureDone.undo > 0 { gestureDone.undo -= 1; e = .undo } else { canvas.undo(); e = .undo }
+            case "redo": if gestureDone.redo > 0 { gestureDone.redo -= 1; e = .redo } else { canvas.redo(); e = .redo }
             case "clear": canvas.clearPage(); e = .page
             case "newPage": canvas.newPage(); e = .page
             case "goToPage": let p0 = canvas.pageIndex; canvas.goToPage(r["page"] as? Int ?? 0); if canvas.pageIndex != p0 { e = .page }
