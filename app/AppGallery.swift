@@ -30,6 +30,7 @@ extension AppDelegate {
         logGallery("galleryShow")
         tips.openedOverview(); practiceTick(.overview); usage.record("overview", ["pages": canvas.pages.count])
         guard !galleryShown, transitionView == nil else { return }
+        settingsResumeDraw = false   // closing Settings later doesn't start drawing (or close the overview to draw)
         var ms: [String: Double] = [:]; var tl = CACurrentMediaTime()
         func lap(_ k: String) { let n = CACurrentMediaTime(); ms[k] = (n - tl) * 1000; tl = n }
         let img = canvasSnapshot(); lap("snapshot")

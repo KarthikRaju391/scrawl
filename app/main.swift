@@ -250,6 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] e in self?.key(e) == true ? nil : e }
         NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             self?.exitDrawMode("app deactivated"); self?.canvas.autosaver.saveNow(sync: false)
+            self?.settingsResumeDraw = false   // you went elsewhere: closing Settings later doesn't start drawing
         }
         // The cursor comes back whenever the Mac stops being in front of the user, or the displays change
         // (the frozen cursor's parking spot and the page mapping are no longer valid).
@@ -283,7 +284,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             canvas.logger.event(["what": "abCondition", "rejoin": Settings.abCondition])
         }
         // --no-activate: open in the background (used by the smoke test so it doesn't take focus).
-        if !Launch.background { NSApp.activate(ignoringOtherApps: true) } else { window.orderBack(nil) }
+        // --offscreen (checks/stability.sh): the window is never put on screen, not even behind other windows.
+        if !Launch.background { NSApp.activate(ignoringOtherApps: true) } else if !Launch.args.contains("--offscreen") { window.orderBack(nil) }
     }
 
     // MARK: draw mode
@@ -321,6 +323,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     func enterDrawMode(lock: Bool = true) {
         guard !canvas.drawMode else { return }
+        // Never behind the pages overview (0.1.6: ⌃⌥D or closing Settings there froze the pointer while fingers inked a page
+        // you couldn't see). The overview closes first, with its usual transition into the open page, and draw mode starts
+        // as that ends (galleryReturnsToDraw), the same way as leaving the overview you opened from draw mode.
+        if transitionView != nil { finishTransitionNow(); guard !canvas.drawMode else { return } }
+        if galleryShown { galleryReturnsToDraw = true; openPage(canvas.pageIndex); return }
         container.toolbar.hidePanel()
         // Select is a pointer tool: any way into draw mode (D, ⌃⌥D, the overview, practice) draws with the pen.
         if canvas.tools.tool == .select { var t = canvas.tools; t.tool = .pen; canvas.changing("draw mode") { canvas.tools = t }; container.toolbar.state = t }
@@ -509,6 +516,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func apply(_ input: ModeInput, from source: String) {
         let old = modeState, new = old.after(input, lastOther: lastOtherTool, drawBeforeSelect: drawBeforeSelect)
         if new.tool == .select && old.tool != .select { drawBeforeSelect = old.draw }
+        if new.draw != old.draw { settingsResumeDraw = false }   // you chose draw mode yourself since Settings opened
         usageMode(old: old, new: new, source: source)
         if new.tool != old.tool || new.locked != old.locked {
             var t = canvas.tools; t.tool = new.tool; t.zoomLocked = new.locked
@@ -539,7 +547,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     var lastBadgeZoom = 1.0
     var warmsThumbnails = !Launch.testing
     var thumbWarm: DispatchWorkItem?
-    /// Settings was opened from draw mode: closing it goes back to drawing.
+    /// Settings was opened from draw mode: closing it goes back to drawing. Only if nothing else happened since: it's dropped
+    /// when you turn draw mode on or off yourself, open the overview, or switch to another app.
     var settingsResumeDraw = false
     /// The update sheet, while it's open (Updater.swift).
     var updatePanel: UpdatePanel?
@@ -616,6 +625,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // From a run-loop timer, not the main queue: the test waits (spinning the run loop) for imports that finish with
         // DispatchQueue.main.async, which can't run while a main-queue block is running.
         if let i = a.firstIndex(of: "--test-images"), i + 1 < a.count { Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [self] _ in TestImages.run(a[i + 1], app: self) } }
+        if a.contains("--test-stability") { Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { [self] _ in TestStability.run(app: self) } }   // 0.1.6.1 (checks/stability.sh)
         if a.contains("--test-page") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestPage.run(app: self) } }
         if a.contains("--test-newline") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestNewLine.run(app: self) } }
         if a.contains("--test-keys") { DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in TestKeys.run(app: self) } }

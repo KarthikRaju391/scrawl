@@ -139,8 +139,10 @@ extension AppDelegate {
                         switch p {
                         case .failure(let e): inbox.finish(id, page: nil, pages: self.canvas.pages.count, error: e.localizedDescription)
                         case .success(let p):
-                            // Never turns the page under a finger: while drawing it is added, and a note says so.
-                            let open = !self.canvas.drawMode
+                            // Never turns the page under a finger: while drawing it is added, and a note says so. Nor while
+                            // the overview is up: the page is a new tile there (0.1.6 closed the overview into it, and into
+                            // draw mode if the overview was opened from it).
+                            let open = !self.canvas.drawMode && !self.galleryShown
                             let i = self.makeImagePage(p, open: open, via: "inbox", undoable: false)
                             let doc = self.canvas.pages[i]
                             if !open { self.showToast("Page \(i + 1) added from \(p.request.source.label)", seconds: 2.5) }
