@@ -1,6 +1,7 @@
 // The page map: a small picture of the page in the top-right corner, with the part you're looking at
-// outlined. It appears only while you move the page yourself (two-finger pan, pinch, arrow keys, scrolling)
-// when zoomed in past 1.5x, and fades out 1.2 s after the last move: writing, auto-pans and new lines never
+// outlined. It appears only while you move the page yourself (two-finger pan, pinch, arrow keys, scrolling),
+// at any zoom (0.1.7, the infinite canvas: Karthik; before, and with `--column-bound`, only zoomed in past 1.5x), and
+// fades out 1.2 s after the last move: writing, auto-pans and new lines never
 // show it. While the pointer is on it, it stays, so you can click or drag it to move the view (outside draw
 // mode, where there's a pointer). The ink picture renders on a background queue, at most every 0.4 s and only
 // after a stroke ends, so it never touches the writing path; the outline is redrawn live. View › Page Map
@@ -10,7 +11,8 @@ import AppKit
 final class PageMapView: NSView {
     weak var canvas: CanvasView?
     static let width: CGFloat = 132
-    static let minZoom = 1.5
+    /// Shown above this zoom: any (the infinite canvas), or past 1.5x with `--column-bound` (the page's column only).
+    static var minZoom: Double { Camera.columnBound ? 1.5 : 0 }
     nonisolated(unsafe) static var enabled = Launch.testing ? true : (UserDefaults.standard.object(forKey: "pageMap") as? Bool ?? true)
 
     private var image: CGImage?

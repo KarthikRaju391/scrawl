@@ -420,7 +420,7 @@ def rule_limit(st, start, frac, W, view_w):
     the width setting x the view's width when the block started, from its start, the zone its last 3%. Before 0.1.6
     (`--column-bound`, or an app that doesn't say): the width of the page, capped at 95%, and the 93% zone."""
     if st.get("columnBound", True) is False:
-        lw = frac * view_w; lim = start + lw
+        lw = frac * (W if st.get("lineMeasure") == "page" else view_w); lim = start + lw   # 0.1.7: a share of the page's width
         return lim, lim - 0.03 * lw, lw
     lim = min(start + frac * W, W * CAP); lw = frac * W
     return lim, (W * 0.93 if lim > W * 0.93 else lim - 0.03 * lw), lw
@@ -520,17 +520,32 @@ def run_scenarios(app, rep, only, hand):
         rep.shot(app, "wrote after panning right by hand")
         app.press("d", until=lambda s: not s["draw"])
 
-    @scenario("page-map", "Zoomed in past 1.5x, a small map of the page shows the view's place; clicking or dragging it moves the view; View › Page Map turns it off. At the whole page it stays away.")
+    @scenario("page-map", "Panning or pinching shows a small map of the page with the view's place (0.1.7: at any zoom, all the content, past the page's sides too; before, only zoomed in past 1.5x); clicking or dragging it moves the view; View › Page Map turns it off. Writing never shows it.")
     def _():
         if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
         app.press("n")
         app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
         s0 = app.state()
-        rep.check(not s0.get("pageMap"), "no map at the whole page", f"{s0.get('pageMap')}")
+        newrule = s0.get("columnBound", True) is False
+        rep.check(not s0.get("pageMap"), "no map until you move the view", f"{s0.get('pageMap')}")
         app.press("d", until=lambda s: s["draw"])
         st = app.state(); pad_w, pad_h = st["padMM"]
         fr, cid = hand.frames(hand.word("map", pad_w * 0.3, pad_h * 0.7, hand.roman), 9800)
         app.touch(fr)
+        if newrule:   # 0.1.7: at 100%, a two-finger pan left (past the page's side) shows it, and it covers ink written there
+            app.touch(two_finger(pad_w / 2, pad_h * 0.5, 25, 25, shift=(pad_w * 0.3, 0), dur=0.4), settle=0.1)
+            s_ = app.state()
+            rep.check(bool(s_.get("pageMap")) and abs(s_["view"]["zoom"] - 1) < 0.05, "at 100%, a two-finger pan shows the page map", f"zoom {s_['view']['zoom']:.2f}, map {s_.get('pageMap')}")
+            time.sleep(1.9)
+            v_ = app.state()["view"]
+            fr, cid = hand.frames(hand.word("left", pad_w * 0.2, pad_h * 0.6, hand.roman), cid)
+            app.touch(fr); settle(app)
+            s_ = app.state(); xs = [b[0] for b in s_["pageBounds"]]
+            app.touch(two_finger(pad_w / 2, pad_h * 0.5, 25, 25, shift=(-pad_w * 0.05, 0), dur=0.3), settle=0.1)
+            s_ = app.state(); mr = s_.get("mapRegion")
+            rep.check(xs and min(xs) < 0 and mr and mr[0] <= min(xs), "the map covers ink written left of the page", f"ink from x {min(xs) if xs else None:.0f}, map from {mr and round(mr[0])}, view x {v_['x']:.0f}")
+            rep.shot(app, "page map at 100% after a pan past the page's left side")
+            time.sleep(1.9)
         r = app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 45, dur=0.6), settle=0.1)   # pinch to zoom 3
         s1 = app.state()
         rep.check(bool(s1.get("pageMap")) and s1["view"]["zoom"] > 1.5, "pinching in: the page map shows", f"zoom {s1['view']['zoom']:.1f}, map {s1.get('pageMap')}")
@@ -931,9 +946,9 @@ def run_scenarios(app, rep, only, hand):
         wrapped = any(r["newLine"] for r in recs)
         w = (seg["end"] - seg["start"]) / W if seg else 0
         rep.step("segment", lines=[(round(l["start"]), round(l["end"])) for l in lines], wrapped=wrapped)
-        half = 0.5 * st["view"]["w"] / W if st.get("columnBound", True) is False else 0.5   # 0.1.6: half the view when the block started
+        half = rule_limit(st, 0, 0.5, W, st["view"]["w"])[2] / W if st.get("columnBound", True) is False else 0.5   # 0.1.7: half the page (0.1.6 drafts: half the view)
         rep.check(seg is not None and wrapped and 0.8 * half <= w <= half + seg["last"] / W + 0.02,
-                  "after the deliberate pan the line starts at the new spot and wraps " + ("half the view's width later (0.1.6)" if half != 0.5 else "about half a page later"),
+                  "after the deliberate pan the line starts at the new spot and wraps " + ("half the view's width later (0.1.6 drafts)" if half != 0.5 else "about half a page later"),
                   f"segment {w:.0%} of the page wide (want {half:.0%}), new line: {wrapped}")
         rep.shot(app, "line moved by a deliberate pan")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
@@ -1169,7 +1184,7 @@ def run_scenarios(app, rep, only, hand):
             views.append((w, b_["view"]["x"], s_["view"]["x"], s_["newLines"] - b_["newLines"], s_.get("follows", 0) - b_.get("follows", 0)))
             if a_ and a_.get("lineLimitX") is not None and a_.get("lineRight") is not None and a_["newLines"] == b_["newLines"]:
                 lim, right = a_["lineLimitX"], a_["lineRight"]
-                width = W * 0.5 if st.get("columnBound", True) is not False else 0.5 * st["view"]["w"]   # the line's width (0.1.6: ½ the view)
+                width = W * 0.5 if st.get("columnBound", True) is not False else rule_limit(st, 0, 0.5, W, st["view"]["w"])[2]   # the line's width (0.1.7: ½ the page)
                 inview = a_["view"]["x"] < lim < a_["view"]["x"] + a_["view"]["w"]
                 samples.append((w, (lim - right) / width, a_.get("limitAlpha", 0), a_.get("limitDrawn"), lim, inview))
             if s_["newLines"] > b_["newLines"]:
@@ -1195,8 +1210,8 @@ def run_scenarios(app, rep, only, hand):
         first_x = min(b[0] for b in mine) if mine else 0
         # (the block starts at its first stroke; a later line's stroke may sit a little further left: 1% tolerance)
         if newrule:   # 0.1.6: the block's start + half the view's width when it started (400%: an eighth of the page)
-            rep.check(lx is not None and abs(lx - (first_x + 0.5 * st["view"]["w"])) < 0.01 * W,
-                      "(c) the limit is where the next-line move comes: the block's start + ½ of the view's width", f"limit x {lx}, line start {first_x:.0f}, view {st['view']['w']:.0f} wide")
+            rep.check(lx is not None and abs(lx - rule_limit(st, first_x, 0.5, W, st["view"]["w"])[0]) < 0.01 * W,
+                      "(c) the limit is where the next-line move comes: the block's start + ½ of the page's width (0.1.7; 0.1.6 drafts: of the view's)", f"limit x {lx}, line start {first_x:.0f}, view {st['view']['w']:.0f} wide")
         else:
             rep.check(lx is not None and (abs(lx - 0.5 * W) < 1 or abs(lx - (first_x + 0.5 * W)) < 0.01 * W),
                       "(c) the limit is where the next-line pan comes: ½ page from the line's start", f"limit x {lx}, page {W}, line start {first_x:.0f}")
@@ -1392,7 +1407,7 @@ def run_scenarios(app, rep, only, hand):
             rep.step(label, lines=[(round(L[1] / W, 3), round(L[2] / W, 3)) for L in lines], limits=sorted({round(l / W, 3) for l, _ in lims}),
                      afterNewLine=[(round(v["x"] / W, 3), round((v["x"] + v["w"]) / W, 3), nl and round(nl[0] / W, 3)) for v, nl in views])
             rep.check(views, f"{label}: writing to the marker / the page's edge moves to the next line (never stuck)", f"{len(views)} next-line moves, lines {[(round(L[1] / W, 2), round(L[2] / W, 2)) for L in lines]}")
-            rep.check(lims and all(abs(l - want) < 0.01 * W for l, _ in lims), f"{label}: the guide line is at the block's start + the width" + (" of the view when it started (0.1.6)" if st.get("columnBound", True) is False else f" (capped at {CAP:.0%} of the page)"),
+            rep.check(lims and all(abs(l - want) < 0.01 * W for l, _ in lims), f"{label}: the guide line is at the block's start + the width" + (" of the page, from where it started (0.1.7)" if st.get("columnBound", True) is False else f" (capped at {CAP:.0%} of the page)"),
                       f"start {start / W:.1%}, limits {sorted({round(l / W, 3) for l, _ in lims})}, want {want / W:.1%}")
             if views:
                 v, nl = views[0]

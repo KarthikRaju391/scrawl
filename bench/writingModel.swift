@@ -78,7 +78,7 @@ struct WModel {
     var cam = Camera(page: wPage)
     var lineInk: CGRect?
     var lineStrokes: [CGRect] = []
-    var runStart: Double? { didSet { if runStart != oldValue { blockView = runStart == nil ? nil : cam.visible.width } } }
+    var runStart: Double? { didSet { if runStart != oldValue { blockView = runStart == nil ? nil : WritingLayout.blockMeasure(visibleWidth: cam.visible.width, pageWidth: cam.page.width) } } }
     /// 0.1.6: the view's width when the block started (CanvasView.blockViewWidth).
     var blockView: Double?
     var blockWidth: Double? { Camera.columnBound ? nil : blockView.map { $0 * width } }
@@ -154,6 +154,7 @@ struct WModel {
 
     /// CanvasView.decideMove: the move the line calls for (after a commit, or a redo bringing ink back).
     mutating func decideMove(after s: CGRect, line: CGRect) {
+        if !Camera.columnBound, runStart == nil { runStart = line.minX; segmentStart = runStart }   // no block (a redo after it ended): the ink starts one
         var layout = WritingLayout()
         layout.lineWidth = width
         layout.segmentStart = segmentStart
@@ -430,7 +431,7 @@ struct WSpec {
         // A stroke that starts a block (by the block rules, P6: a new start, or the same x anew), or the block's end.
         let handNow = max(mon.panSum, mon.refX.map { abs(pre.cam.center.x - $0) } ?? 0)
         let freshBlock = committed.map { c in post.writing && Self.expectedBlock(pre.writing ? pre : post, c, hand: handNow).fresh } ?? false
-        if freshBlock || post.runStart != mon.blockRun { mon.blockRun = post.runStart; mon.blockView = post.runStart == nil ? nil : pre.cam.visible.width }
+        if freshBlock || post.runStart != mon.blockRun { mon.blockRun = post.runStart; mon.blockView = post.runStart == nil ? nil : (WritingLayout.measureFromView ? pre.cam.visible.width : pre.cam.page.width) }
         let bv = Camera.columnBound ? nil : mon.blockView
         let touch: Bool = { switch e { case .write, .down, .pan, .pinch, .scratch: return true; default: return false } }()
         let handView: Bool = { switch e { case .pan, .pinch, .arrow, .scroll: return true; default: return false } }()

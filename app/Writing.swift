@@ -32,6 +32,13 @@ struct WritingLayout {
     // ink just short of the marker (`nearMarker` of the line). A line longer than the view: the view follows it as it fills
     // (`follow`), at the same pause as a next line. Nil `blockWidth`: the rules before 0.1.6 (`--column-bound`).
     var blockWidth: Double?
+    /// What the width setting is a share of: 0.1.7 (Karthik, 6 Nov: "It should not consider the viewport ... calculate the
+    /// full screen width and then take the percentage"), the screen's width at 100%, which is the page's width (the page
+    /// fills the window's width at 100%): a 50% line is 800 units at any zoom, from where the block starts. `measureFromView`
+    /// (the 0.1.6 drafts): the view's width when the block started instead.
+    nonisolated(unsafe) static var measureFromView = false
+    /// The length a block's 100% line has: the page's width (or, `measureFromView`, the view's width now).
+    static func blockMeasure(visibleWidth: Double, pageWidth: Double) -> Double { measureFromView ? visibleWidth : pageWidth }
     /// The view follows a line once its ink is within this share of the view's width from the view's right side, and goes
     /// so that the ink is at `followTo` of the view.
     static let followWithin = 0.12, followTo = 0.5

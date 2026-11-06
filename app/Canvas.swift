@@ -915,14 +915,15 @@ final class CanvasView: MTKView {
     /// mode turns on, a page change, a deliberate hand pan to write somewhere new, or writing well above or below the
     /// line; a pause doesn't start one.
     private var runStart: Double? {
-        didSet { if runStart != oldValue { blockViewWidth = runStart == nil ? nil : camera.visible.width } }
+        didSet { if runStart != oldValue { blockViewWidth = runStart == nil ? nil : WritingLayout.blockMeasure(visibleWidth: camera.visible.width, pageWidth: camera.page.width) } }
     }
-    /// 0.1.6: the view's width (page units) when the block started; its lines are the width setting of it, whatever the
-    /// zoom later (WritingLayout.blockWidth). Nil with `--column-bound` (the rules before).
+    /// The block's measure (page units), fixed when it started: its lines are the width setting of it, whatever the zoom
+    /// later (WritingLayout.blockWidth). 0.1.7: the page's width (the screen's width at 100%); `measureFromView`: the
+    /// view's width then. Nil with `--column-bound` (the rules before).
     private var blockViewWidth: Double?
     /// Follow moves made (tests).
     private(set) var followCount = 0
-    /// The block's line length now (the width setting x the view's width at the block's start), nil before a block.
+    /// The block's line length now (the width setting x the block's measure), nil before a block.
     var blockWidth: Double? { Camera.columnBound ? nil : blockViewWidth.map { $0 * ToolState.lineWidths[tools.lineWidthIndex] } }
     /// Where the next-line pan comes for the current line (page x): its width limit, moved along when a deliberate hand
     /// pan moved the line's start. Nil outside writing mode (no width chosen). Drawn as a faint line.
@@ -1667,6 +1668,9 @@ final class CanvasView: MTKView {
 
     /// Writing mode: the move the line calls for now (after a stroke's lift, or a redo bringing ink back), waiting for the pause.
     private func decideMove(after s: CGRect, line: CGRect) {
+            // No block (a redo after a page change or Clear ended it): the line's ink starts one, where it is. Without
+            // one the limit fell back to the rules before 0.1.6 (½ page from the page's margin, capped at 95%).
+            if !Camera.columnBound, runStart == nil { runStart = line.minX; segmentStart = runStart }
             var layout = WritingLayout()
             layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
             layout.legacyStrokeEdge = legacyWriting

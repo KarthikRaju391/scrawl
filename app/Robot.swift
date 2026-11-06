@@ -325,6 +325,7 @@ final class Robot {
         s["newLines"] = canvas.newLineCount
         s["follows"] = canvas.writingStateForTest.follows   // 0.1.6: the view following a long line
         s["columnBound"] = Camera.columnBound               // the rules before 0.1.6 (--column-bound)
+        s["lineMeasure"] = WritingLayout.measureFromView ? "view" : "page"   // what the width setting is a share of (0.1.7: the page)
         s["clickDrawOn"] = canvas.clickDrawOn   // robot:needs var clickDrawOn
         s["aimRing"] = [CanvasView.aimRingColor.x, CanvasView.aimRingColor.y, CanvasView.aimRingColor.z, CanvasView.aimRingColor.w].map { (Double($0) * 100).rounded() / 100 }   // robot:needs aimRingColor
         s["pageBounds"] = canvas.doc.strokes.map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] }
