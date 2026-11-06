@@ -932,6 +932,7 @@ def run_scenarios(app, rep, only, hand):
         st = app.state(); pad_w, pad_h = st["padMM"]
         app.touch(two_finger(pad_w / 2, pad_h * 0.6, 15, 45, dur=0.6))
         for _ in range(12): app.press("left")   # to the page's left side, where lines start
+        if app.state().get("columnBound", True) is False: app.cmd({"cmd": "pageCorner"})   # 0.1.6+: arrows go past the page; its corner
         time.sleep(1.6)
         return app.state()
 
@@ -954,10 +955,25 @@ def run_scenarios(app, rep, only, hand):
         st = half_setup(); pad_w, pad_h = st["padMM"]; W = st["pageW"]
         recs, _ = write_words(app, hand, (SENTENCE + " " + SENTENCE).split(), pad_h * 0.55, pad_w * 0.1, 13100, rep)
         full = line_widths(recs)[:-1]
-        over = [(l["end"] / W) - (0.03 + 0.5 + l["last"] / W + 0.02) for l in full]
-        pans = sum(1 for r in recs if r["view"]["x"] > r["before"]["x"] + 1e-6 and not r["newLine"])
-        rep.check(len(full) >= 1 and pans == 0 and max(over) <= 0, "no sideways pan, and ½-page lines wrap at margin + half a page",
-                  f"{pans} sideways pans; line ends {[round(l['end'] / W, 2) for l in full]}")
+        if st.get("columnBound", True) is not False:
+            over = [(l["end"] / W) - (0.03 + 0.5 + l["last"] / W + 0.02) for l in full]
+            pans = sum(1 for r in recs if r["view"]["x"] > r["before"]["x"] + 1e-6 and not r["newLine"])
+            rep.check(len(full) >= 1 and pans == 0 and max(over) <= 0, "no sideways pan, and ½-page lines wrap at margin + half a page",
+                      f"{pans} sideways pans; line ends {[round(l['end'] / W, 2) for l in full]}")
+        else:
+            # 0.1.7 (rule B): a ½ line is 800 units from where the block started, longer than the view at 300% (533): the view
+            # follows it (the app's own move; no other sideways move), and every line wraps at its start + 800 (+ the word
+            # that crossed: within the line's last 3% or just past its end).
+            blk = full[0]["start"] if full else 0
+            lim_, zone_, lw_ = rule_limit(st, blk, 0.5, W, st["view"]["w"])
+            other = sum(1 for r in recs if r["view"]["x"] > r["before"]["x"] + 1e-6 and not r["newLine"] and not r["followed"])
+            follows_ = sum(1 for r in recs if r["followed"])
+            ends_ok = all(zone_ - l["last"] - 1 <= l["end"] and l["end"] <= lim_ + l["last"] + 0.02 * W for l in full)
+            starts_ok = all(abs(l["start"] - blk) < 0.03 * W for l in full)
+            rep.step("lines (rule B)", start=round(blk / W, 3), ends=[round(l["end"] / W, 3) for l in full], limit=round(lim_ / W, 3), follows=follows_, otherSideways=other)
+            rep.check(len(full) >= 1 and blk >= 0 and other == 0 and follows_ >= 1 and ends_ok and starts_ok,
+                      "rule B: ½ lines from the page's margin wrap at their start + 800 units (the view follows them, no other sideways move)",
+                      f"block start {blk / W:.1%}, line ends {[round(l['end'] / W, 3) for l in full]} (limit {lim_ / W:.1%}, zone from {zone_ / W:.1%}), follows {follows_}, other sideways moves {other}")
         ensure(app, "writing", False, "w"); ensure(app, "draw", False, "d")
 
     @scenario("half-line-small-nudge-gap", "A small nudge (6% of the view, under the 10% bar), then a word written with a gap: that's still the same line, so it wraps at margin + half a page.")
@@ -1503,8 +1519,26 @@ def run_scenarios(app, rep, only, hand):
             s_, right = word_at(w_, x if i == 0 else right + sp, y); i += 1
         time.sleep(0.8); s_ = app.state()
         rep.step("(i)", inkRight=round(right / W, 3), limit=s_.get("lineLimitX") and round(s_["lineLimitX"] / W, 3), newLines=s_["newLines"] - nl0)
-        rep.check(s_["newLines"] > nl0, "(i) ink at 95-96.5% of the page (a block from the middle, 100% width) brings the next line", f"ink to {right / W:.1%}, limit {s_.get('lineLimitX') and s_['lineLimitX'] / W:.1%}, new lines {s_['newLines'] - nl0}")
         block = W * 0.5
+        if s_.get("columnBound", True) is not False:
+            rep.check(s_["newLines"] > nl0, "(i) ink at 95-96.5% of the page (a block from the middle, 100% width) brings the next line", f"ink to {right / W:.1%}, limit {s_.get('lineLimitX') and s_['lineLimitX'] / W:.1%}, new lines {s_['newLines'] - nl0}")
+        else:
+            # 0.1.7 (rule B): the page's edge is no line end. The block's line is 100% x 1,600 units from its start (50% of
+            # the page): it ends at 150% of the page. At 96% of the page: no next line; the writer goes on past the page's
+            # edge (the view follows), and the next line comes once the ink is in the line's last 3% (or past its end).
+            start_ = min(b[0] for b in s_["pageBounds"][-200:] if abs((b[1] + b[3]) / 2 - y) < 60) if s_["pageBounds"] else block
+            lim_, zone_, lw_ = rule_limit(s_, start_, 1.0, W, s_["view"]["w"])
+            rep.check(s_["newLines"] == nl0 and s_.get("lineLimitX") is not None and abs(s_["lineLimitX"] - lim_) < 0.01 * W,
+                      "(i) rule B: ink at 96% of the page (a block from the middle, 100% width) is mid-line: no next line; the line ends at its start + 1,600 units",
+                      f"ink to {right / W:.1%}, limit {s_.get('lineLimitX') and s_['lineLimitX'] / W:.1%} (want {lim_ / W:.1%}), new lines {s_['newLines'] - nl0}")
+            f0 = s_.get("follows", 0); rights = [right]
+            while s_["newLines"] == nl0 and i < len(words):
+                s_, right = word_at(words[i], right + hand.h * 0.6 * upm, y); i += 1; rights.append(right)
+            before_nl = rights[-2] if len(rights) > 1 else rights[-1]
+            rep.step("(i) on past the page's edge", lineEnd=round(right / W, 3), beforeLast=round(before_nl / W, 3), limit=round(lim_ / W, 3), follows=s_.get("follows", 0) - f0, newLines=s_["newLines"] - nl0)
+            rep.check(s_["newLines"] > nl0 and before_nl < zone_ and right >= zone_ and right <= lim_ + 0.08 * W and s_.get("follows", 0) > f0,
+                      "(i) rule B: written on past the page's edge, the view follows the line and the next line comes at its end (150% of the page), not before",
+                      f"ink before the last word {before_nl / W:.1%}, line ends {right / W:.1%}, zone from {zone_ / W:.1%}, limit {lim_ / W:.1%}, follows {s_.get('follows', 0) - f0}, new lines {s_['newLines'] - nl0}")
         if s_["newLines"] == nl0:   # let the rest of (ii) run: finish the line past the page's edge
             while s_["newLines"] == nl0 and i < len(words): s_, right = word_at(words[i], right + hand.h * 0.6 * upm, y); i += 1
         # (ii) after the move: a pinch and a small pan, then the new line starts 4% of the page right of the block's start.
@@ -1720,11 +1754,11 @@ def run_scenarios(app, rep, only, hand):
                       x0 = st["view"]["x"] + st["view"]["w"] * 0.06
                       limit, _, lw = rule_limit(st, x0, frac, W, st["view"]["w"])   # 0.1.6: frac of the view, no cap
                       newrule = st.get("columnBound", True) is False
-                      if newrule and limit > st["view"]["x"] + st["view"]["w"] * 0.9:
-                          # The marker is past what the pad reaches in this view (100% of the view from 6% into it): the
-                          # line goes on with the view following it (P9, the formal checks); nothing to write just inside here.
-                          rep.skip(f"{wname} at {zoom}, ink {kind}", f"the marker at {limit / W:.0%} of the page is beyond the view (0.1.6: the view follows such a line)")
-                          break
+                      # Rule B (0.1.7): the marker may be past the view (100% width at 100%; every width at 300%: 800-1,600 units
+                      # against a 533-unit view). The writer goes on: the view follows the line, or the writer pans by hand when
+                      # a word won't fit on the pad (word_at); the same checks hold where the marker ends up.
+                      beyond = newrule and limit > st["view"]["x"] + st["view"]["w"] * 0.9
+                      f0, vx0 = st.get("follows", 0), st["view"]["x"]
                       # Where the ink should stop: just inside the marker (0.3-2.5% of the line width before it; at the
                       # page's edge, past 93% of the page), or mid-line (about 8% of the line width before it).
                       lo, hi = (limit - 0.025 * lw, limit - 0.003 * lw) if kind == "just inside" else (limit - 0.10 * lw, limit - 0.06 * lw)
@@ -1746,7 +1780,8 @@ def run_scenarios(app, rep, only, hand):
                       if not landed and attempt < 2 and s_["newLines"] == nl0:
                           rep.step(f"{wname} at {zoom}, ink {kind}: the robot's ink missed the band, again", inkRight=round(right / W, 4), limit=round(lim_seen / W, 4))
                           continue
-                      label = f"{wname} at {zoom}, ink {kind}"
+                      label = f"{wname} at {zoom}, ink {kind}" + (" (marker beyond the first view)" if beyond else "")
+                      if beyond: rep.step(f"{label}: the view went along", follows=s_.get("follows", 0) - f0, viewMovedRight=round((s_["view"]["x"] - vx0) / W, 3), marker=round(limit / W, 3))
                       if not landed and newrule:   # three tries and the robot's ink still missed the band (2 mm on the pad at 300%, 50%)
                           rep.skip(label, f"the robot's ink didn't land in the band in 3 tries (ink {right / W:.1%}, marker {lim_seen / W:.1%}, {(lim_seen - right) / lw * 100:.1f}% of the line short)")
                           break
