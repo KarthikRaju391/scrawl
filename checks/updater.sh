@@ -88,9 +88,13 @@ run() {
     NB0=$(python3 -c "import plistlib,sys; f=plistlib.load(open(sys.argv[1],'rb')); print(len(f['pages']), sum(len(p['strokes']) for p in f['pages']))" "$D/Notebook.tdnb" 2>/dev/null)
     [ -n "$RO" ] && chmod 555 "$A"
     TRACKPAD_DRAW_DATA=$D TRACKPAD_DRAW_UPDATE_URL="http://127.0.0.1:$PORT/repos/o/r/releases/latest" SCRAWL_UPDATE_APPS_DIR=$A \
-        "$A/Scrawl.app/Contents/MacOS/TrackpadDraw" --test-update "$@" >/dev/null 2>&1 &
+        "$A/Scrawl.app/Contents/MacOS/TrackpadDraw" --test-update $([ -z "$SHOT" ] && echo --offscreen) "$@" >/dev/null 2>&1 &
     P=$!
-    for _ in $(seq 1 240); do grep -q '"done" : true\|"restarting" : true' "$D/update-state.json" 2>/dev/null && break; sleep 0.25; done
+    local REG=
+    for _ in $(seq 1 240); do grep -q '"done" : true\|"restarting" : true' "$D/update-state.json" 2>/dev/null && break
+        # Spotlight registers a staged copy waiting in /Applications: do the same here as soon as it's ready.
+        [ -z "$REG" ] && grep -q '"state" : "ready"' "$D/update-state.json" 2>/dev/null && [ -d "$A/.Scrawl-update.app" ] && { "$LS" -f "$A/.Scrawl-update.app" 2>/dev/null; REG=1; }
+        sleep 0.25; done
     # In /Applications, Spotlight registers the staged copy while it waits; do the same here, before the restart.
     grep -q '"restarting" : true' "$D/update-state.json" 2>/dev/null && [ -d "$A/.Scrawl-update.app" ] && "$LS" -f "$A/.Scrawl-update.app" 2>/dev/null
     [ -n "$SHOT" ] && WN=$(python3 -c "import json;print(json.load(open('$D/update-state.json')).get('panelWindow',0))" 2>/dev/null) && [ "$WN" != 0 ] && screencapture -x -o -l"$WN" "$W/$S-panel.png"
@@ -138,6 +142,28 @@ if want cancel; then run cancel '{"dmg":"good","transfer":"slow"}' --update-canc
 if want double; then SHOT= run double '{"dmg":"good","transfer":"slow"}' --update-double
     N=$(python3 -c "import json;print(json.load(open('$W/double/data/update-state.json')).get('downloadsStarted',0))" 2>/dev/null)
     [ "$N" = 1 ] && echo "$STATES" | grep -q "ready" && pass "Download and Install pressed three times: one download ($N), ready" || fail "double click: $N downloads, states [$STATES]"
+fi
+# 0.1.6.1: closing the ready sheet any way discards the staged copy and LaunchServices forgets it; quitting on "ready" too.
+for how in red later esc; do
+    if want close-$how; then run close-$how "$ok" --update-close-ready $how
+        echo "$STATES" | grep -q "ready > closed" && [ "$LEFT" = "Scrawl.app " ] && [ -z "$STALE" ] && [ "$VERNOW" = $OLD ] \
+            && pass "the ready sheet closed with $how: closed, the staged copy is gone and unregistered, $OLD untouched" \
+            || fail "close with $how: states [$STATES], left [$LEFT], LaunchServices still knows [$STALE], installed $VERNOW"
+    fi
+done
+if want quitready; then run quitready "$ok" --update-quit-ready
+    [ "$LEFT" = "Scrawl.app " ] && [ -z "$STALE" ] && [ "$VERNOW" = $OLD ] && pass "quitting with the sheet on ready: the staged copy is gone and unregistered" \
+        || fail "quit on ready: states [$STATES], left [$LEFT], LaunchServices still knows [$STALE]"
+fi
+# A second Check for Updates while the sheet downloads: the same sheet, one download, ready.
+if want secondcheck; then run secondcheck '{"dmg":"good","transfer":"slow"}' --update-second-check
+    J="$W/secondcheck/data/update-state.json"
+    SAME=$(python3 -c "import json;print(json.load(open('$J')).get('secondCheckSamePanel'))" 2>/dev/null)
+    SHEETS=$(python3 -c "import json;print(json.load(open('$J')).get('updateSheets'))" 2>/dev/null)
+    N=$(python3 -c "import json;print(json.load(open('$J')).get('downloadsStarted',0))" 2>/dev/null)
+    [ "$SAME" = True ] && [ "$SHEETS" = 1 ] && [ "$N" = 1 ] && echo "$STATES" | grep -q ready && [ "$LEFT" = "Scrawl.app " ] && [ -z "$STALE" ] \
+        && pass "Check for Updates again while downloading: the same sheet ($SHEETS), one download, ready; nothing left after quitting" \
+        || fail "second check: same sheet $SAME, sheets $SHEETS, downloads $N, states [$STATES], left [$LEFT], LaunchServices [$STALE]"
 fi
 if want notnewer; then run notnewer '{"dmg":"good","tag":"old"}'
     echo "$STATES" | grep -q "^upToDate" && [ "$VERNOW" = $OLD ] && pass "a release that isn't newer: up to date, no sheet" || fail "not newer: [$STATES]"

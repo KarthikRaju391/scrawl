@@ -115,6 +115,11 @@ enum UpdateLocation {
     }
     static var staged: String { ((bundle as NSString).deletingLastPathComponent as NSString).appendingPathComponent(".Scrawl-update.app") }
     /// Remove a staged copy and make LaunchServices forget it (Spotlight registers it while it waits in the folder).
+    /// At launch: a staged copy no update is waiting for (the app quit or crashed with the sheet on "ready") is discarded.
+    static func discardLeftover() {
+        guard FileManager.default.fileExists(atPath: staged), !FileManager.default.fileExists(atPath: UpdateInstaller.pendingPath) else { return }
+        discardStaged()
+    }
     static func discardStaged() {
         try? FileManager.default.removeItem(atPath: staged)
         forget(staged)
@@ -122,7 +127,11 @@ enum UpdateLocation {
     /// lsregister -u for a path that may be gone: LaunchServices matches a missing bundle only by its resolved path
     /// (/private/tmp, not /tmp), so resolve the folder it was in.
     static func forget(_ path: String) {
-        let p = ((path as NSString).deletingLastPathComponent as NSString).resolvingSymlinksInPath + "/" + (path as NSString).lastPathComponent
+        // realpath(3), not NSString.resolvingSymlinksInPath: that strips /private (/private/tmp -> /tmp), the very prefix
+        // LaunchServices needs (a staged copy in a temp folder stayed registered).
+        let dir = (path as NSString).deletingLastPathComponent
+        var buf = [CChar](repeating: 0, count: Int(PATH_MAX))
+        let p = (realpath(dir, &buf) != nil ? String(cString: buf) : dir) + "/" + (path as NSString).lastPathComponent
         UpdateVerify.run("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-u", p])
     }
 }
@@ -239,8 +248,10 @@ enum UpdateInstaller {
     }
 }
 
-/// The update sheet: what's new, then download with progress, then Restart to Update.
-final class UpdatePanel: NSObject {
+/// The update sheet: what's new, then download with progress, then Restart to Update. However it closes (Later, Close,
+/// Esc, its close button, quitting), a download stops and a staged copy is discarded and forgotten by LaunchServices; a
+/// verification still running discards what it stages. There's one sheet at a time (AppDelegate.showUpdateResult).
+final class UpdatePanel: NSObject, NSWindowDelegate {
     enum State: Equatable { case offer, downloading, verifying, ready, failed(String), unsupported(String) }
     let release: UpdateRelease
     let window: NSPanel
@@ -254,6 +265,12 @@ final class UpdatePanel: NSObject {
     var onState: ((State) -> Void)?
     var onFinished: ((_ installed: Bool, _ failedStep: String?) -> Void)?
     var launchArgsForRestart: [String] = []
+    /// The sheet was closed (it can be shown again, e.g. by Check for Updates while a verification still runs).
+    private(set) var isClosed = false
+    /// Restart to Update was pressed: quitting now is the update, the staged copy stays for the helper.
+    private(set) var restarting = false
+    /// Failed or unsupported: a new check replaces this sheet rather than showing it again.
+    var isFinished: Bool { switch state { case .failed, .unsupported: return true; default: return false } }
 
     init(release: UpdateRelease) {
         self.release = release
@@ -262,6 +279,7 @@ final class UpdatePanel: NSObject {
         window.title = "Software Update"
         window.isReleasedWhenClosed = false
         window.appearance = NSAppearance(named: .aqua)
+        window.delegate = self
         let v = NSView(frame: window.contentRect(forFrameRect: window.frame)); window.contentView = v
         title.font = .systemFont(ofSize: 15, weight: .semibold)
         title.stringValue = "Scrawl \(release.version) is available"
@@ -279,6 +297,7 @@ final class UpdatePanel: NSObject {
         primary.target = self; primary.action = #selector(primaryClicked)
         secondary.frame = NSRect(x: 150, y: 16, width: 104, height: 32); secondary.bezelStyle = .rounded
         secondary.target = self; secondary.action = #selector(secondaryClicked)
+        secondary.keyEquivalent = "\u{1b}"   // Esc: Later / Cancel / Close
         for x in [title, status, scroll, bar, primary, secondary] as [NSView] { v.addSubview(x) }
         if let why = UpdateLocation.problem() { state = .unsupported(why) } else { layoutState() }
     }
@@ -319,8 +338,13 @@ final class UpdatePanel: NSObject {
     }
     @objc func secondaryClicked() {
         if state == .downloading { download?.cancel(); return }
-        if state == .ready { UpdateLocation.discardStaged() }
-        window.close()
+        window.close()   // windowWillClose discards a staged copy
+    }
+    func windowWillClose(_ n: Notification) {
+        guard !isClosed else { return }
+        isClosed = true
+        if state == .downloading { download?.cancel() }
+        if state == .ready && !restarting { UpdateLocation.discardStaged() }
     }
 
     /// Download and Install: once only (a second click while it runs does nothing).
@@ -353,10 +377,11 @@ final class UpdatePanel: NSObject {
         state = .verifying
         let rel = release, key = UpdateVerify.publicKey, bundleId = Bundle.main.bundleIdentifier ?? "", current = AppInfo.version
         let stage = UpdateLocation.staged
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // The sheet stays alive until this ends (even if closed meanwhile), so a copy staged for a closed sheet is discarded.
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
             let result: Result<String, UpdateVerify.Failure>
-            if let sums = self?.fetchText(sumsURL) {
-                let sig = self?.fetchText(rel.sig)
+            if let sums = self.fetchText(sumsURL) {
+                let sig = self.fetchText(rel.sig)
                 try? FileManager.default.removeItem(atPath: stage)
                 do { result = .success(try UpdateVerify.verifyAndStage(dmg: dmg, sums: sums, sig: sig, dmgName: rel.dmgName, publicKey: key, bundleId: bundleId, current: current, stageAt: stage)) }
                 catch let e as UpdateVerify.Failure { result = .failure(e) }
@@ -364,7 +389,7 @@ final class UpdatePanel: NSObject {
             } else { result = .failure(.step("checksum", "The release's checksums couldn't be downloaded.")) }
             try? FileManager.default.removeItem(atPath: (dmg as NSString).deletingLastPathComponent)
             DispatchQueue.main.async {
-                guard let self else { return }
+                if self.isClosed, case .success = result { UpdateLocation.discardStaged(); self.state = .offer; return }   // closed meanwhile
                 switch result {
                 case .success: self.state = .ready
                 case .failure(.step(let step, let msg)): self.fail(step, msg)
@@ -379,9 +404,14 @@ final class UpdatePanel: NSObject {
     }
     func restart() {
         guard state == .ready else { return }
+        restarting = true
         onFinished?(true, nil)
         do { try UpdateInstaller.restart(into: release.version, launchArgs: launchArgsForRestart) }
-        catch { fail("install", "The update couldn't start (\(error.localizedDescription)).") }
+        catch { restarting = false; fail("install", "The update couldn't start (\(error.localizedDescription)).") }
     }
-    func show() { window.center(); window.orderFrontRegardless() }
+    func show() {
+        isClosed = false
+        window.center()
+        if !Launch.args.contains("--offscreen") { window.orderFrontRegardless() }   // checks/updater.sh runs it off screen
+    }
 }

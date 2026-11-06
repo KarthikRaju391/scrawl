@@ -130,6 +130,10 @@ extension AppDelegate {
     }
     func showUpdateResult(_ r: UpdateChecker.Result) {
         if case .available = r, let rel = UpdateChecker.latest {
+            // One sheet: a second check shows the one already there (open, closed while it still works, or ready) for the same
+            // release; otherwise that one closes first (discarding anything it staged) and a new one opens.
+            if let p = updatePanel, p.release.version == rel.version, !p.isFinished { p.show(); return }
+            updatePanel?.window.close()
             let p = UpdatePanel(release: rel)
             updatePanel = p; p.show(); return
         }

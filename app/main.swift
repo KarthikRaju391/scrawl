@@ -170,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         AppPaths.ensure()
         previousCrash = CrashNote.checkAndMark()
         UpdateInstaller.confirmIfPending()   // after an in-app update: tell the waiting helper this version started
+        UpdateLocation.discardLeftover()     // a staged copy left by a quit or crash on "ready"
         Watchdog.spawn()
         Signals.install { [weak self] in self?.exitDrawMode("SIGTERM/SIGINT/SIGHUP"); NSApp.terminate(nil) }
 
@@ -961,6 +962,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func windowWillClose(_ n: Notification) { exitDrawMode("window closed"); NSApp.terminate(nil) }
     func applicationWillTerminate(_ n: Notification) {
         exitDrawMode("quit"); canvas.autosaver.saveNow(sync: true); canvas.recorder.flush()
+        if let p = updatePanel, !p.restarting { p.window.close() }   // quitting on "ready" (not Restart to Update): the staged copy goes
         usageQuit()
         CrashNote.clear()
     }

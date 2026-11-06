@@ -9,9 +9,11 @@ enum TestUpdate {
     static func run(app: AppDelegate) {
         let a = CommandLine.arguments, dir = AppPaths.dataDir
         func arg(_ k: String) -> String? { a.firstIndex(of: k).flatMap { $0 + 1 < a.count ? a[$0 + 1] : nil } }
-        var log: [[String: Any]] = []
+        var log: [[String: Any]] = [], kept: [String: Any] = [:]
         func write(_ extra: [String: Any] = [:]) {
+            for (k, v) in extra { kept[k] = v }
             var r: [String: Any] = ["version": AppInfo.version, "states": log]
+            for (k, v) in kept { r[k] = v }
             if let p = app.updatePanel { r["panelWindow"] = p.window.windowNumber; r["downloadsStarted"] = p.downloadsStarted }
             for (k, v) in extra { r[k] = v }
             try? JSONSerialization.data(withJSONObject: r, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: dir + "/update-state.json"))
@@ -24,7 +26,8 @@ enum TestUpdate {
             case .available:
                 app.showUpdateResult(r)
                 guard let p = app.updatePanel else { note("noPanel"); write(["done": true]); return }
-                p.launchArgsForRestart = ["--test-update-report"]
+                p.launchArgsForRestart = ["--test-update-report"] + (a.contains("--offscreen") ? ["--offscreen"] : [])
+                NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: p.window, queue: .main) { _ in note("closed") }
                 p.onState = { s in
                     switch s {
                     case .offer: note("offer")
@@ -32,7 +35,20 @@ enum TestUpdate {
                     case .verifying: note("verifying")
                     case .ready:
                         note("ready")
-                        if a.contains("--update-restart") {
+                        if let how = arg("--update-close-ready") {   // close the ready sheet: red (its close button), later, esc
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {   // the script registers the staged copy meanwhile
+                                switch how {
+                                case "red": p.window.performClose(nil)
+                                case "esc":
+                                    if let e = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: p.window.windowNumber, context: nil,
+                                                                characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53) { p.window.sendEvent(e) }
+                                default: p.secondaryClicked()
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { write(["done": true, "staged": FileManager.default.fileExists(atPath: UpdateLocation.staged)]) }
+                            }
+                        } else if a.contains("--update-quit-ready") {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { write(["done": true]); NSApp.terminate(nil) }
+                        } else if a.contains("--update-restart") {
                             write(["restarting": true])
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { p.primaryClicked() }
                         } else { write(["done": true]) }
@@ -45,6 +61,17 @@ enum TestUpdate {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {   // a moment for the screenshot of the offer
                     p.primaryClicked()
                     if a.contains("--update-double") { p.primaryClicked(); p.primaryClicked() }
+                    if a.contains("--update-second-check") {   // Check for Updates again while it downloads: the same sheet comes back
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            UpdateChecker.check { r2 in
+                                app.showUpdateResult(r2)
+                                let same = app.updatePanel === p
+                                let sheets = NSApp.windows.filter { $0.title == "Software Update" }.count
+                                note("secondCheck same=\(same) sheets=\(sheets)")
+                                write(["secondCheckSamePanel": same, "updateSheets": sheets])
+                            }
+                        }
+                    }
                     if let c = arg("--update-cancel-after").flatMap(Double.init) {
                         DispatchQueue.main.asyncAfter(deadline: .now() + c) { p.secondaryClicked() }
                     }
