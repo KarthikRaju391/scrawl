@@ -8,9 +8,11 @@ The infinite canvas (`docs/infinite-canvas.md`), and stability fixes (`docs/rele
 
 - **Room around the page.** The view goes past the page's sides and above its top, and zooms out to 25%; write and put
   pictures anywhere. Nothing marks the page's edges any more (nor the dashed screen-height lines): just paper.
-- **Writing mode: lines as long as your screen.** A block's lines are the width you chose (50 / 75 / 100%) of the
-  screen when you started the block, from where you started it; the guide line fades in near the line's end, as before. Zooming while
-  you write keeps them. A line longer than the screen carries the view along with it.
+- **Writing mode: lines measured from where you start.** A block's lines are the width you chose (50 / 75 / 100%) of
+  the screen's full width (as at 100%), from where you started the block, wherever that is: no 95% cap, no page edge.
+  The same length at every zoom; a line longer than the screen carries the view along with it. The guide line fades
+  in near the line's end, as before. A redo after leaving writing mode no longer falls back to the page's old limit.
+- **The page map shows whenever you pan or pinch**, at any zoom, and covers everything on the canvas.
 
 Stability: fixes from an audit of the app's hidden states.
 
