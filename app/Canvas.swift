@@ -645,8 +645,11 @@ final class CanvasView: MTKView {
         didSet {
             if drawMode != oldValue { act("drawMode", ["on": drawMode]) }
             if !drawMode { clickDrawOff() }
-            // Frames are only handled in draw mode: a finger that lifts outside it would leave the count stale, and a
-            // waiting move would never fire (nothing touching means no frames). The next frame recounts.
+            // Leaving draw mode (Esc, G, another window...) drops a waiting move: the page never moves after you've left
+            // (it used to, 0.4 s later, behind the overview, with a haptic).
+            if !drawMode { cancelPendingMove() }
+            // Frames are only handled in draw mode: a finger that lifts outside it would leave the count stale. The next
+            // frame recounts.
             if countedContacts > 0 { countedContacts = 0; onTouching?(false) }
             gestures.reset(); contacts = []; needsRender = true
             if drawMode { gestures.ignoreUntilLifted(downIds) }
@@ -1212,7 +1215,11 @@ final class CanvasView: MTKView {
                 sc.ended = true
                 if sc.sliding { act("scrubEnd", ["steps": sc.steps]) }
             }
-            if counted.isEmpty { scrub = nil; tapViewAnchor = nil } else { scrub = sc }
+            if counted.isEmpty {
+                scrub = nil; tapViewAnchor = nil
+                // Writing mode, all fingers up: the line as the scrub left it calls for its move again (as after a redo).
+                if sc.sliding, sc.steps >= 0, writingMode, let line = lineInk, let last = lineStrokes.last { decideMove(after: last, line: line) }
+            } else { scrub = sc }
             if let c = tapViewAnchor { camera = c }
             gestures.frame([], t: arrival)   // no pan, pinch or ink while scrubbing
             needsRender = true
@@ -1614,13 +1621,19 @@ final class CanvasView: MTKView {
             let line = lineInk.map { $0.union(s.bounds) } ?? s.bounds
             lineInk = line
             lineStrokes.append(s.bounds)
+            decideMove(after: s.bounds, line: line)
+        }
+    }
+
+    /// Writing mode: the move the line calls for now (after a stroke's lift, or a redo bringing ink back), waiting for the pause.
+    private func decideMove(after s: CGRect, line: CGRect) {
             var layout = WritingLayout()
             layout.lineWidth = ToolState.lineWidths[tools.lineWidthIndex]
             layout.legacyStrokeEdge = legacyWriting
             layout.segmentStart = segmentStart
             layout.wordHint = typicalWordWidth
-            let start = legacyWriting ? legacyLineLeft! : (runStart ?? layout.lineStart(pageWidth: camera.page.width))
-            let move = layout.after(stroke: s.bounds, line: line, lineStrokes: lineStrokes, lineLeft: start,
+            let start = legacyWriting ? legacyLineLeft ?? s.minX : (runStart ?? layout.lineStart(pageWidth: camera.page.width))
+            let move = layout.after(stroke: s, line: line, lineStrokes: lineStrokes, lineLeft: start,
                                     visible: camera.visible, pageWidth: camera.page.width)
             if move == .none || lineHeld { pendingMove = nil }
             else if settings.pauseBeforeMoveMs <= 0 { applyMove(move) }
@@ -1634,13 +1647,18 @@ final class CanvasView: MTKView {
                 act("movePending", ["kind": move.kind, "right": line.maxX, "limit": layout.lineEnd(lineLeft: start, pageWidth: camera.page.width),
                                     "runStart": runStart ?? -1, "segStart": segmentStart ?? -1, "width": layout.lineWidth])
             }
-        }
     }
 
     // MARK: page moves wait for a pause
 
-    /// The writing-mode move waiting for the finger to stay up `pauseBeforeMoveMs`.
-    private var pendingMove: (move: WritingLayout.Move, liftAt: Double, waitMs: Double)?
+    /// The writing-mode move waiting for the finger to stay up `pauseBeforeMoveMs`: the one state for it. The window's
+    /// chevron ("next line coming") follows it through `onPendingMove`, so every way it ends (a touch, an undo, a page
+    /// change, leaving draw mode, the move itself) hides the chevron too. Nil whenever draw mode is off.
+    private var pendingMove: (move: WritingLayout.Move, liftAt: Double, waitMs: Double)? {
+        didSet { if pendingMove?.move != oldValue?.move { onPendingMove?(pendingMove?.move) } }
+    }
+    /// The waiting move appeared, changed or went (nil).
+    var onPendingMove: ((WritingLayout.Move?) -> Void)?
     /// A typical word's width on the lines written so far (for a line that has one word yet).
     private var typicalWordWidth: Double?
     /// The clock for that wait (replaced by a virtual clock when replaying recorded sessions).
@@ -1858,7 +1876,21 @@ final class CanvasView: MTKView {
         ghosts = ghosts.filter { t - $0.start < Self.fadeSeconds } + gone.map { ($0, t) }
         if !ghosts.isEmpty { needsRender = true }
     }
-    func redo() { act("redo", ["strokes": doc.strokes.count]); doc.redo(); markDirty(); needsRender = true }
+    func redo() {
+        act("redo", ["strokes": doc.strokes.count])
+        let before = doc.strokes
+        doc.redo(); markDirty(); needsRender = true; updateScreensFilled()
+        // Writing mode: the ink that came back is on the line again (as when it was written), and the move it called for is
+        // decided again: undo, then redo, of the word that crossed the limit brings the next line, as the word did.
+        guard writingMode else { return }
+        let back = doc.strokes.filter { s in !before.contains { $0 === s } }
+        let vh = camera.visible.height
+        for s in back where lineInk.map({ abs(s.bounds.midY - $0.midY) <= max($0.height, vh * 0.12) * 1.2 }) ?? true {
+            lineInk = lineInk.map { $0.union(s.bounds) } ?? s.bounds; lineStrokes.append(s.bounds)
+            if runStart == nil { runStart = s.bounds.minX; segmentStart = runStart }
+        }
+        if scrub == nil, let line = lineInk, let last = lineStrokes.last { decideMove(after: last, line: line) }   // a scrub decides as it ends
+    }
     func clearPage() {
         act("clear", ["strokes": doc.strokes.count]); doc.clear(); markDirty(); endWritingLine(); updateScreensFilled(); needsRender = true }
     /// Dismiss the "new page?" hint until another screen fills up.

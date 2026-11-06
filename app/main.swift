@@ -219,6 +219,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         tb.onZoomMenu = { [weak self] view, r in self?.zoomMenu().popUp(positioning: nil, at: CGPoint(x: r.minX, y: r.maxY + 4), in: view) }
         cv.onTouching = { [weak self] down in if !down { self?.container.pageMap.refresh() } }
         cv.onTapCommand = { [weak self] text in self?.updateUndoState(); self?.showToast(text) }
+        // The chevron shows the waiting writing-mode move itself, so the two can't disagree (0.1.6: ⌘Z left it on screen with
+        // no move coming; Esc hid it and the page moved anyway).
+        cv.onPendingMove = { [weak self] m in
+            guard let v = self?.container.pendingMove else { return }
+            if let m { v.show(m.kind == "newLine" ? .newLine : .pan) } else { v.hide() }
+        }
         tips.show = { [weak self] text in self?.showToast(text, seconds: 4) }
         tips.onShown = { t in Analytics.shared.record("tip_shown", ["tip": t.rawValue]) }
         cv.onAct = { [weak self] name, extra in self?.canvasAct(name, extra) }
@@ -849,9 +855,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         switch name {
         case "gestureUndo": tips.gestureUndo(); practiceTick(.undo); Haptics.tick()
         case "gestureRedo", "scrubStep": Haptics.tick()
-        case "newLine": Haptics.tick(); container.pendingMove.hide()
-        case "movePending": container.pendingMove.show(extra["kind"] as? String == "newLine" ? .newLine : .pan)
-        case "moveCancelled", "drawMode", "writingMode": container.pendingMove.hide()
+        case "newLine": Haptics.tick()
         case "scrubStart": tips.gestureUndo(); practiceTick(.undo)
         case "pinchZoom": tips.pinchZoom(at: CACurrentMediaTime())
         case "scratchOut": tips.scratchedOut(); practiceTick(.scratch); Haptics.tick()

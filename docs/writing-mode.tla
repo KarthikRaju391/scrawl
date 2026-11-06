@@ -89,8 +89,10 @@ EdgeUp   == edge = 1 /\ edge' = 0 /\ fired' = FALSE /\ seen' = (IF drawMode THEN
 \* Back into draw mode with fingers resting: the sensor keeps sending frames, and the next display tick handles one
 \* before advanceClock, so they're seen (and cancel) before any tick.
 \* The count is reset when draw mode changes (fingers that lift outside it are never seen to lift).
+\* Leaving draw mode drops a waiting move (0.1.6.1: it used to fire 0.4 s later, behind the overview, with a haptic).
 ToggleDraw == /\ drawMode' = ~drawMode /\ drawing' = FALSE /\ fired' = FALSE
-              /\ IF ~drawMode /\ fingers > 0 THEN seen' = fingers /\ pending' = FALSE ELSE seen' = 0 /\ UNCHANGED pending
+              /\ IF ~drawMode /\ fingers > 0 THEN seen' = fingers /\ pending' = FALSE
+                 ELSE /\ seen' = 0 /\ pending' = (pending /\ ~drawMode)
               /\ UNCHANGED <<fingers, edge, age, downSince, handSince>>
 
 \* Arrow keys: panByArrow drops a waiting move.
@@ -126,4 +128,6 @@ NotOverdue == (pending /\ seen = 0) => age < Wait
 NoFireAfterHandMove == fired => ~handSince
 \* P8 (liveness): a waiting move is always eventually done with (fired or dropped).
 EventuallyDone == pending ~> ~pending
+\* 0.1.6.1: a move never waits (or fires) outside draw mode.
+OnlyInDrawMode == pending => drawMode
 =============================================================================
