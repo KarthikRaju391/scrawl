@@ -25,6 +25,7 @@ pictures, and a writing mode that takes you to the next line when you reach the 
 - **Back to page.** Panned off the page? A small "Back to page" pill brings you back (or ⇧⌘0). ⌘0 is Actual Size
   (100%), where you are.
 - Pinching outside draw mode zooms out to 25% too.
+- Two- and three-finger double taps (undo / redo) work with a finger near the trackpad's edge.
 - Exports, Copy as Image and the pages overview include everything on the canvas, beside the page too.
 
 ## Also fixed

@@ -18,6 +18,8 @@ The infinite canvas (`docs/infinite-canvas.md`), and stability fixes (`docs/rele
   Back to Page (⇧⌘0), slides the page back to the middle at the same zoom. ⌘0 is now View › Actual Size (100%): 100%
   where you are (it always was; the old name said "Whole Page").
 - **Pinching outside draw mode zooms out to 25% too** (it stopped at 100%).
+- **Two- and three-finger double taps work with a finger near the trackpad's edge** (they used to do nothing, or undo
+  instead of redo).
 
 Stability: fixes from an audit of the app's hidden states.
 
