@@ -29,6 +29,7 @@ suites=(
   "select-bar|checks/selectbar.sh"
   "pill-labels|checks/toast.sh"
   "newline|checks/newline.sh"
+  "stability|checks/stability.sh"
   "page-edges|checks/page.sh"
   "gallery|checks/gallery.sh"
   "gallery-speed|checks/gallery_speed.sh"

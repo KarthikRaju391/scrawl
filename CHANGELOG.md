@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+## 0.1.6.1 (2026-11-06, build 12)
+
+Stability: fixes from an audit of the app's hidden states (`docs/release-notes-0.1.6.1.md`).
+
+- **Clicking Draw (or a tool) no longer leaves a mark.** A finger that was already on the trackpad when draw mode
+  started is ignored until it lifts: the click that turned drawing on no longer drew a dot, or erased under the
+  finger with the Eraser. (With click to draw on, a resting finger still aims and a click draws with it.)
+- **Two-finger pans don't zoom.** A two-finger gesture is now a pan or a pinch, decided once and kept until you lift:
+  a pan never changes the zoom; a pinch zooms as before. On Karthik's 45 recorded sessions, 1,936 pans changed the
+  zoom; now none do, and all 346 pinches still zoom.
+- **Draw mode never starts behind the pages overview.** ⌃⌥D there closes the overview into the page first, then you
+  draw. A page from the browser extension arriving while the overview is up becomes a new tile. Closing Settings only
+  goes back to drawing if nothing else happened since you opened it.
+- **The "next line coming" arrow tells the truth.** It shows exactly while the page waits to move: ⌘Z, N or a page
+  change drop both, and Esc or G drop the move too (it used to come 0.4 s later, behind the overview, with a tick).
+- **Undo, then redo, of the word that ended a line** brings the next line again, as writing it did (also after an
+  undo scrub back and forth).
+- **The overview never shows a deleted page's thumbnail on a new page.**
+- **Updates:** closing the update sheet when it's ready (its close button, Later, Esc, or quitting) removes the
+  downloaded copy, and macOS forgets it. Check for Updates with the sheet open brings that sheet back instead of a
+  second one. (Also: the staged copy and the backup are forgotten by LaunchServices once they're gone.)
+
 ## 0.1.6 (2026-11-05, build 11)
 
 - **Pictures on a page.** Paste an image (⌘V), drop one on the page, or File › Insert Image… (⇧⌘I): it lands on the

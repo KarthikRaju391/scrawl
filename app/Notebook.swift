@@ -8,6 +8,8 @@ enum Launch {
     static let args = CommandLine.arguments
     static let testing = args.contains { $0.hasPrefix("--test-") && $0 != "--test-front" && $0 != "--test-lock" }
     static let background = args.contains("--no-activate") || (testing && !args.contains("--test-front"))
+    /// --offscreen or TRACKPAD_DRAW_OFFSCREEN (checks run while Karthik uses the Mac): no window of ours is ever put on screen.
+    static let offscreen = background && (args.contains("--offscreen") || ProcessInfo.processInfo.environment["TRACKPAD_DRAW_OFFSCREEN"] != nil)
 }
 
 enum AppPaths {

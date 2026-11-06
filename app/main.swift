@@ -286,7 +286,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
         // --no-activate: open in the background (used by the smoke test so it doesn't take focus).
         // --offscreen (checks/stability.sh): the window is never put on screen, not even behind other windows.
-        if !Launch.background { NSApp.activate(ignoringOtherApps: true) } else if !Launch.args.contains("--offscreen") { window.orderBack(nil) }
+        if !Launch.background { NSApp.activate(ignoringOtherApps: true) } else if !Launch.offscreen { window.orderBack(nil) }
     }
 
     // MARK: draw mode

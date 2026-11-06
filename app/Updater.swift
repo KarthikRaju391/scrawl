@@ -412,6 +412,6 @@ final class UpdatePanel: NSObject, NSWindowDelegate {
     func show() {
         isClosed = false
         window.center()
-        if !Launch.args.contains("--offscreen") { window.orderFrontRegardless() }   // checks/updater.sh runs it off screen
+        if !Launch.offscreen { window.orderFrontRegardless() }   // checks/updater.sh runs it off screen
     }
 }
