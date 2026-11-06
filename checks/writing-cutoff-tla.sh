@@ -14,6 +14,9 @@ summary() { grep -E "distinct states found|Error: Invariant|Error: Action proper
 trace() { grep -E "^State [0-9]+:|^/\\\\ (act|bs|m0|gm0|zoom|camX|lineR|lineL|pending|age|held|quiet|dropped|counted|moved|w) " "$D/out-$1.txt" | tr '\n' ' ' | sed 's/State /\n    State /g' | head -${2:-20}; echo; }
 echo "== rule $RULE, unmutated, MaxSteps $N: P1 P2 P5Decided P6 P8 (invariants), P1Stable P3 P4 P7 (action properties)"
 run none "P1 P2 P5Decided P6 P8" "P1Stable P3 P4 P7"; summary none; grep -q "is violated" "$D/out-none.txt" && trace none 40
+echo "== rule $RULE, unmutated: P8Reach (the marker within the camera's reach), then with the proposed fix (Mut = reachCap: every property)"
+run none "P8Reach" ""; mv "$D/out-none.txt" "$D/out-reach.txt"; summary reach; grep -q "is violated" "$D/out-reach.txt" && trace reach 8
+run reachCap "P1 P2 P5Decided P6 P8 P8Reach" "P1Stable P3 P4 P7"; summary reachCap
 echo "== rule $RULE, unmutated: strict P5, one blocking cause at a time"
 for c in held hand touch undo width never; do
   run none "P5$c" ""; mv "$D/out-none.txt" "$D/out-p5$c.txt"; printf '  P5%-6s ' $c; summary p5$c

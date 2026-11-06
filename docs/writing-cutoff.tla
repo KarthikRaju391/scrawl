@@ -25,6 +25,12 @@ Vw(z) == (W * 100) \div z
 Word(z) == Vw(z) \div 8
 Gap(z) == Vw(z) \div 40
 Abs(x) == IF x < 0 THEN -x ELSE x
+\* The camera's reach (Camera.clamp): its centre at most 2 page widths past the page's right side, so the view's left edge at most this.
+ReachCenter == 3 * W
+ClampX(x, z) == IF x + Vw(z) \div 2 > ReachCenter THEN ReachCenter - Vw(z) \div 2 ELSE x
+\* The proposed fix: the cutoff never past the furthest ink can go at any zoom (the reach + half the most zoomed-in view).
+CapX == ReachCenter + Vw(250) \div 2
+Capped(x) == IF Mut = "reachCap" /\ x > CapX THEN CapX ELSE x
 Max(a, b) == IF a > b THEN a ELSE b
 Min(a, b) == IF a < b THEN a ELSE b
 
@@ -45,11 +51,11 @@ ImplMeasure == IF Rule = "A" \/ Mut = "visibleWidth" THEN V ELSE W
 SpecMeasure == IF Rule = "A" THEN V ELSE W
 \* The app's cutoff (lineLimitX / WritingLayout.lineEnd) and the spec's.
 BW == (w * m0) \div 100
-Cut == CASE Mut = "lineLeft" -> lineL + BW
-         [] Mut = "currentZoom" -> bs + (w * V) \div 100
-         [] OTHER -> bs + BW
+Cut == Capped(CASE Mut = "lineLeft" -> lineL + BW
+                 [] Mut = "currentZoom" -> bs + (w * V) \div 100
+                 [] OTHER -> bs + BW)
 SBW == (w * gm0) \div 100
-SCut == bs + SBW
+SCut == IF Mut = "reachCap" THEN Capped(bs + SBW) ELSE bs + SBW   \* (the amendment, with the fix)
 \* Due: the line's ink at or past cutoff - 3% of the line (scaled by 100: no fractions).
 ImplDue == lineR # Nil /\ 100 * lineR >= 100 * Cut - NearMarker * BW
 SpecDue == lineR # Nil /\ bs # Nil /\ 100 * lineR >= 100 * SCut - 3 * SBW
@@ -58,7 +64,7 @@ SpecGuide == writing /\ bs # Nil /\ lineR # Nil /\ 100 * (SCut - lineR) < ShowWi
 
 Init ==
     /\ writing = TRUE /\ w \in Widths /\ zoom \in Zooms
-    /\ camX \in {-W - Vw(zoom) \div 2, 0, W - Vw(zoom) \div 2 + W \div 2}   \* left of the page, at its left, past its middle
+    /\ camX \in {-W - Vw(zoom) \div 2, 0, W - Vw(zoom) \div 2 + W \div 2, ReachCenter - Vw(zoom) \div 2}   \* left of the page, at its left, past its middle, at the reach
     /\ camRow = 0
     /\ bs = Nil /\ m0 = Nil /\ lineL = Nil /\ lineR = Nil /\ lineRow = 0 /\ hist = << >> /\ redo = << >>
     /\ held = FALSE /\ prevL = Nil /\ prevR = Nil /\ prevRow = 0
@@ -69,9 +75,9 @@ Init ==
 \* Returns the pending move and the follow target as a record.
 Decide(b, m, l, r, h, cx) ==
     LET bw == (w * m) \div 100
-        cut == CASE Mut = "lineLeft" -> l + bw [] Mut = "currentZoom" -> b + (w * V) \div 100 [] OTHER -> b + bw
+        cut == Capped(CASE Mut = "lineLeft" -> l + bw [] Mut = "currentZoom" -> b + (w * V) \div 100 [] OTHER -> b + bw)
         due == 100 * r >= 100 * cut - NearMarker * bw
-        tx == Min(r - V \div 2, cut + V \div 20 - V)
+        tx == ClampX(Min(r - V \div 2, cut + V \div 20 - V), zoom)
         fol == 100 * r > 100 * (cx + V) - 12 * V /\ tx > cx
     IN IF h THEN [p |-> "none", t |-> 0]
        ELSE IF due THEN [p |-> "nl", t |-> 0]
@@ -171,17 +177,17 @@ EdgeUp == edge = 1 /\ edge' = 0 /\ act' = "edge"
 \* ---- hand moves of the view ----------------------------------------------------------------------------------------------
 Pan(d) == \* two fingers (counted): d% of the view sideways
     /\ counted = 0 /\ Cancel("hand") /\ quiet' = 0 /\ act' = "hand"
-    /\ camX' = camX + (d * V) \div 100 /\ handPan' = handPan + Abs((d * V) \div 100)
+    /\ camX' = ClampX(camX + (d * V) \div 100, zoom) /\ handPan' = handPan + Abs(ClampX(camX + (d * V) \div 100, zoom) - camX)
     /\ m0' = IF Mut = "panMeasure" /\ bs # Nil THEN V ELSE m0
     /\ UNCHANGED <<writing, w, zoom, camRow, bs, lineL, lineR, lineRow, hist, redo, held, prevL, prevR, prevRow, ftarget, counted, edge, gm0>> /\ moved' = ""
 Pinch(z) == \* two fingers (counted): to zoom z about the view's middle
     /\ counted = 0 /\ z # zoom /\ Cancel("hand") /\ quiet' = 0 /\ act' = "hand"
-    /\ zoom' = z /\ camX' = camX + V \div 2 - Vw(z) \div 2
+    /\ zoom' = z /\ camX' = ClampX(camX + V \div 2 - Vw(z) \div 2, z)
     /\ m0' = IF Mut \in {"zoomRemeasure", "panMeasure"} /\ bs # Nil THEN Vw(z) ELSE m0
     /\ UNCHANGED <<writing, w, camRow, bs, lineL, lineR, lineRow, hist, redo, held, prevL, prevR, prevRow, ftarget, counted, edge, handPan, gm0>> /\ moved' = ""
 Arrow == \* → (not a touch): 10% of the view
     /\ counted = 0 /\ Cancel("hand") /\ act' = "hand"
-    /\ camX' = camX + V \div 10 /\ handPan' = handPan + V \div 10
+    /\ camX' = ClampX(camX + V \div 10, zoom) /\ handPan' = handPan + Abs(ClampX(camX + V \div 10, zoom) - camX)
     /\ quiet' = 0 /\ moved' = ""
     /\ UNCHANGED <<writing, w, zoom, camRow, bs, m0, lineL, lineR, lineRow, hist, redo, held, prevL, prevR, prevRow, ftarget, counted, edge, gm0>>
 
@@ -244,7 +250,8 @@ P1 == writing /\ bs # Nil => Cut = SCut
 \* P1 (stability): within a block, with the setting unchanged, nothing moves the cutoff (pans, zooms, follows, moves, undo, the guide).
 P1Stable == [][(writing /\ writing' /\ bs # Nil /\ bs' = bs /\ w' = w /\ ~(act' = "write" /\ gm0' # gm0)) => Cut' = Cut]_vars
 \* P2: the cutoff relative to the start is the setting x the measure, whatever the camera: no camX in it.
-P2 == writing /\ bs # Nil => Cut - bs = (w * (IF Rule = "B" THEN W ELSE gm0)) \div 100
+\* (With the reach fix, the amendment: never past CapX.)
+P2 == writing /\ bs # Nil => Cut - bs = Capped(bs + (w * (IF Rule = "B" THEN W ELSE gm0)) \div 100) - bs
 \* P3: the block's start changes only by a stroke (first of a block, written well off the line, or after a deliberate hand
 \* move away), writing mode, a page change, or a redo with no block; never by a tick (the app's moves), Return, a pan, undo.
 P3 == [][bs' # bs => act' \in {"write", "page", "toggle"} \/ (act' = "redo" /\ bs = Nil)]_vars
@@ -269,6 +276,9 @@ P5touch == ~P5Stuck("touch")
 P5undo == ~P5Stuck("undo")
 P5width == ~P5Stuck("width")
 P5never == ~P5Stuck("")
+\* P8 (reach): the marker is somewhere ink can get to: at most the right edge of the view at its reach, at this zoom, plus the
+\* edge band a stroke may run into. If not, no stroke can ever be due and no next line comes (a wedge).
+P8Reach == writing /\ bs # Nil => 100 * Cut - 3 * BW <= 100 * (ReachCenter + V \div 2 + V \div 20)
 \* P6: the guide shows iff the ink is within 15% of the line of the cutoff; it's at the cutoff; hidden after the move.
 P6 == (GuideShown <=> SpecGuide) /\ (GuideShown => Cut = SCut)
 \* P7: an edge contact never cancels or delays a waiting move.
