@@ -16,7 +16,7 @@ final class PageMapView: NSView {
     private var image: CGImage?
     private var region = CGRect.zero          // page units the image covers
     private var renderedVersion = -1
-    private var renderedPage: ObjectIdentifier?
+    private var renderedPage: Int?   // Document.uid
     private var rendering = false
     private var lastRender = 0.0
     private let queue = DispatchQueue(label: "scrawl.pagemap", qos: .utility)
@@ -81,7 +81,7 @@ final class PageMapView: NSView {
     /// Re-render the ink picture if the page changed (throttled, off the main thread).
     func refresh() {
         guard let c = canvas, wanted else { return }
-        let doc = c.doc, key = ObjectIdentifier(doc), r = wantedRegion(c)
+        let doc = c.doc, key = doc.uid, r = wantedRegion(c)
         let stale = doc.version != renderedVersion || key != renderedPage || abs(r.height - region.height) > 1 || abs(r.width - region.width) > 1 || abs(r.minX - region.minX) > 1
         guard stale, !rendering, CACurrentMediaTime() - lastRender > 0.4 else {
             if stale && !rendering { DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in self?.refresh() } }

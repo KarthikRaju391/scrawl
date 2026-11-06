@@ -6,13 +6,13 @@ import Vision
 
 final class PageTitles {
     struct Entry { var version: Int; var title: String; var text: String }
-    private var cache: [ObjectIdentifier: Entry] = [:]
-    private var pending = Set<ObjectIdentifier>()
+    private var cache: [Int: Entry] = [:]   // by Document.uid
+    private var pending = Set<Int>()
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "scrawl.pagetitles", qos: .background)   // after the thumbnails
     private(set) var reads = 0
 
-    func entry(_ doc: Document) -> Entry? { lock.lock(); defer { lock.unlock() }; return cache[ObjectIdentifier(doc)] }
+    func entry(_ doc: Document) -> Entry? { lock.lock(); defer { lock.unlock() }; return cache[doc.uid] }
     func title(_ doc: Document) -> String { entry(doc)?.title ?? "" }
     func matches(_ doc: Document, _ query: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -23,7 +23,7 @@ final class PageTitles {
     /// Read any page whose title is out of date; `ready` runs on the main queue after each one.
     func refresh(_ docs: [Document], page: CGSize, ready: @escaping () -> Void) {
         for doc in docs {
-            let key = ObjectIdentifier(doc)
+            let key = doc.uid
             lock.lock()
             let fresh = cache[key]?.version == doc.version, busy = pending.contains(key)
             if !fresh && !busy { pending.insert(key) }

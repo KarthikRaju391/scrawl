@@ -111,6 +111,13 @@ final class Stroke {
 }
 
 final class Document {
+    /// A stable id for this page while the app runs. Side tables (thumbnails, titles, the page map, where you last wrote)
+    /// key by it: an ObjectIdentifier is the object's address, which a new page can get once a deleted one is freed, and
+    /// the overview then showed the deleted page's tile for it (0.1.6).
+    let uid = Document.takeUid()
+    private static let uidLock = NSLock()
+    nonisolated(unsafe) private static var lastUid = 0
+    private static func takeUid() -> Int { uidLock.lock(); defer { uidLock.unlock() }; lastUid += 1; return lastUid }
     /// A page made now (not one being loaded).
     static func new() -> Document { let d = Document(); d.created = clock(); d.edited = d.created; return d }
 
@@ -1001,7 +1008,7 @@ final class CanvasView: MTKView {
 
     /// Where you last wrote on each page (the end of the last stroke, its line's height) and the zoom it
     /// was written at.
-    private var lastInk: [ObjectIdentifier: (point: CGPoint, zoom: Double)] = [:]
+    private var lastInk: [Int: (point: CGPoint, zoom: Double)] = [:]   // by Document.uid
     /// The view when draw mode last ended.
     private var viewAtDrawExit: Camera?
     /// Tests that check views don't want draw mode to move them (the robot turns it on).
@@ -1015,7 +1022,7 @@ final class CanvasView: MTKView {
     /// in somewhere else since draw mode ended (you chose that spot).
     func resumeTarget() -> Camera? {
         guard resumeOnDrawStart, Self.resumeLastPoint, let last = doc.strokes.last else { return nil }
-        let info = lastInk[ObjectIdentifier(doc)] ?? (CGPoint(x: last.bounds.maxX, y: last.bounds.midY), Self.resumeDefaultZoom)
+        let info = lastInk[doc.uid] ?? (CGPoint(x: last.bounds.maxX, y: last.bounds.midY), Self.resumeDefaultZoom)
         let sameAsExit = viewAtDrawExit.map { abs($0.center.x - camera.center.x) < 0.5 && abs($0.center.y - camera.center.y) < 0.5 && abs($0.zoom - camera.zoom) < 1e-3 } ?? true
         guard sameAsExit || camera.zoom <= 1.05 else { return nil }
         var t = camera
@@ -1562,7 +1569,7 @@ final class CanvasView: MTKView {
         s.mesh = renderer.makeMesh(strokeMesh(s.points, radii: s.radii, pxPerUnit: meshPxPerUnit))
         s.id = nextStrokeIdValue; nextStrokeIdValue += 1
         doc.add(s)
-        lastInk[ObjectIdentifier(doc)] = (CGPoint(x: s.bounds.maxX, y: s.bounds.midY), camera.zoom)
+        lastInk[doc.uid] = (CGPoint(x: s.bounds.maxX, y: s.bounds.midY), camera.zoom)
         if showPageHint { doc.keptWriting = true; onStatus?() }   // wrote on with the note showing: keeping this page
         act("commit", ["id": s.id, "page": pageIndex])
         markDirty()

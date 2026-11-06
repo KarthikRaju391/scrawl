@@ -75,8 +75,8 @@ enum PageImage {
 /// queue: the grid draws whatever is cached (an older version while a page's new one renders) and redraws
 /// when it's ready, so opening the overview never waits for a render.
 final class ThumbnailCache {
-    private var cache: [ObjectIdentifier: (version: Int, image: CGImage)] = [:]
-    private var pending = Set<ObjectIdentifier>()
+    private var cache: [Int: (version: Int, image: CGImage)] = [:]   // by Document.uid
+    private var pending = Set<Int>()
     private let lock = NSLock()
     private let queue = DispatchQueue(label: "scrawl.thumbnails", qos: .userInitiated, attributes: .concurrent)   // pages render in parallel
     /// One cache for the app: warmed in the background after launch and after edits, so the overview opens
@@ -86,7 +86,7 @@ final class ThumbnailCache {
     var renders: Int { lock.lock(); defer { lock.unlock() }; return renderCount }
     static let pixelWidth = 480.0
 
-    private func render(_ strokes: [Stroke], images: [ImageObject], version: Int, key: ObjectIdentifier, page: CGSize) -> CGImage? {
+    private func render(_ strokes: [Stroke], images: [ImageObject], version: Int, key: Int, page: CGSize) -> CGImage? {
         lock.lock(); let have = cache[key]; lock.unlock()
         if let have, have.version == version { return have.image }   // rendered meanwhile
         let rect = Self.region(strokes, images: images, page: page)
@@ -135,19 +135,19 @@ final class ThumbnailCache {
     /// The cached image and whether it is up to date (no rendering).
     func cached(_ doc: Document) -> (image: CGImage?, fresh: Bool) {
         lock.lock(); defer { lock.unlock() }
-        let c = cache[ObjectIdentifier(doc)]
+        let c = cache[doc.uid]
         return (c?.image, c?.version == doc.version)
     }
     /// Up to date, rendering now if needed (tests).
     func image(for doc: Document, page: CGSize) -> CGImage? {
         let (img, fresh) = cached(doc)
         if fresh { return img }
-        let strokes = doc.strokes, images = doc.images, v = doc.version, key = ObjectIdentifier(doc)
+        let strokes = doc.strokes, images = doc.images, v = doc.version, key = doc.uid
         return queue.sync { render(strokes, images: images, version: v, key: key, page: page) }
     }
     /// Render in the background if out of date; `ready` runs on the main queue afterwards.
     func refresh(_ doc: Document, page: CGSize, ready: @escaping () -> Void) {
-        let key = ObjectIdentifier(doc)
+        let key = doc.uid
         lock.lock()
         let fresh = cache[key]?.version == doc.version, busy = pending.contains(key)
         if !fresh && !busy { pending.insert(key) }
@@ -163,7 +163,7 @@ final class ThumbnailCache {
     /// Tests: forget every thumbnail (the worst case: the overview opens with nothing rendered).
     func dropAll() { lock.lock(); cache = [:]; lock.unlock() }
     /// Drop pages that no longer exist.
-    func keep(_ docs: [Document]) { let ids = Set(docs.map(ObjectIdentifier.init)); lock.lock(); cache = cache.filter { ids.contains($0.key) }; lock.unlock() }
+    func keep(_ docs: [Document]) { let ids = Set(docs.map(\.uid)); lock.lock(); cache = cache.filter { ids.contains($0.key) }; lock.unlock() }
 }
 
 final class GalleryView: NSView {
