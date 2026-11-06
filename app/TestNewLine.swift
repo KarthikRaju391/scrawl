@@ -52,8 +52,11 @@ enum TestNewLine {
                             while canvas.newLineCount == lines0 && n < 400 {
                                 // Near the right of the writing area with no auto-pan: pan by hand (two fingers), like a person.
                                 let v = canvas.camera.visible
+                                // (0.1.7, rule B: a ¾ or full line can end past the page's right edge, and a hand pan goes there too;
+                                // only `--column-bound` stops it at the page's edge.)
                                 if x + lw_ * 3 > v.maxX - v.width * 0.05 {
-                                    canvas.setVisibleForReplay(x: min(v.minX + v.width * 0.5, canvas.camera.page.width - v.width), y: v.minY, w: v.width, z: canvas.camera.zoom)
+                                    let to = v.minX + v.width * 0.5
+                                    canvas.setVisibleForReplay(x: Camera.columnBound ? min(to, canvas.camera.page.width - v.width) : to, y: v.minY, w: v.width, z: canvas.camera.zoom)
                                 }
                                 letter(x: x, y: y, w: lw_); n += 1
                                 x += lw_ * 1.25
