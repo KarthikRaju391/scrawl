@@ -329,6 +329,18 @@ final class WReal {
         return false
     }
 
+    /// A two-finger pan in draw mode by (fx, fy) of the active pad (+x: the fingers move left, the view right; +y: the
+    /// fingers move down, the view up).
+    func panBy(_ fx: Double, _ fy: Double) {
+        nextId += 2
+        let a = nextId - 1, b = nextId, dx = fx * (1 - 2 * Camera.margin), dy = fy * (1 - 2 * Camera.margin)
+        var seq: [[Contact]] = []
+        for k in 0...24 { let u = Double(k) / 24
+            seq.append([contact(a, norm: CGPoint(x: 0.42 - dx * u, y: 0.5 - dy * u)), contact(b, norm: CGPoint(x: 0.58 - dx * u, y: 0.5 - dy * u))]) }
+        gesture(seq, dur: 0.2)
+        canvas.flushInputForTest()
+    }
+
     /// Apply one event; returns (applied, committed stroke bounds).
     func apply(_ e: WEv, place: CGRect?) -> (Bool, CGRect?) {
         let n0 = canvas.doc.strokes.count, page0 = canvas.pageIndex

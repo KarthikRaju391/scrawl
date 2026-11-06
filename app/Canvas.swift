@@ -1375,18 +1375,21 @@ final class CanvasView: MTKView {
         needsRender = true
     }
     override func magnify(with e: NSEvent) {
+        magnifyBy(e.magnification, at: convert(e.locationInWindow, from: nil), ended: e.phase == .ended)
+    }
+    /// A trackpad pinch outside draw mode (NSEvent magnify): zoom by 1 + `m` about view point `p`.
+    func magnifyBy(_ m: Double, at p: CGPoint, ended: Bool) {
         guard !drawMode, !tools.zoomLocked else { return }
         cancelPendingMove(); finishSlide()
-        let p = convert(e.locationInWindow, from: nil)
         let anchor = canvasPoint(fromView: p), r = padRect
         changing("magnify") {   // the page point under the pointer stays under it
             var c = camera
-            c.zoom = min(max(c.zoom * (1 + e.magnification), 1), Camera.maxZoom)
+            c.zoom = min(max(c.zoom * (1 + m), c.minZoom), Camera.maxZoom)   // 0.1.7: down to 25%, as in draw mode (it stopped at 100%)
             let v = c.visible, k = v.width / max(r.width, 1)
             c.center = CGPoint(x: anchor.x - (p.x - r.minX) * k + v.width / 2, y: anchor.y - (p.y - r.minY) * k + v.height / 2)
             c.clamp(); camera = c
         }
-        if e.phase == .ended { snapZoomAfterPinch() }
+        if ended { snapZoomAfterPinch() }
         needsRender = true
     }
 
