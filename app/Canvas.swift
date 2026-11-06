@@ -952,18 +952,9 @@ final class CanvasView: MTKView {
         }
     }
     private var limitTargetAlpha: Double {
-        // 0.1.6: the limit shows for the whole block (Karthik judges the rule by seeing it), a little lighter until the ink nears it.
-        if !Camera.columnBound, lineLimitX != nil {
-            var near = 0.0
-            if let r = lineRight, let lim = lineLimitX, let bw = blockWidth {
-                let k: Double = 1 - (lim - r) / (Self.limitShowWithin * bw)
-                near = min(max(k, 0), 1)
-            }
-            let full = Double(Self.limitLineColor.w)
-            return full * (0.6 + 0.4 * near)
-        }
+        // As in 0.1.6 (Karthik, 6 Nov: "keep it simple"): only as the ink nears the limit, within 15% of the line's length.
         guard let lim = lineLimitX, let right = lineRight else { return 0 }
-        let within = Self.limitShowWithin * ToolState.lineWidths[tools.lineWidthIndex] * camera.page.width
+        let within = Self.limitShowWithin * (blockWidth ?? ToolState.lineWidths[tools.lineWidthIndex] * camera.page.width)
         return Double(Self.limitLineColor.w) * min(max(1 - (lim - right) / within, 0), 1)
     }
     /// Moves the drawn strength toward the target (a full fade takes `limitFadeSeconds`); keeps frames coming until there.
@@ -1772,27 +1763,6 @@ final class CanvasView: MTKView {
         let cpu0 = CACurrentMediaTime()
         let vis = renderRect   // everything drawn in the view, not just the pad's area
         var items: [Renderer.DrawItem] = []
-        // Dashed line at every screen height down the page: where a screen's worth of writing ends. Not over pictures.
-        if doc.images.isEmpty {
-            let k = 1 / (ptPerUnit * camera.zoom), su = screenUnits
-            var verts: [SIMD2<Float>] = []
-            var n = max(1, Int(((camera.page.height - vis.maxY) / su).rounded(.down)))
-            while camera.page.height - Double(n) * su >= vis.minY {
-                let y = camera.page.height - Double(n) * su
-                if y <= vis.maxY {
-                    var x = max(vis.minX, 0)
-                    while x < min(vis.maxX, camera.page.width) {
-                        let r = CGRect(x: x, y: y - 0.75 * k, width: 6 * k, height: 1.5 * k)
-                        let a = SIMD2<Float>(Float(r.minX), Float(r.minY)), b = SIMD2<Float>(Float(r.maxX), Float(r.minY))
-                        let c = SIMD2<Float>(Float(r.maxX), Float(r.maxY)), d = SIMD2<Float>(Float(r.minX), Float(r.maxY))
-                        verts += [a, b, c, a, c, d]
-                        x += 12 * k
-                    }
-                }
-                n += 1
-            }
-            if !verts.isEmpty { items.append(.init(mesh: Mesh(), verts: verts, color: premul(SIMD4(0.55, 0.6, 0.68, 0.6)))) }
-        }
         // Writing mode: a faint vertical line where the next-line pan will come (the line's width limit), 1 pt wide at any
         // zoom, only as the line's ink nears it (fading in), gone after the new line. The live view only: exports,
         // thumbnails and the page map render the page without it.

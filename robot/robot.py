@@ -1203,13 +1203,11 @@ def run_scenarios(app, rep, only, hand):
         far = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d > 0.3]
         near = [(w, round(d, 2), a) for w, d, a, _, _, _ in samples if d <= 0.15]
         rep.step("limit line", samples=[(w, round(d, 2), round(a, 3)) for w, d, a, _, _, _ in samples], afterNewLine=[round(a, 3) for a in after_nl])
-        if newrule:   # 0.1.6: shown for the whole block (Karthik judges the rule by seeing it), 60% strength until the ink nears it
-            rep.check(far and all(a >= 0.22 * 0.6 - 0.03 for _, _, a in far), "(c) shown while the line's ink is far from the limit (the whole block, 0.1.6)", f"{far[:6]}")
-        else:
-            rep.check(far and all(a <= 0.01 for _, _, a in far), "(c) hidden while the line's ink is far from the limit (more than 30% of the line width)", f"{far[:6]}")
+        # (0.1.7: only near the line's end on the new rule too, as in 0.1.6; Karthik, 6 Nov: "keep it simple")
+        rep.check(far and all(a <= 0.01 for _, _, a in far), "(c) hidden while the line's ink is far from the limit (more than 30% of the line width)", f"{far[:6]}")
         # Strength 22% x (1 - distance / 15% of the line width): e.g. 0.015 at 14%, 0.044 at 12%, 0.22 at the limit and
         # past it (a word that started before the limit can end past it now: full strength there, not more).
-        rep.check(near and all(abs(a - 0.22 * ((0.6 + 0.4 * min(1.0, max(0.0, 1 - d / 0.15))) if newrule else min(1.0, max(0.0, 1 - d / 0.15)))) < 0.03 for _, d, a in near) and max(a for _, _, a in near) > 0.005,
+        rep.check(near and all(abs(a - 0.22 * min(1.0, max(0.0, 1 - d / 0.15))) < 0.03 for _, d, a in near) and max(a for _, _, a in near) > 0.005,
                   "(c) fades in as the ink comes within 15% of the line width of the limit (in proportion)", f"{near}")
         shown_in_view = [(d, l) for _, _, a, d, l, iv in samples if a > 0.002 and iv]
         # (a sample taken before the frame that draws it, as the line fades in, has nothing drawn yet: at most the first)
@@ -1263,9 +1261,8 @@ def run_scenarios(app, rep, only, hand):
             if cx < col < cx + cw:
                 px = [im.getpixel((int(col), int(cy + ch * (0.25 + 0.5 * i / 40)))) for i in range(41)]
                 t0 = sum(b - r_ for r_, g_, b in px) / len(px)
-            if not newrule: rep.check(t0 < 3, "(c) not to be seen at the start of a line (screenshot)", f"blue tint at the limit's column {t0:.1f}")
-        if newrule: rep.check(after_nl and all(a >= 0.22 * 0.6 - 0.03 for a in after_nl), "(c) still shown after the next-line move (the block goes on, 0.1.6)", f"{after_nl}")
-        else: rep.check(after_nl and all(a <= 0.01 for a in after_nl), "(c) gone after the next-line move", f"{after_nl}")
+            rep.check(t0 < 3, "(c) not to be seen at the start of a line (screenshot)", f"blue tint at the limit's column {t0:.1f}")
+        rep.check(after_nl and all(a <= 0.01 for a in after_nl), "(c) gone after the next-line move", f"{after_nl}")
         # Hidden without writing mode (no width chosen), and never in the page export.
         ensure(app, "writing", False, "w"); time.sleep(0.3)
         s5 = app.state(); shot5 = rep.shot(app, "writing mode off: no line")

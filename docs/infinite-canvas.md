@@ -6,8 +6,8 @@ The page's column (1,600 units wide, endless downwards) is a guide now, not a li
 - It pans past the column's sides and above its top, up to 2 page widths (`Camera.reach`), so you can't get lost.
 - It zooms out to 25% (`Camera.minZoom`): four page widths across, about the most at which handwriting written at 100%
   can still be told apart. Zoom presets now include 25% and 50%. Zoom to Whole Page (⌘0) is still 100%.
-- Paper is everywhere (the paper pattern too). The column is drawn as faint 1 px edges, its sides and its top: on
-  screen only, not in exports.
+- Paper is everywhere (the paper pattern too). Nothing marks the column on screen (0.1.7: no edge lines, no dashed
+  screen-height lines; Karthik: "keep it simple").
 - Ink and pictures can go anywhere. Exports and Copy as Image use paper everywhere (no desk). The "Page" area is the
   column (top to the lowest content), grown on any side where content goes past it. Tiles and the page map frame all
   the content; a page whose content stays inside the column looks exactly as before.
@@ -18,7 +18,7 @@ The page's column (1,600 units wide, endless downwards) is a guide now, not a li
   next block takes the zoom at that moment.
 - The 95% cap and the 93% "near the page's edge" rule are gone. The only early trigger is ink within 3% of the line
   before its end.
-- The limit is shown for the whole block, a little stronger as the ink nears it.
+- The limit line shows only as the ink nears it (within 15% of the line's length), as in 0.1.6.
 - A line longer than the view (a block started near the view's right side, or a wide setting): once its ink is within
   12% of the view's right side, at the usual word-gap pause, the view slides right so the ink's end sits in the middle
   of the view, never past the line's end. The camera only: ink never moves, the line stays open.

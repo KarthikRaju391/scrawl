@@ -15,10 +15,10 @@ pictures, and a writing mode that takes you to the next line when you reach the 
 ## What's new in 0.1.7
 
 - **Room around the page.** Pan past the page's sides and above its top, and zoom out to 25%. Write and put
-  pictures anywhere. The page itself stays as a faint outline, a guide rather than a wall.
+  pictures anywhere. No lines mark the page's edges any more (nor the dashed screen-height lines): just paper.
 - **Writing mode: lines as long as your screen.** A block's lines are the width you chose (50, 75 or 100%) of the
   screen at the moment you start the block, measured from where you start it. Zooming while you write doesn't change
-  them. The guide line shows for the whole block.
+  them. The guide line fades in as you near a line's end, as before.
 - **Long lines carry the view along.** When a line is longer than the screen, the view slides right at the next
   word gap as you reach its edge. Your writing never moves.
 - Exports, Copy as Image and the pages overview include everything on the canvas, beside the page too.

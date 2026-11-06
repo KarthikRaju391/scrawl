@@ -62,8 +62,8 @@ Metal draws each picture under the ink:
   loaded yet is drawn from the preview: never a hole.
 - Textures beyond 256 MB are released, least recently drawn first.
 - Paper: the page's pattern (grid, dots, ruled) stops at a picture's frame; under it is plain white paper, so the
-  pattern never shows through a transparent picture. Around and below the picture the paper is as before. The dashed
-  screen-height lines aren't drawn on pages with pictures, and those pages never show the "filled a screen" note.
+  pattern never shows through a transparent picture. Around and below the picture the paper is as before. Pages with
+  pictures never show the "filled a screen" note.
 
 The overview's transition snapshots load what they need synchronously, so the moving picture is exactly what the canvas
 then draws.

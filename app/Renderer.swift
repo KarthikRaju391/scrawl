@@ -23,18 +23,10 @@ vertex VOut bg_v(uint vid [[vertex_id]], constant Xf& xf [[buffer(1)]]) {
 }
 struct BG { float kind; float spacing; float pxPerUnit; float pageWidth; float pageTop; float hasPage; float guides; float _b; };
 fragment float4 bg_f(VOut in [[stage_in]], constant BG& bg [[buffer(0)]]) {
-    // The infinite canvas (0.1.6, `guides`): paper everywhere, the page's column marked by faint 1 px edges (its sides
-    // and top), a guide, not a limit. Before (and `--column-bound`): off the page a plain grey desk with a soft shadow
-    // along the page edge, so it can't be mistaken for writing space.
-    if (bg.hasPage > 0 && bg.guides > 0) {
-        float2 p = in.canvas;
-        float dx = min(abs(p.x), abs(p.x - bg.pageWidth)) * bg.pxPerUnit;
-        float dy = abs(p.y - bg.pageTop) * bg.pxPerUnit;
-        float side = (p.y <= bg.pageTop) ? clamp(1.0 - dx + 0.5, 0.0, 1.0) : 0.0;
-        float top = (p.x >= 0 && p.x <= bg.pageWidth) ? clamp(1.0 - dy + 0.5, 0.0, 1.0) : 0.0;
-        float edge = max(side, top);
-        if (edge > 0) { return mix(float4(1, 1, 1, 1), float4(0.78, 0.80, 0.84, 1), edge); }
-    } else if (bg.hasPage > 0) {
+    // The infinite canvas (0.1.7, `guides`): paper everywhere, nothing marking the page's column (Karthik, 6 Nov: no
+    // indicators). Before (and `--column-bound`): off the page a plain grey desk with a soft shadow along the page edge,
+    // so it can't be mistaken for writing space.
+    if (bg.hasPage > 0 && bg.guides == 0) {
         float dx = max(max(-in.canvas.x, in.canvas.x - bg.pageWidth), 0.0);
         float dy = max(in.canvas.y - bg.pageTop, 0.0);
         float d = length(float2(dx, dy)) * bg.pxPerUnit;   // device pixels outside the page

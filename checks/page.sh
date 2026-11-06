@@ -1,6 +1,6 @@
 #!/bin/bash
-# The page's bounds (background). The infinite canvas (0.1.6): paper everywhere, the same ruled paper beside the page's
-# column as on it, and the column's sides marked by a faint 1 px line; the page top never sits below the window top.
+# The page's bounds (background). The infinite canvas (0.1.7): paper everywhere, the same ruled paper beside the page's
+# column as on it, and nothing marking the column (no edge line, no dashed screen-height line); the page top never sits below the window top.
 # (Before 0.1.6, --column-bound: a plain grey desk with a shadowed edge.) Saves screenshots.
 cd "$(dirname "$0")/.."
 D=$(mktemp -d /tmp/td-page.XXXX)
@@ -43,15 +43,18 @@ for s in r["shots"]:
     col = column(xin, lo, hi)
     whites = sum(1 for c in col if min(c) >= 250); lines = sum(1 for c in col if 200 < c[0] < 245)
     if whites < len(col) * 0.6 or lines == 0: issues.append(f"page not ruled white paper (white {whites}/{len(col)}, line {lines})")
-    # The column's side: a faint line at it (darker than the paper 20 pt away on the same row), on most rows.
+    # The column's side: no line at it (no pixel there darker than the paper 20 pt away on the same row, off the ruled lines).
     for side, x in (("left", s["pageLeft"]), ("right", s["pageRight"])):
         if 4 < x - 22 and x + 22 < vw - 4:
             rows = [lo + (hi - lo) * i / 8 for i in range(9)]
-            marked = sum(1 for y in rows if min(sum(px(x + dx / 2, y)) for dx in range(-4, 5)) < 640 and min(px(x + 20, y)) >= 250 and min(px(x - 20, y)) >= 250)
-            if marked < 3: issues.append(f"no visible {side} column edge ({marked} of {len(rows)} rows)")
+            marked = sum(1 for y in rows if 300 < min(sum(px(x + dx / 2, y)) for dx in range(-4, 5)) < 640 and min(px(x + 20, y)) >= 250 and min(px(x - 20, y)) >= 250)
+            if marked > 0: issues.append(f"a visible {side} column edge ({marked} of {len(rows)} rows)")
+    # No dashed screen-height line (0.1.7: removed; a row of grey-blue dashes, darker than the ruled lines).
+    dashed = [y for y in range(int(H * 0.15), int(H * 0.8)) if sum(1 for x in range(0, W, 3) if 150 < im.getpixel((x, y))[0] < 200 and im.getpixel((x, y))[2] - im.getpixel((x, y))[0] > 5) > 20]
+    if dashed: issues.append(f"a dashed screen-height line ({len(dashed)} pixel rows, at y {dashed[0]})")
     edges = [e for e, x in (("left", s["pageLeft"]), ("right", s["pageRight"])) if 0 < x < vw]
     chk(not issues, f"{s['name']} ({vw:.0f}x{vh:.0f}): page edges on screen: {', '.join(edges) or 'none (page fills the width)'}; "
-        + ("ruled paper beside the column, its sides a faint line, page top at the window top" if not issues else "; ".join(issues)) + f"  [shot-{s['n']}.png]")
+        + ("ruled paper beside the column, no line at its sides, no dashed line, page top at the window top" if not issues else "; ".join(issues)) + f"  [shot-{s['n']}.png]")
 sm = r["smallest"]
 chk(sm["pill"][0] >= 0 and sm["pill"][1] <= sm["view"][0], f"at the smallest window ({sm['view'][0]:.0f} x {sm['view'][1]:.0f} pt) the whole toolbar is inside it (pill x {sm['pill'][0]:.0f}-{sm['pill'][1]:.0f})")
 print("RESULT:", "PASS" if bad == 0 else f"FAIL ({bad})")
