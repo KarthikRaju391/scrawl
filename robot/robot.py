@@ -1764,7 +1764,10 @@ def run_scenarios(app, rep, only, hand):
                       lo, hi = (limit - 0.025 * lw, limit - 0.003 * lw) if kind == "just inside" else (limit - 0.10 * lw, limit - 0.06 * lw)
                       if not newrule and kind == "just inside" and limit >= W * CAP - 1: lo = max(lo, W * 0.932)
                       nl0 = st["newLines"]; right = x0; i = 0; s_ = st; done = False
-                      while i < 60 and s_["newLines"] == nl0 and right < lo:
+                      # Stop once the ink is in the band, or (just inside) in the app's own zone, the line's last 3%: a word ending
+                      # 2.5-3% short is a full line to the app (the next line comes), and writing on then raced that move.
+                      def done_(r_): return r_ >= lo or (kind == "just inside" and s_.get("lineLimitX") is not None and r_ >= s_["lineLimitX"] - 0.03 * lw)
+                      while i < 60 and s_["newLines"] == nl0 and not done_(right):
                           w_ = words[i % len(words)]; gap = sp
                           aim = (lo + hi) / 2   # the band's middle: the robot's word widths run a little short of its ink
                           if i > 0 and right + sp + hand.width(w_) * upm > aim:
