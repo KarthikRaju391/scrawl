@@ -67,6 +67,7 @@ struct WObs {
     var follows = 0               // follow moves made (0.1.6)
     var pendingFollow: CGPoint? = nil
     var blockView: Double? = nil  // the implementation's own block view width: only seeds the oracle for a run that starts mid-block
+    var guide: Double? = nil      // the guide line's target strength (0: hidden); nil if not observed
 }
 
 // MARK: - The model (CanvasView's writing logic)
@@ -107,7 +108,8 @@ struct WModel {
         let nl = pending.flatMap { $0.follow ? nil : $0 }, fl = pending.flatMap { $0.follow ? $0.target : nil }
         return WObs(writing: writing, width: width, cam: cam, runStart: runStart, lineInk: lineInk, lineStrokes: lineStrokes, prevLine: prevLine?.ink,
                     lineHeld: lineHeld, handRef: handRef, pendingTarget: nl?.target, pendingLiftAt: nl?.liftAt, counted: counted, edge: edge,
-                    clock: clock, strokes: strokes, limit: lim, newLines: newLines, page: pageIdx, follows: follows, pendingFollow: fl, blockView: blockView)
+                    clock: clock, strokes: strokes, limit: lim, newLines: newLines, page: pageIdx, follows: follows, pendingFollow: fl, blockView: blockView,
+                    guide: { guard let l = lim, let r = lineInk?.maxX, let bw = blockWidth else { return 0 }; return 0.22 * min(max(1 - (l - r) / (CanvasView.limitShowWithin * bw), 0), 1) }())
     }
 
     private mutating func addStroke(_ s: CGRect) {
@@ -358,6 +360,8 @@ struct WSpec {
         var seeded = false
     }
     var mon = Mon()
+    /// The cutoff spec's oracle (bench/cutoffSpec.swift, docs/writing-cutoff-spec.md): with --cutoff, the only properties checked.
+    var cut = CutoffSpec()
 
     /// Before 0.1.6 (`--column-bound`): the line ends at the block's start + the width of the page, at most 95% of it; ink from
     /// 93% of the page is a full line. 0.1.6 (`blockView`, the view's width when the block started): the block's start + the
@@ -421,6 +425,7 @@ struct WSpec {
     /// Check one transition. `committed`: the stroke committed by this event (nil if none). Returns violations as
     /// (property, message).
     mutating func check(_ e: WEv, pre: WObs, post: WObs, committed: CGRect?) -> [(String, String)] {
+        if CutoffSpec.enabled { cut.waitMs = waitMs; return cut.check(e, pre: pre, post: post, committed: committed) }
         var bad: [(String, String)] = []
         func fail(_ p: String, _ m: String) { bad.append((p, m)) }
         let W = wPage.width, wait = waitMs / 1000

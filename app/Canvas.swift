@@ -948,6 +948,8 @@ final class CanvasView: MTKView {
     static let limitShowWithin = 0.15, limitFadeSeconds = 0.25
     private var limitAlpha = 0.0, limitAlphaAt = 0.0
     var limitAlphaForTest: Double { limitAlpha }
+    /// Test hook (bench/cutoffSpec.swift): the strength the guide is fading toward now (0: hidden).
+    var limitTargetAlphaForTest: Double { limitTargetAlpha }
     /// The current line's rightmost ink (page x), including the stroke being drawn.
     var lineRightForTest: Double? { lineRight }
     private var lineRight: Double? {

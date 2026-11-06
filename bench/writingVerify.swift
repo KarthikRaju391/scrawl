@@ -96,7 +96,8 @@ struct WExplore {
         return out
     }
 
-    static func fingerprint(_ m: WModel, _ s: WSpec.Mon) -> Int {
+    static func fingerprint(_ m: WModel, _ sp: WSpec) -> Int {
+        let s = sp.mon
         var h = Hasher()
         func q(_ d: Double) { h.combine(Int((d * 1000).rounded())) }
         func q(_ d: Double?) { if let d { h.combine(1); q(d) } else { h.combine(0) } }
@@ -111,6 +112,7 @@ struct WExplore {
         h.combine(m.pageIdx)
         for p in m.pages { h.combine(p.strokes.count); for r in p.strokes { q(r) }; h.combine(p.undo.count); h.combine(p.redo.count); q(p.cam?.center.x); q(p.cam?.zoom) }
         q(s.schedAt.map { m.clock - $0 }); h.combine(s.downSinceSched); q(s.refX); q(s.panSum)
+        if CutoffSpec.enabled { sp.cut.hash(into: &h, clock: m.clock) }
         return h.finalize()
     }
 
@@ -161,7 +163,7 @@ struct WExplore {
     }
 
     private mutating func dfs(_ m: WModel, _ spec: WSpec, _ start: WModel, _ left: Int, _ path: inout [WEv]) {
-        let fp = Self.fingerprint(m, spec.mon)
+        let fp = Self.fingerprint(m, spec)
         if let d = memo[fp], d >= left { return }
         if memo[fp] == nil {
             states += 1
@@ -253,7 +255,7 @@ final class WReal {
                     lineStrokes: s.lineStrokes, prevLine: s.prevLine, lineHeld: s.lineHeld, handRef: s.handRef, pendingTarget: s.pending?.target,
                     pendingLiftAt: s.pending?.liftAt, counted: s.countedContacts, edge: edge == nil ? 0 : 1, clock: vclock,
                     strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex, handPanX: s.handPanX,
-                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth)
+                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth, guide: canvas.limitTargetAlphaForTest)
     }
 
     private func contact(_ id: Int32, page p: CGPoint) -> Contact {
@@ -596,7 +598,7 @@ func wReplaySession(_ path: String, waitMs: Double) -> WReplayResult {
                     lineStrokes: s.lineStrokes, prevLine: s.prevLine, lineHeld: s.lineHeld, handRef: s.handRef, pendingTarget: s.pending?.target,
                     pendingLiftAt: s.pending?.liftAt, counted: s.countedContacts, edge: 0, clock: vclock,
                     strokes: canvas.doc.strokes.map(\.bounds), limit: canvas.lineLimitX, newLines: canvas.newLineCount, page: canvas.pageIndex,
-                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth)
+                    follows: s.follows, pendingFollow: s.pendingFollow, blockView: s.blockViewWidth, guide: canvas.limitTargetAlphaForTest)
     }
     var afterWidth: (old: Double, at: Double)?
     var heldFrom: Double?
