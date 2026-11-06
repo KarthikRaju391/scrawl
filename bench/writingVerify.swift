@@ -352,6 +352,17 @@ final class WReal {
         canvas.flushInputForTest()
     }
 
+    /// A two-finger tap with one finger in the edge band (thr_ra4euq2qri's edge-tap rule), or (`edgeOnly`) an edge contact
+    /// alone touching and lifting, `dur` long.
+    func edgeTap(edgeOnly: Bool = false, dur: Double = 0.06) {
+        nextId += 2
+        let e = contact(nextId - 1, norm: CGPoint(x: 0.02, y: 0.5)), c = contact(nextId, norm: CGPoint(x: 0.5, y: 0.5))
+        let t0 = vclock
+        for k in 0...6 { frame(edgeOnly ? [e] : [c, e], at: t0 + dur * Double(k) / 6) }
+        frame([], at: t0 + dur + 0.008)
+        canvas.flushInputForTest()
+    }
+
     /// Apply one event; returns (applied, committed stroke bounds).
     func apply(_ e: WEv, place: CGRect?) -> (Bool, CGRect?) {
         let n0 = canvas.doc.strokes.count, page0 = canvas.pageIndex

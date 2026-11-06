@@ -154,6 +154,10 @@ if args.contains("--cutoff-targeted") {
         out(String(format: "CUTOFF TARGETED wait %.0f ms: a block started at the canvas's right reach still gets its next line: %@", w, bad.isEmpty ? "PASS" : "FAIL"))
         for b in bad { out("  " + b) }
         if !bad.isEmpty { failures += 1 }
+        let et = cutoffEdgeTapChecks(waitMs: w)
+        out(String(format: "CUTOFF TARGETED wait %.0f ms: edge contacts and edge-band taps vs the waiting move: %@", w, et.isEmpty ? "PASS" : "FAIL"))
+        for (p, m) in et { out("  \(p): \(m)") }
+        if !et.isEmpty { failures += 1 }
     }
 }
 

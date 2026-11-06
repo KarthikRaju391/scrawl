@@ -324,15 +324,19 @@ func cutoffRunOnReport() -> String {
 /// room) for 60 words; returns failures.
 func cutoffReachChecks(waitMs: Double) -> [String] {
     var bad: [String] = []
-    for (wi, zoom) in [(0, 2.5), (2, 1.0), (1, 4.0)] {
+    // The block's first word near the view's left, and (the corner the first fix missed) at its very right.
+    for (wi, zoom, f) in [(0, 2.5, 0.05), (2, 1.0, 0.05), (1, 4.0, 0.05), (2, 2.5, 0.9), (2, 4.0, 0.88), (0, 1.0, 0.92)] {
         let real = WReal(waitMs: waitMs, widthIdx: wi, zoom: zoom, viewX: 0)
         var c = real.canvas.camera; c.center.x = .infinity; c.clamp()   // as far right as the view goes
         let v = c.visible
         real.canvas.setVisibleForReplay(x: v.minX, y: v.minY, w: v.width, z: zoom)
         let h = min(max(v.height * 0.06, 6), 60)
-        _ = real.apply(.write(.at(0.05)), place: CGRect(x: v.minX + 0.05 * v.width, y: v.maxY - 0.5 * v.height - h / 2, width: h * 3, height: h))
-        let n0 = real.canvas.newLineCount
+        _ = real.apply(.write(.at(f)), place: CGRect(x: v.minX + f * v.width, y: v.maxY - 0.5 * v.height - h / 2, width: min(h * 3, v.maxX - v.minX - f * v.width - 1), height: h))
+        let n0 = real.canvas.newLineCount - (real.obs.pendingLiftAt != nil || real.canvas.newLineCount > 0 ? 0 : 0)
         let wait = waitMs / 1000
+        let before = real.canvas.newLineCount
+        real.tick(1.5 * wait)   // the pause after the first word (it may already be past the marker)
+        if real.canvas.newLineCount > before { continue }
         var words = 0, steps = 0
         while words < 60 && steps < 200 && real.canvas.newLineCount == n0 {
             steps += 1
@@ -342,8 +346,40 @@ func cutoffReachChecks(waitMs: Double) -> [String] {
         }
         let o = real.obs
         if real.canvas.newLineCount == n0 {
-            bad.append(String(format: "width %.0f%%, zoom %.1f: block at %.0f, cutoff %.0f, but the view stops at x %.0f (its reach): %d words and no next line; ink to %.0f",
-                              ToolState.lineWidths[wi] * 100, zoom, o.runStart ?? .nan, o.limit ?? .nan, o.cam.visible.maxX, words, o.lineInk?.maxX ?? .nan))
+            bad.append(String(format: "width %.0f%%, zoom %.1f, first word at %.0f%% of the view: block at %.0f, cutoff %.0f, but the view stops at x %.0f (its reach): %d words and no next line; ink to %.0f",
+                              ToolState.lineWidths[wi] * 100, zoom, f * 100, o.runStart ?? .nan, o.limit ?? .nan, o.cam.visible.maxX, words, o.lineInk?.maxX ?? .nan))
+        }
+    }
+    return bad
+}
+
+/// P7 with the edge-tap rule (thr_ra4euq2qri): with the line due and its move waiting, (a) an edge contact alone touching
+/// and lifting must not cancel or delay it; (b) a two-finger tap with one finger in the edge band is a counted touch: it may
+/// cancel, but then the first pause after it should bring the move (P5). Returns (property, message) failures.
+func cutoffEdgeTapChecks(waitMs: Double) -> [(String, String)] {
+    var bad: [(String, String)] = []
+    let wait = waitMs / 1000
+    for (edgeOnly, double) in [(true, false), (false, false), (false, true)] {
+        let real = WReal(waitMs: waitMs, widthIdx: 0, zoom: 1, viewX: 0)
+        let v = real.canvas.camera.visible, h = 30.0, y = v.maxY - 0.5 * v.height
+        _ = real.apply(.write(.at(0.05)), place: CGRect(x: v.minX + 0.05 * v.width, y: y, width: 3 * h, height: h))
+        let rs = real.obs.runStart ?? 0
+        _ = real.apply(.write(.cross), place: CGRect(x: rs + 0.5 * wPage.width - 2 * h, y: y, width: 3 * h, height: h))
+        guard real.obs.pendingLiftAt != nil else { bad.append(("setup", "no move pending after crossing the cutoff")); continue }
+        let n0 = real.canvas.newLineCount, t0 = real.vclock
+        real.tick(0.1 * wait)
+        real.edgeTap(edgeOnly: edgeOnly)
+        if double { real.tick(0.08); real.edgeTap() }   // a double tap: the edge-band undo (thr_ra4euq2qri)
+        let after = real.obs
+        real.tick(1.2 * wait)
+        let moved = real.canvas.newLineCount > n0
+        if ProcessInfo.processInfo.environment["CUTOFF_ACTS"] != nil { print("edge\(edgeOnly ? " alone" : double ? " double tap" : " tap"): acts \(real.acts.suffix(12).joined(separator: ",")), moved \(moved)") }
+        if edgeOnly {
+            if after.pendingLiftAt == nil && real.canvas.newLineCount == n0 { bad.append(("C7", "an edge contact alone cancelled the waiting move")) }
+            if !moved { bad.append(("C7", String(format: "an edge contact alone held back the move (%.0f ms after the lift, no move)", (real.vclock - t0) * 1000))) }
+        } else if !moved, let l = real.obs.lineInk, let lim = real.obs.limit, Double(l.maxX) >= lim - CutoffSpec.nearMarker * real.obs.width * wPage.width - 1e-6 {   // still due
+            bad.append((double ? "C5:undo" : "C5:touch", String(format: "a two-finger %@tap with one finger at the edge %@ the waiting move, and a %.0f ms pause after it brought none (strokes %d, acts: %@)",
+                                              double ? "double " : "", after.pendingLiftAt == nil ? "cancelled" : "kept", 1.2 * waitMs, real.canvas.doc.strokes.count, real.acts.suffix(6).joined(separator: ","))))
         }
     }
     return bad
