@@ -65,7 +65,7 @@ final class BackToPagePill: NSView {
         label.stringValue = "Back to page  ⇧⌘0"
         label.font = .systemFont(ofSize: 12, weight: .medium)
         label.textColor = NSColor(white: 0.30, alpha: 1)
-        label.fillColor = NSColor(white: 1, alpha: 0.9)
+        label.fillColor = NSColor(white: 0.95, alpha: 0.95)   // a faint grey: white vanished on the paper
         label.paddingX = 12
         addSubview(label)
         setAccessibilityRole(.button); setAccessibilityLabel("Back to page")
