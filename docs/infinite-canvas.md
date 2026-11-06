@@ -12,9 +12,9 @@ The page's column (1,600 units wide, endless downwards) is a guide now, not a li
   column (top to the lowest content), grown on any side where content goes past it. Tiles and the page map frame all
   the content; a page whose content stays inside the column looks exactly as before.
 - Back to page (`app/BackToPage.swift`): outside draw mode, a pill ("Back to page  ⇧⌘0", bottom right above the
-  toolbar) shows once the view's centre is more than 20% of the view's width outside the column, or the view's top
-  more than 10% of its height above the page's top; it hides only once back within 10% / 5% (no flicker while
-  panning at the threshold). Below the ink isn't "away": the page goes on down. Never in draw mode or the overview.
+  toolbar) shows once the view's centre is more than 20% of the view's width outside the column, or more than a third
+  of the view is above the page's top (⌘0 from 250% near the top leaves ~30% above it: not "away"); it hides only
+  once back within 10% / a quarter (no flicker while panning at the threshold). Below the ink isn't "away": the page goes on down. Never in draw mode or the overview.
   It and ⇧⌘0 slide the view back: the column centred, the zoom kept; above the page's top, its top at the view's top;
   with no ink or picture in view, to the nearest. ⌘0 (Actual Size (100%)) zooms to 100% about the view's centre.
 - Pinching outside draw mode (magnify) zooms to 25% like draw mode's pinches; scrolling reaches the same places.

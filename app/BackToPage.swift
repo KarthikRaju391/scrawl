@@ -3,13 +3,14 @@
 // the page's column centred, at the same zoom. Never in draw mode, never with `--column-bound` (the view can't leave).
 //
 // Away from the page (shown): the view's centre is more than 20% of the view's width outside the column [0, page width]
-// (inside it, anywhere, is on the page: zoomed in on its right half is still the page), or the view's top is more than 10%
-// of its height above the page's top. It hides again only once within 10% / 5% (hysteresis: panning at the threshold
-// doesn't make it flicker). Below the page's ink isn't away: the page goes on downwards, and that's where new writing goes.
+// (inside it, anywhere, is on the page: zoomed in on its right half is still the page), or more than a third of the view
+// is above the page's top (zooming out about the view's centre near the top, ⌘0 from 250% say, leaves up to ~30% above
+// it: not "away"). It hides again only once within 10% / 25% (hysteresis: panning at the threshold doesn't make it
+// flicker). Below the page's ink isn't away: the page goes on downwards, and that's where new writing goes.
 import AppKit
 
 extension CanvasView {
-    static let backShowSide = 0.20, backHideSide = 0.10, backShowAbove = 0.10, backHideAbove = 0.05
+    static let backShowSide = 0.20, backHideSide = 0.10, backShowAbove = 0.33, backHideAbove = 0.25
 
     /// How far `cam` is from the page: (sideways: the view centre's distance outside the column, in view widths; above:
     /// the view's top above the page's top, in view heights). 0 on the page.

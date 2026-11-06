@@ -582,7 +582,7 @@ def run_scenarios(app, rep, only, hand):
         if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
         if app.state().get("columnBound", True) is not False:
             rep.skip("back-to-page", "the view can't leave the page (--column-bound)"); return
-        app.press("n"); app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app)
+        app.press("n"); app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app); app.cmd({"cmd": "pageCorner"}); settle(app)   # on the page at 100%
         m0, m1 = app.cmd({"cmd": "menuItem", "action": "resetZoom"}), app.cmd({"cmd": "menuItem", "action": "backToPageAction"})
         rep.check(m0.get("title") == "Actual Size (100%)" and m0.get("key") == "0" and not m0.get("shift") and m1.get("title") == "Back to Page" and m1.get("key") == "0" and m1.get("shift"),
                   "View › Actual Size (100%) is ⌘0, View › Back to Page is ⇧⌘0", f"{m0} {m1}")
@@ -598,6 +598,7 @@ def run_scenarios(app, rep, only, hand):
         sh = rep.shot(app, "the Back to page pill (bottom right)")
         app.press("right"); s_ = app.state(); v = s_["view"]; off = max(0, -(v["x"] + v["w"] / 2)) / v["w"]
         rep.check(s_.get("backPill") and off > 0.1, "one step back (still beyond 10%): it stays (no flicker)", f"off {off:.2f}, pill {s_.get('backPill')}")
+        app.press("left")   # well past the threshold again (one step back sat at exactly 20%: shown only by the hysteresis)
         app.press("d", until=lambda s: s["draw"]); s_ = app.state()
         rep.check(not s_.get("backPill"), "in draw mode: never", f"{s_.get('backPill')}")
         app.press("d", until=lambda s: not s["draw"]); s_ = app.state()

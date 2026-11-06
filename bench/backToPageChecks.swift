@@ -82,15 +82,15 @@ func backToPageChecks(_ check: (Bool, String) -> Void) {
         for o in offs { step(-o * vw, y) }
         let leftFlips = flips
         let leftOK = flips == 2 && trace.first?.hasPrefix("show at 0.21") == true && trace.last?.hasPrefix("hide at 0.09") == true
-        // Above: the view's top 12% of its height above the page's top shows it; back to 6%: still; 4%: hidden.
+        // Above: a third of the view above the page's top shows it (36%); back to 28%: still; 22%: hidden; 30% never shows it.
         shown = false; flips = 0
         var above: [Bool] = []
-        for a in [0.08, 0.12, 0.06, 0.04] { place(c, CGPoint(x: W / 2, y: top + a * vh - vh / 2)); shown = c.backToPageWanted(showing: shown); above.append(shown) }
+        for a in [0.30, 0.36, 0.28, 0.22] { place(c, CGPoint(x: W / 2, y: top + a * vh - vh / 2)); shown = c.backToPageWanted(showing: shown); above.append(shown) }
         // Zoomed in on the page's right half (the view's centre inside the column): never.
         place(c, CGPoint(x: W - 1, y: y))
         let onPage = !c.backToPageWanted(showing: false)
         check(leftOK && above == [false, true, true, false] && onPage,
-              String(format: "Back to page pill at %.0f%%: left of the page shown past 20%% of the view, hidden only back within 10%% (%@; %d changes over a wobble at both thresholds); above the top: shown past 10%%, hidden within 5%% (%@); on the page's right edge: %@",
+              String(format: "Back to page pill at %.0f%%: left of the page shown past 20%% of the view, hidden only back within 10%% (%@; %d changes over a wobble at both thresholds); above the top: shown past a third of the view, hidden within a quarter (%@); on the page's right edge: %@",
                      z * 100, trace.joined(separator: ", "), leftFlips, above.map { $0 ? "on" : "off" }.joined(separator: " "), onPage ? "not shown" : "SHOWN"))
     }
     // Never in draw mode, however far off.
