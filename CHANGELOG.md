@@ -13,6 +13,11 @@ The infinite canvas (`docs/infinite-canvas.md`), and stability fixes (`docs/rele
   The same length at every zoom; a line longer than the screen carries the view along with it. The guide line fades
   in near the line's end, as before. A redo after leaving writing mode no longer falls back to the page's old limit.
 - **The page map shows whenever you pan or pinch**, at any zoom, and covers everything on the canvas.
+- **Back to page.** Outside draw mode, once you've panned well off the page (its middle more than a fifth of the
+  screen past its edge, or above its top), a small "Back to page ⇧⌘0" pill shows at the bottom right; it, or View ›
+  Back to Page (⇧⌘0), slides the page back to the middle at the same zoom. ⌘0 is now View › Actual Size (100%): 100%
+  where you are (it always was; the old name said "Whole Page").
+- **Pinching outside draw mode zooms out to 25% too** (it stopped at 100%).
 
 Stability: fixes from an audit of the app's hidden states.
 

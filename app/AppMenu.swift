@@ -75,7 +75,8 @@ extension AppDelegate {
             .separator(),
             fullScreen,
             item("Pages Overview  (G)", #selector(toggleGalleryAction)),
-            item("Zoom to Whole Page", #selector(resetZoom), "0"),
+            item("Actual Size (100%)", #selector(resetZoom), "0"),   // 100% about the view's centre (0.1.7: renamed; it never went to the page)
+            item("Back to Page", #selector(backToPageAction), "0", [.command, .shift]),
             item("Previous Page", #selector(prevPageAction), "["),
             item("Next Page", #selector(nextPageAction), "]"),
             .separator(),

@@ -147,6 +147,14 @@ final class Robot {
                 }
             }
             done(["error": "no menu item"])
+        case "clickBackPill":   // a click on the "Back to page" pill (0.1.7)
+            var ok = false
+            ok = { let p = app.container.backPill; guard !p.isHidden else { return false }; p.onClick?(); return true }()   // robot:needs class BackToPagePill
+            done(ok ? ["ok": true] : ["error": "no Back to page pill"])
+        case "menuItem":   // a menu item's title and shortcut, by action
+            let sel = NSSelectorFromString(c["action"] as? String ?? "")
+            let i = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }.first { $0.action == sel }
+            done(i.map { ["title": $0.title, "key": $0.keyEquivalent, "shift": $0.keyEquivalentModifierMask.contains(.shift), "cmd": $0.keyEquivalentModifierMask.contains(.command)] } ?? ["error": "no menu item"])
         case "clickMap":   // a click (or a drag, with "to") on the page map at fractions of its size
             var ok = false
             ok = clickMap(c)   // robot:needs class PageMapView
@@ -298,7 +306,7 @@ final class Robot {
             "strokesPerPage": canvas.pages.map { $0.strokes.count },
             "view": Self.view(canvas),
             "padMM": [Multitouch.padMM.width, Multitouch.padMM.height],
-            "pageW": canvas.camera.page.width,
+            "pageW": canvas.camera.page.width, "pageTop": canvas.camera.page.height,
             "lastStrokeEnds": canvas.doc.strokes.last.map { s -> [[Double]] in [[s.points[0].p.x, s.points[0].p.y], [s.points[s.points.count - 1].p.x, s.points[s.points.count - 1].p.y]] } ?? [],
             "lastStrokeMid": canvas.doc.strokes.last.map { s -> [Double] in let p = s.points[s.points.count / 2].p; return [p.x, p.y] } ?? [],
             "lastStrokes": canvas.doc.strokes.suffix(40).map { [$0.bounds.minX, $0.bounds.minY, $0.bounds.maxX, $0.bounds.maxY] },
@@ -325,6 +333,7 @@ final class Robot {
         s["newLines"] = canvas.newLineCount
         s["follows"] = canvas.writingStateForTest.follows   // 0.1.6: the view following a long line
         s["columnBound"] = Camera.columnBound               // the rules before 0.1.6 (--column-bound)
+        s["backPill"] = !app.container.backPill.isHidden   // robot:needs class BackToPagePill
         s["lineMeasure"] = WritingLayout.measureFromView ? "view" : "page"   // what the width setting is a share of (0.1.7: the page)
         s["clickDrawOn"] = canvas.clickDrawOn   // robot:needs var clickDrawOn
         s["aimRing"] = [CanvasView.aimRingColor.x, CanvasView.aimRingColor.y, CanvasView.aimRingColor.z, CanvasView.aimRingColor.w].map { (Double($0) * 100).rounded() / 100 }   // robot:needs aimRingColor

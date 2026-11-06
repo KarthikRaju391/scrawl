@@ -22,6 +22,9 @@ pictures, and a writing mode that takes you to the next line when you reach the 
 - **Long lines carry the view along.** When a line is longer than the screen, the view slides right at the next
   word gap as you reach its edge. Your writing never moves.
 - **The page map shows whenever you pan or pinch**, at any zoom, and covers everything on the canvas.
+- **Back to page.** Panned off the page? A small "Back to page" pill brings you back (or ⇧⌘0). ⌘0 is Actual Size
+  (100%), where you are.
+- Pinching outside draw mode zooms out to 25% too.
 - Exports, Copy as Image and the pages overview include everything on the canvas, beside the page too.
 
 ## Also fixed

@@ -1714,7 +1714,7 @@ final class CanvasView: MTKView {
     private(set) var movesCancelled = 0
 
     /// A finger touched down before the pause was up: no move now; it's re-decided at the next lift.
-    private func cancelPendingMove() {
+    func cancelPendingMove() {
         guard pendingMove != nil else { return }
         pendingMove = nil; movesCancelled += 1; act("moveCancelled")
     }

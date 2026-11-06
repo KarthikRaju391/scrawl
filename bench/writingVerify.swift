@@ -239,7 +239,7 @@ final class WReal {
         Settings.pauseChosenMs = waitMs   // the Settings slider (tests ignore the stored choice)
         canvas = CanvasView(frame: NSRect(x: 0, y: 0, width: 1200, height: 740), device: nil)
         canvas.now = { [unowned self] in self.vclock }
-        var t = canvas.tools; t.lineWidthIndex = widthIdx; canvas.tools = t
+        var t = canvas.tools; t.lineWidthIndex = widthIdx; t.zoomLocked = false; canvas.tools = t   // (the bench's own saved tools may say locked)
         let w = wPage.width / zoom
         canvas.setVisibleForReplay(x: viewX * (wPage.width - w), y: wPage.height - wPage.height / zoom, w: w, z: zoom)
         canvas.drawMode = true

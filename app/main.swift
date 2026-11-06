@@ -20,6 +20,7 @@ final class ContainerView: NSView {
     let pendingMove = PendingMoveView()
     let zoomBadge = PillLabel()
     let selectionBar = SelectionBar(frame: .zero)
+    let backPill = BackToPagePill(frame: .zero)   // "Back to page" once the view drifted off it (BackToPage.swift)
     /// After each layout (the selection bar follows the selection).
     var onLayout: (() -> Void)?
 
@@ -59,6 +60,7 @@ final class ContainerView: NSView {
         zoomBadge.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold); zoomBadge.textColor = .white
         zoomBadge.fillColor = NSColor(white: 0.15, alpha: 0.8); zoomBadge.isHidden = true; addSubview(zoomBadge)
         selectionBar.isHidden = true; addSubview(selectionBar, positioned: .below, relativeTo: toast)
+        backPill.isHidden = true; addSubview(backPill, positioned: .below, relativeTo: toast)
         registerForDraggedTypes([.fileURL] + ImagePages.pasteboardTypes)
     }
     /// Pictures dropped on the window (files, or images from another app): true if they were taken.
@@ -98,6 +100,9 @@ final class ContainerView: NSView {
         pendingMove.frame = pendingMove.kind == .newLine ? CGRect(x: 14, y: bounds.height * 0.3, width: 40, height: 40)
                                                          : CGRect(x: bounds.width - 46, y: bounds.midY - 20, width: 40, height: 40)
         hint.frame = CGRect(x: bounds.midX - hint.fittingWidth / 2, y: bounds.height - 27, width: hint.fittingWidth, height: 18)
+        // Back to page: bottom right, just above the toolbar (clear of its pill, its option panel and the toasts at the top).
+        let bp = backPill.fittingSize_
+        backPill.frame = CGRect(x: bounds.width - bp.width - 14, y: 6 + ToolbarView.height + 8, width: bp.width, height: bp.height)
         onLayout?()
         canvas.setNeedsRender()
     }
@@ -212,7 +217,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         cv.onStatus = { [weak self] in self?.updateBanner() }
         cv.onBackgroundClick = { [weak self] in self?.container.toolbar.hidePanel() }
         cv.onDocChanged = { [weak self] in self?.updateUndoState(); self?.container.pageMap.refresh(); self?.warmThumbnailSoon() }
-        cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source); self?.zoomChanged(source: source); self?.updateSelectionBar() }
+        cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source); self?.zoomChanged(source: source); self?.updateSelectionBar(); self?.updateBackToPage() }
+        container.backPill.onClick = { [weak self] in self?.backToPageAction() }
         cv.onSelectionChange = { [weak self] _ in self?.selectionChanged() }
         container.onLayout = { [weak self] in self?.updateSelectionBar() }
         container.selectionBar.onCopy = { [weak self] in self?.copySelectionAction() }
@@ -409,7 +415,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         updateBanner()
     }
 
+    /// The "Back to page" pill: shown outside draw mode (and the overview) once the view drifted off the page.
+    func updateBackToPage() {
+        let p = container.backPill
+        let want = !galleryShown && canvas.backToPageWanted(showing: !p.isHidden)
+        guard want == p.isHidden else { return }
+        p.isHidden = !want; container.needsLayout = true
+        canvas.act("backToPagePill", ["shown": want])
+    }
+
     func updateBanner() {
+        updateBackToPage()
         updatePageArrows()
         let input = canvas.usingMT ? "" : "  ·  basic touch input (no pressure)"
         let pageText = "Page \(canvas.pageIndex + 1) of \(canvas.pages.count)"
@@ -738,6 +754,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc func redoAction() { usage.record("redo", ["source": "key"]); canvas.redo() }
     @objc func clearPage() { canvas.clearPage() }
     @objc func resetZoom() { canvas.resetZoom() }
+    @objc func backToPageAction() { canvas.backToPage(); usage.record("back_to_page") }
     @objc func newPageAction() { page(0) }
     @objc func prevPageAction() { page(-1) }
     @objc func nextPageAction() { page(1) }
@@ -834,7 +851,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             m.addItem(i)
         }
         m.addItem(.separator())
-        let whole = NSMenuItem(title: "Whole Page  (⌘0)", action: #selector(resetZoom), keyEquivalent: ""); whole.target = self; m.addItem(whole)
+        let whole = NSMenuItem(title: "Actual Size (100%)  ⌘0", action: #selector(resetZoom), keyEquivalent: ""); whole.target = self; m.addItem(whole)
         m.addItem(.separator())
         let field = NSTextField(frame: CGRect(x: 16, y: 2, width: 120, height: 22))
         field.placeholderString = "Type a zoom, e.g. 175"
