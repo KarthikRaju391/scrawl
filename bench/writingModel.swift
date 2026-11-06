@@ -176,6 +176,7 @@ struct WModel {
     /// applyMove(.follow): the view slides right with the line (the line stays open).
     mutating func applyFollow(_ c: CGPoint) {
         follows += 1
+        handPanX = 0   // the app's own move, like a next line (CanvasView)
         var target = cam; target.center = c; target.clamp(); handRef = target.center
         cam = target
     }

@@ -1734,6 +1734,8 @@ final class CanvasView: MTKView {
         case .follow(let c):
             // The line runs on past the view's right side: the view goes along (the line stays open; ink never moves).
             act("follow", ["toX": c.x]); followCount += 1
+            // The app's own move, like a next line: hand pans before it no longer count as "moved by hand" after it.
+            handPanX = 0
             var target = camera; target.center = c; target.clamp(); handRef = target.center
             slideCamera(to: c, src: "follow")
         case .newLine(let c):
