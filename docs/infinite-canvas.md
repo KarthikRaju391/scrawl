@@ -11,12 +11,15 @@ The page's column (1,600 units wide, endless downwards) is a guide now, not a li
 - Ink and pictures can go anywhere. Exports and Copy as Image use paper everywhere (no desk). The "Page" area is the
   column (top to the lowest content), grown on any side where content goes past it. Tiles and the page map frame all
   the content; a page whose content stays inside the column looks exactly as before.
-- Back to page (`app/BackToPage.swift`): outside draw mode, a pill ("Back to page  ⇧⌘0", bottom right above the
-  toolbar) shows once the view's centre is more than 20% of the view's width outside the column, or more than a third
-  of the view is above the page's top (⌘0 from 250% near the top leaves ~30% above it: not "away"); it hides only
-  once back within 10% / a quarter (no flicker while panning at the threshold). Below the ink isn't "away": the page goes on down. Never in draw mode or the overview.
-  It and ⇧⌘0 slide the view back: the column centred, the zoom kept; above the page's top, its top at the view's top;
-  with no ink or picture in view, to the nearest. ⌘0 (Actual Size (100%)) zooms to 100% about the view's centre.
+- Back to content (`app/BackToContent.swift`, 0.1.7.1; 0.1.7 had "Back to page", which centred the column at the same
+  zoom): the pill ("Back to content  ⇧⌘0", bottom right above the toolbar) and View › Back to Content (⇧⌘0) zoom and
+  move so all the page's ink and pictures fit the window (7% margins, above the toolbar), zoom 25-100%. An empty page
+  goes to its top at 100%; with the zoom locked, the content is only centred. The pill shows when less than 60% of the
+  content is in the window (of the content box, or of the window when the content is bigger: zoomed in on a full page
+  is on the content) or the window's centre is 20% of its width off the content; it hides at 75% / 10%. Never in draw
+  mode or the overview. ⌘0 (Actual Size (100%)) zooms to 100% about the view's centre.
+- Overview titles and ⌘F (`app/PageTitles.swift`) read all the ink, wherever it is (0.1.7 cut it to the column), in
+  tiles of at most 3,000 px at 0.75 px per unit or more; the title is the topmost line in page coordinates.
 - Pinching outside draw mode (magnify) zooms to 25% like draw mode's pinches; scrolling reaches the same places.
 - The page map (top right) shows on any move you make yourself (pan, pinch, arrow keys, scrolling) at any zoom, 100%
   and below too (0.1.7; before, only zoomed in past 1.5x), framing all the content, and fades 1.2 s after the move.

@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.1.7.1 (2026-11-11, build 14)
+
+- **Back to content** (was Back to page). The pill (bottom right, outside draw mode) and View › Back to Content (⇧⌘0)
+  zoom and move so all of the page's ink and pictures fit the window, with a margin and clear of the toolbar; the zoom
+  stays between 25% and 100% (one word isn't blown up). An empty page goes to its top at 100%. With the zoom locked it
+  only centres the content. The pill shows when less than 60% of the content is in view (or the window's centre is
+  well off it), and hides at 75% (no flicker); never in draw mode. ⌘0 is still Actual Size (100%) where you are.
+- **Overview titles and ⌘F read writing anywhere on the canvas.** They were cut to the page's column, so writing beside
+  the page or above it (a block started left of the page, say) gave no title and wasn't found. The title is the
+  topmost line.
+
 ## 0.1.7 (2026-11-06, build 13)
 
 The infinite canvas (`docs/infinite-canvas.md`), and stability fixes (`docs/release-notes-0.1.7.md`).
