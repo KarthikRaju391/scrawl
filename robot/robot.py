@@ -577,43 +577,58 @@ def run_scenarios(app, rep, only, hand):
         app.press("left")
         rep.check(bool(app.state().get("pageMap")), "and on again")
 
-    @scenario("back-to-page", "0.1.7, the infinite canvas: outside draw mode, once the view drifts off the page a 'Back to page' pill shows (never in draw mode); it and View › Back to Page (⇧⌘0) slide back, the page centred at the same zoom. View › Actual Size (100%) (⌘0) zooms to 100% where you are.")
+    @scenario("back-to-content", "0.1.7.1 (Karthik): outside draw mode, once the page's content is mostly out of view a 'Back to content' pill shows (never in draw mode); it and View › Back to Content (⇧⌘0) zoom and move so all the page's ink fits the window (zoom 25-100%); an empty page goes to its top at 100%. View › Actual Size (100%) (⌘0) zooms to 100% where you are.")
     def _():
         if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])
         if app.state().get("columnBound", True) is not False:
-            rep.skip("back-to-page", "the view can't leave the page (--column-bound)"); return
+            rep.skip("back-to-content", "the view can't leave the page (--column-bound)"); return
         app.press("n"); app.cmd({"cmd": "menu", "action": "resetZoom"}); settle(app); app.cmd({"cmd": "pageCorner"}); settle(app)   # on the page at 100%
-        m0, m1 = app.cmd({"cmd": "menuItem", "action": "resetZoom"}), app.cmd({"cmd": "menuItem", "action": "backToPageAction"})
-        rep.check(m0.get("title") == "Actual Size (100%)" and m0.get("key") == "0" and not m0.get("shift") and m1.get("title") == "Back to Page" and m1.get("key") == "0" and m1.get("shift"),
-                  "View › Actual Size (100%) is ⌘0, View › Back to Page is ⇧⌘0", f"{m0} {m1}")
+        m0, m1 = app.cmd({"cmd": "menuItem", "action": "resetZoom"}), app.cmd({"cmd": "menuItem", "action": "backToContentAction"})
+        rep.check(m0.get("title") == "Actual Size (100%)" and m0.get("key") == "0" and not m0.get("shift") and m1.get("title") == "Back to Content" and m1.get("key") == "0" and m1.get("shift"),
+                  "View › Actual Size (100%) is ⌘0, View › Back to Content is ⇧⌘0", f"{m0} {m1}")
         s0 = app.state()
-        rep.check(not s0.get("backPill"), "on the page: no pill", f"{s0.get('backPill')}")
-        W = s0["pageW"]; steps = []
-        for _ in range(30):   # arrow left, 10% of the view a press, until it shows
-            app.press("left"); s_ = app.state(); v = s_["view"]
-            off = max(0, -(v["x"] + v["w"] / 2)) / v["w"]; steps.append((round(off, 2), bool(s_.get("backPill"))))
+        rep.check(not s0.get("backPill"), "an empty page at its top: no pill", f"{s0.get('backPill')}")
+        # Some writing on the page (two words, two lines).
+        app.press("d", until=lambda s: s["draw"]); pad_w, pad_h = app.state()["padMM"]
+        fr, cid = hand.frames(hand.word("content", pad_w * 0.3, pad_h * 0.6, hand.roman), 7700); app.touch(fr)
+        fr, cid = hand.frames(hand.word("here", pad_w * 0.35, pad_h * 0.45, hand.roman), cid); app.touch(fr); settle(app)
+        app.press("d", until=lambda s: not s["draw"]); s0 = app.state()
+        ink = s0["pageBounds"]; bx = [min(b[0] for b in ink), min(b[1] for b in ink), max(b[2] for b in ink), max(b[3] for b in ink)]
+        rep.check(not s0.get("backPill"), "with the writing in view: no pill", f"{s0.get('backPill')}")
+        def in_window(st, m=0.0):
+            w = st["windowRect"]; return bx[0] >= w[0] + m * w[2] - 1 and bx[2] <= w[0] + w[2] * (1 - m) + 1 and bx[1] >= w[1] - 1 and bx[3] <= w[1] + w[3] + 1
+        steps = []
+        for _ in range(30):   # arrow right, 10% of the view a press, until the pill shows
+            app.press("right"); s_ = app.state(); w = s_["windowRect"]
+            steps.append((round(w[0], 0), bool(s_.get("backPill"))))
             if s_.get("backPill"): break
-        first = next((o for o, b in steps if b), None)
-        rep.check(first is not None and 0.2 < first <= 0.31 and all(not b for o, b in steps if o <= 0.2), "panning left off the page: the pill shows once the view's centre is more than 20% of the view past the page's edge", f"{steps}")
-        sh = rep.shot(app, "the Back to page pill (bottom right)")
-        app.press("right"); s_ = app.state(); v = s_["view"]; off = max(0, -(v["x"] + v["w"] / 2)) / v["w"]
-        rep.check(s_.get("backPill") and off > 0.1, "one step back (still beyond 10%): it stays (no flicker)", f"off {off:.2f}, pill {s_.get('backPill')}")
-        app.press("left")   # well past the threshold again (one step back sat at exactly 20%: shown only by the hysteresis)
+        rep.check(steps and steps[-1][1] and not steps[0][1], "panning away from the writing: the pill shows once most of it is out of view (not at the first step)", f"window x / pill: {steps}")
+        rep.shot(app, "the Back to content pill (bottom right)")
+        app.press("left"); s_ = app.state()
+        rep.check(s_.get("backPill"), "one step back: it stays (no flicker at the threshold)", f"{s_.get('backPill')}")
+        app.press("right"); app.press("right")
         app.press("d", until=lambda s: s["draw"]); s_ = app.state()
         rep.check(not s_.get("backPill"), "in draw mode: never", f"{s_.get('backPill')}")
         app.press("d", until=lambda s: not s["draw"]); s_ = app.state()
-        rep.check(s_.get("backPill"), "out of draw mode again, still off the page: back", f"{s_.get('backPill')}")
-        z0 = s_["view"]["zoom"]
+        rep.check(s_.get("backPill"), "out of draw mode again, still away: back", f"{s_.get('backPill')}")
         r = app.cmd({"cmd": "clickBackPill"}); time.sleep(0.6); s_ = app.state(); v = s_["view"]
-        rep.check(r.get("ok") and abs(v["x"] + v["w"] / 2 - W / 2) < 1 and abs(v["zoom"] - z0) < 1e-6 and not s_.get("backPill"),
-                  "clicking it: the page centred, the same zoom, the pill gone", f"centre x {v['x'] + v['w'] / 2:.0f} (page middle {W / 2:.0f}), zoom {z0} -> {v['zoom']}, pill {s_.get('backPill')}")
-        # ⇧⌘0 from above and right of the page.
+        rep.check(r.get("ok") and in_window(s_, 0.05) and 0.25 - 1e-6 <= v["zoom"] <= 1 + 1e-6 and not s_.get("backPill"),
+                  "clicking it: all the writing in the window (with a margin), zoom 25-100%, the pill gone", f"zoom {v['zoom']:.2f}, window {[round(x) for x in s_['windowRect']]}, ink {[round(x) for x in bx]}, pill {s_.get('backPill')}")
+        # ⇧⌘0 from 300%, far up and to the right: zoomed out to fit (at most 100%).
+        app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app, limit=3)
         for _ in range(14): app.press("up")
-        for _ in range(8): app.press("right")
-        s_ = app.state(); v0 = s_["view"]
-        app.cmd({"cmd": "menu", "action": "backToPageAction"}); time.sleep(0.6); s_ = app.state(); v = s_["view"]
-        rep.check(abs(v["x"] + v["w"] / 2 - W / 2) < 1 and v["y"] + v["h"] <= s_["pageTop"] + 1 and not s_.get("backPill"),
-                  "⇧⌘0 from above and right of the page: centred, its top at the view's top", f"view from ({v0['x']:.0f},{v0['y']:.0f}) to ({v['x']:.0f},{v['y']:.0f}), top {v['y'] + v['h']:.0f} vs page top {s_['pageTop']:.0f}")
+        for _ in range(12): app.press("right")
+        app.cmd({"cmd": "menu", "action": "backToContentAction"}); time.sleep(0.6); s_ = app.state(); v = s_["view"]
+        rep.check(in_window(s_, 0.05) and v["zoom"] <= 1 + 1e-6 and not s_.get("backPill"),
+                  "⇧⌘0 from 300%, far up and right: the writing fits the window, at most 100%", f"zoom {v['zoom']:.2f}, window {[round(x) for x in s_['windowRect']]}, ink {[round(x) for x in bx]}")
+        rep.shot(app, "after Back to Content")
+        # An empty page, far away at 300%: its top at 100%.
+        app.press("n"); app.cmd({"cmd": "zoomMenu", "pick": "300%"}); settle(app, limit=3)
+        for _ in range(10): app.press("left")
+        for _ in range(10): app.press("down")
+        app.cmd({"cmd": "menu", "action": "backToContentAction"}); time.sleep(0.6); s_ = app.state(); v = s_["view"]
+        rep.check(abs(v["zoom"] - 1) < 1e-6 and abs(v["y"] + v["h"] - s_["pageTop"]) < 1 and abs(v["x"]) < 1,
+                  "⇧⌘0 on an empty page: its top at 100%, as a new page opens", f"zoom {v['zoom']:.2f}, view x {v['x']:.0f}, top {v['y'] + v['h']:.0f} (page top {s_['pageTop']:.0f})")
     @scenario("resume", "Write at zoom 3, leave draw mode and zoom out to the whole page, press D: you're back at the end of your last word, at zoom 3, in a quarter second. If you zoomed in somewhere else yourself, D leaves you there.")
     def _():
         if app.state()["draw"]: app.press("d", until=lambda s: not s["draw"])

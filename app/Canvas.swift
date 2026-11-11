@@ -575,6 +575,8 @@ final class CanvasView: MTKView {
     /// What is changing the camera/tools right now (for the event log).
     var source = "unknown"
     func changing(_ src: String, _ body: () -> Void) { let old = source; source = src; body(); source = old }
+    /// View points along the bottom covered by the toolbar (outside draw mode): Back to Content fits the content above it.
+    var bottomInsetPt: CGFloat = 0
     /// The visible part of the page changed, and why ("pinch", "arrow", "autopan"...): the page map follows it.
     var onViewChange: ((String) -> Void)?
     /// A finger went down on / came off the page (draw mode): the page map fades while you draw.

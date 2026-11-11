@@ -147,10 +147,10 @@ final class Robot {
                 }
             }
             done(["error": "no menu item"])
-        case "clickBackPill":   // a click on the "Back to page" pill (0.1.7)
+        case "clickBackPill":   // a click on the "Back to content" pill (0.1.7.1)
             var ok = false
-            ok = { let p = app.container.backPill; guard !p.isHidden else { return false }; p.onClick?(); return true }()   // robot:needs class BackToPagePill
-            done(ok ? ["ok": true] : ["error": "no Back to page pill"])
+            ok = { let p = app.container.backPill; guard !p.isHidden else { return false }; p.onClick?(); return true }()   // robot:needs class BackToContentPill
+            done(ok ? ["ok": true] : ["error": "no Back to content pill"])
         case "menuItem":   // a menu item's title and shortcut, by action
             let sel = NSSelectorFromString(c["action"] as? String ?? "")
             let i = (NSApp.mainMenu?.items ?? []).flatMap { $0.submenu?.items ?? [] }.first { $0.action == sel }
@@ -333,7 +333,8 @@ final class Robot {
         s["newLines"] = canvas.newLineCount
         s["follows"] = canvas.writingStateForTest.follows   // 0.1.6: the view following a long line
         s["columnBound"] = Camera.columnBound               // the rules before 0.1.6 (--column-bound)
-        s["backPill"] = !app.container.backPill.isHidden   // robot:needs class BackToPagePill
+        s["windowRect"] = { let r = canvas.renderRect; return [r.minX, r.minY, r.width, r.height] }()   // what the window shows (page units)
+        s["backPill"] = !app.container.backPill.isHidden   // robot:needs class BackToContentPill
         s["lineMeasure"] = WritingLayout.measureFromView ? "view" : "page"   // what the width setting is a share of (0.1.7: the page)
         s["clickDrawOn"] = canvas.clickDrawOn   // robot:needs var clickDrawOn
         s["aimRing"] = [CanvasView.aimRingColor.x, CanvasView.aimRingColor.y, CanvasView.aimRingColor.z, CanvasView.aimRingColor.w].map { (Double($0) * 100).rounded() / 100 }   // robot:needs aimRingColor

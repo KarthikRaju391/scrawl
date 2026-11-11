@@ -20,7 +20,7 @@ final class ContainerView: NSView {
     let pendingMove = PendingMoveView()
     let zoomBadge = PillLabel()
     let selectionBar = SelectionBar(frame: .zero)
-    let backPill = BackToPagePill(frame: .zero)   // "Back to page" once the view drifted off it (BackToPage.swift)
+    let backPill = BackToContentPill(frame: .zero)   // "Back to content" once the page's content is mostly out of view (BackToContent.swift)
     /// After each layout (the selection bar follows the selection).
     var onLayout: (() -> Void)?
 
@@ -76,6 +76,7 @@ final class ContainerView: NSView {
         // exactly this rectangle, so there are no margins. The toolbar and labels float on top; the toolbar
         // hides in draw mode (keys work there; the pointer is frozen so it couldn't be clicked anyway).
         canvas.frame = bounds
+        canvas.bottomInsetPt = canvas.drawMode ? 0 : 6 + ToolbarView.height + 8   // the toolbar's strip (hidden in draw mode)
         pageMap.isHidden = !pageMap.wanted
         if !pageMap.isHidden && pageMap.alphaValue < 0.05 { pageMap.alphaValue = 1 }
         if !pageMap.isHidden {
@@ -100,7 +101,7 @@ final class ContainerView: NSView {
         pendingMove.frame = pendingMove.kind == .newLine ? CGRect(x: 14, y: bounds.height * 0.3, width: 40, height: 40)
                                                          : CGRect(x: bounds.width - 46, y: bounds.midY - 20, width: 40, height: 40)
         hint.frame = CGRect(x: bounds.midX - hint.fittingWidth / 2, y: bounds.height - 27, width: hint.fittingWidth, height: 18)
-        // Back to page: bottom right, just above the toolbar (clear of its pill, its option panel and the toasts at the top).
+        // Back to content: bottom right, just above the toolbar (clear of its pill, its option panel and the toasts at the top).
         let bp = backPill.fittingSize_
         backPill.frame = CGRect(x: bounds.width - bp.width - 14, y: 6 + ToolbarView.height + 8, width: bp.width, height: bp.height)
         onLayout?()
@@ -217,8 +218,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         cv.onStatus = { [weak self] in self?.updateBanner() }
         cv.onBackgroundClick = { [weak self] in self?.container.toolbar.hidePanel() }
         cv.onDocChanged = { [weak self] in self?.updateUndoState(); self?.container.pageMap.refresh(); self?.warmThumbnailSoon() }
-        cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source); self?.zoomChanged(source: source); self?.updateSelectionBar(); self?.updateBackToPage() }
-        container.backPill.onClick = { [weak self] in self?.backToPageAction() }
+        cv.onViewChange = { [weak self] source in self?.container.pageMap.viewChanged(source: source); self?.zoomChanged(source: source); self?.updateSelectionBar(); self?.updateBackToContent() }
+        container.backPill.onClick = { [weak self] in self?.backToContentAction() }
         cv.onSelectionChange = { [weak self] _ in self?.selectionChanged() }
         container.onLayout = { [weak self] in self?.updateSelectionBar() }
         container.selectionBar.onCopy = { [weak self] in self?.copySelectionAction() }
@@ -415,17 +416,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         updateBanner()
     }
 
-    /// The "Back to page" pill: shown outside draw mode (and the overview) once the view drifted off the page.
-    func updateBackToPage() {
+    /// The "Back to content" pill: shown outside draw mode (and the overview) once the page's content is mostly out of view.
+    func updateBackToContent() {
         let p = container.backPill
-        let want = !galleryShown && canvas.backToPageWanted(showing: !p.isHidden)
+        let want = !galleryShown && canvas.backToContentWanted(showing: !p.isHidden)
         guard want == p.isHidden else { return }
         p.isHidden = !want; container.needsLayout = true
-        canvas.act("backToPagePill", ["shown": want])
+        canvas.act("backToContentPill", ["shown": want])
     }
 
     func updateBanner() {
-        updateBackToPage()
+        updateBackToContent()
         updatePageArrows()
         let input = canvas.usingMT ? "" : "  ·  basic touch input (no pressure)"
         let pageText = "Page \(canvas.pageIndex + 1) of \(canvas.pages.count)"
@@ -754,7 +755,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     @objc func redoAction() { usage.record("redo", ["source": "key"]); canvas.redo() }
     @objc func clearPage() { canvas.clearPage() }
     @objc func resetZoom() { canvas.resetZoom() }
-    @objc func backToPageAction() { canvas.backToPage(); usage.record("back_to_page") }
+    @objc func backToContentAction() { canvas.backToContent(); usage.record("back_to_content") }
     @objc func newPageAction() { page(0) }
     @objc func prevPageAction() { page(-1) }
     @objc func nextPageAction() { page(1) }
