@@ -152,6 +152,16 @@ func backToContentChecks(_ check: (Bool, String) -> Void) {
         let away = c.backToContentWanted(showing: false)
         check(!atTop && away, "Back to Content pill on an empty page: none at its top (\(atTop)), shown once panned 1.5 page widths away (\(away))")
     }
+    // The pill is decided on every view change (each frame of a pan or a transition): cheap on a full page.
+    do {
+        let c = canvas(zoom: 1, center: CGPoint(x: 800, y: 500))
+        for k in 0..<2500 { ink(c, Double(k % 50) * 30, Double(k % 50) * 30 + 25, 900 - Double(k / 50) * 15, n: 30) }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        var n = 0
+        for k in 0..<200 { place(c, CGPoint(x: 800 + Double(k) * 20, y: 500)); if c.backToContentWanted(showing: k % 2 == 0) { n += 1 } }
+        let ms = (CFAbsoluteTimeGetCurrent() - t0) * 1000 / 200
+        check(ms < 1, String(format: "Back to Content pill: deciding it on a 2,500-stroke page takes %.3f ms a view change (bar 1 ms; a frame is 8-16 ms)", ms))
+    }
     // Never in draw mode.
     let d = canvas(zoom: 1, center: CGPoint(x: -3000, y: top + 2000), draw: true)
     ink(d, 300, 1300, 700)
