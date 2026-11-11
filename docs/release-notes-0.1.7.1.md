@@ -18,7 +18,8 @@ pictures, and a writing mode that takes you to the next line when you reach the 
   (or ⇧⌘0, View › Back to Content) brings all of the page's writing and pictures into view, zooming out as far as
   25% if it needs to, and never in further than 100%. On an empty page it goes to the page's top.
 - **Page titles and search find writing anywhere.** The pages overview's titles and ⌘F now read writing beside the
-  page or above it too (they only read the page's column before).
+  page or above it too (they only read the page's column before), and a page's title is its topmost line of
+  writing.
 
 Scrawl sends anonymous usage counts (never your ink, pages or text); **Settings › Share anonymous usage counts**
 turns them off. [What's counted](https://github.com/KarthikRaju391/scrawl/blob/main/docs/analytics.md).
