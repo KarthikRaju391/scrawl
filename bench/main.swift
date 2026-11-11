@@ -11,6 +11,7 @@ var failures = 0
 func check(_ ok: Bool, _ msg: String) { print(ok ? "PASS" : "FAIL", msg); if !ok { failures += 1 } }
 
 if ProcessInfo.processInfo.environment["BENCH_ONLY"] == "stability" { stabilityChecks(check); exit(failures == 0 ? 0 : 1) }   // 0.1.6.1
+if ProcessInfo.processInfo.environment["BENCH_ONLY"] == "titles" { pageTitleChecks(check); exit(failures == 0 ? 0 : 1) }   // 0.1.7.1
 if ProcessInfo.processInfo.environment["BENCH_ONLY"] == "linewidth" { lineWidthRuleChecks(check); navLimitChecks(check); backToContentChecks(check); exit(failures == 0 ? 0 : 1) }   // 0.1.7
 if ProcessInfo.processInfo.environment["BENCH_ONLY"] == "tapedge" { tapEdgeChecks(check); exit(failures == 0 ? 0 : 1) }   // 0.1.7 taps and the edge guard
 if ProcessInfo.processInfo.environment["BENCH_ONLY"] == "images" { imageChecks(check); attachmentChecks(check); exit(failures == 0 ? 0 : 1) }
@@ -199,6 +200,7 @@ writingLayoutChecks(check)
 lineWidthRuleChecks(check)
 navLimitChecks(check)
 backToContentChecks(check)
+pageTitleChecks(check)
 tapEdgeChecks(check)
 settingsChecks(check)
 notebookChecks(check)
