@@ -36,10 +36,19 @@ enum InputStatus: Equatable {
 enum HelpText {
     /// What one finger does: with click to draw (the default from 0.1.7.2), a touch aims and a click writes.
     static var oneFinger: (String, String) {
-        CanvasView.clickToDraw ? ("One finger", "Touch to aim, click once to start writing. Keep writing without clicking; it pauses 3 s after you lift")
+        CanvasView.clickToDraw ? ("One finger", clickWords)
                                : ("One finger", "Draw")
     }
-    static var shortcuts: [(String, String)] { [oneFinger] + rest }
+    /// Click to draw in words, with the pause chosen in Settings (0 s: a click for every stroke).
+    static var clickWords: String {
+        let t = CanvasView.clickDrawTimeout
+        return t <= 0 ? "Touch to aim, then click to start each stroke"
+                      : "Touch to aim, click once to start writing. Keep writing without clicking; it pauses \(Int(t.rounded())) s after you lift"
+    }
+    static var shortcuts: [(String, String)] {
+        let click = "On by default (Settings › Click to draw): " + clickWords.prefix(1).lowercased() + clickWords.dropFirst() + ". Off: a touch draws"
+        return [oneFinger] + rest.map { $0.0 == "Click (click to draw)" ? ($0.0, click) : $0 }
+    }
     private static let rest: [(String, String)] = [
         ("⌃⌥D  or  D", "Draw mode on / off: the pointer freezes and hides, the trackpad is the page"),
         ("Esc", "Leave draw mode (the pointer comes back)"),
@@ -47,7 +56,7 @@ enum HelpText {
         ("2-finger double tap", "Undo (in draw mode)"),
         ("3-finger double tap", "Redo (in draw mode)"),
         ("2-finger double tap, hold, slide", "Scrub through undo: slide left to go back, right to come forward"),
-        ("Click (click to draw)", "On by default (Settings › Click to draw): touch to aim, click once to start writing; keep writing without clicking, it pauses 3 s after you lift. Off: a touch draws"),
+        ("Click (click to draw)", ""),   // filled in with the pause chosen in Settings (shortcuts)
         ("Scratch out", "A quick zig-zag over a word erases it (pen or marker; one undo brings it back)"),
         ("M  H  E", "Marker, highlighter, eraser; press again for the pen"),
         ("P", "Pen; on the pen, back to the last other tool"),

@@ -24,6 +24,12 @@ func clickDefaultChecks(_ check: (Bool, String) -> Void) {
         let practice = PracticeView.Step.write.text
         let ok = [basics, help].allSatisfy { $0.contains("click once to start writing") && $0.contains("without clicking") } && practice.contains("click once")
             && HelpText.shortcuts.filter({ $0.1.contains("Two fingers pan") || $0.0 == "Two fingers" }).count == 1
+        let wasT = CanvasView.clickDrawTimeout
+        CanvasView.clickDrawTimeout = 5; let five = HelpText.basics.first { $0.0 == "One finger" }?.1 ?? ""
+        CanvasView.clickDrawTimeout = 0; let zero = HelpText.basics.first { $0.0 == "One finger" }?.1 ?? ""
+        CanvasView.clickDrawTimeout = wasT
+        check(five.contains("pauses 5 s") && zero.contains("click to start each stroke") && basics.contains("pauses 3 s"),
+              "click to draw, the words follow Settings' pause: 3 s by default, \"\(five)\" at 5 s, \"\(zero)\" at 0 s")
         CanvasView.clickToDraw = false
         let off = HelpText.basics.first { $0.0 == "One finger" }?.1 ?? ""
         CanvasView.clickToDraw = was
