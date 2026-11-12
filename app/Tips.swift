@@ -66,7 +66,7 @@ final class PracticeView: NSView {
         case write, undo, scratch, overview
         var text: String {
             switch self {
-            case .write: return CanvasView.clickToDraw ? "Write your name (touch to aim, click to write)" : "Write your name"
+            case .write: return CanvasView.clickToDraw ? "Write your name: click once, then just write" : "Write your name"
             case .undo: return "Undo a stroke: two-finger double tap"
             case .scratch: return "Scratch out a word: quick zig-zag over it"
             case .overview: return "See all pages: press G"

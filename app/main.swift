@@ -425,7 +425,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         canvas.act("backToContentPill", ["shown": want])
     }
 
-    /// Click to draw explained once (the banner, 6 s, the first time draw mode starts with it on). Tests start untaught.
+    /// Click to draw explained once: the banner, the first time draw mode starts with it on, long enough to read (14 words:
+    /// 10 s). Karthik: say the click is only needed to start, not for every stroke. Tests start untaught.
+    static let clickTeachText = "Touch to aim · click once to start writing, then just write · Esc to stop", clickTeachSeconds = 10.0
     nonisolated(unsafe) static var clickTaught = Launch.testing ? false : UserDefaults.standard.bool(forKey: "clickToDrawTaught")
     func updateBanner() {
         if !canvas.drawMode { teachingBanner = false }
@@ -445,7 +447,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 if !Launch.testing { UserDefaults.standard.set(true, forKey: "clickToDrawTaught") }
                 canvas.act("clickTaught")
             }
-            if teachingBanner && canvas.drawMode { container.banner.stringValue = "Touch to aim · click to write · Esc to stop" }
+            if teachingBanner && canvas.drawMode { container.banner.stringValue = Self.clickTeachText }
             container.banner.fillColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1)
         }
         let wasHidden = container.banner.isHidden
@@ -460,7 +462,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 let w = DispatchWorkItem { [weak self] in
                     NSAnimationContext.runAnimationGroup { $0.duration = 0.4; self?.container.banner.animator().alphaValue = 0 }
                 }
-                bannerFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + (teachingBanner ? 6 : 2), execute: w)
+                bannerFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + (teachingBanner ? Self.clickTeachSeconds : 2), execute: w)
             }
         }
         container.hint.stringValue = previousCrash && notebookStatus.hasPrefix("loaded")

@@ -17,6 +17,18 @@ func clickDefaultChecks(_ check: (Bool, String) -> Void) {
     // The bench isn't the app (no bundle): it keeps the checks' default, off, whatever its own defaults domain says
     // (it has no setting, which reads as on: f4276b7 crashed the line-width checks that way).
     check(Bundle.main.bundleIdentifier == nil && CanvasView.clickToDraw == false, "click to draw: a process that isn't the app (the bench) starts with it off (\(CanvasView.clickToDraw))")
+    // The words (Karthik): the click is only needed to start writing, not for every stroke; welcome, Help and practice.
+    do {
+        let was = CanvasView.clickToDraw; CanvasView.clickToDraw = true
+        let basics = HelpText.basics.first { $0.0 == "One finger" }?.1 ?? "", help = HelpText.shortcuts.first { $0.0 == "One finger" }?.1 ?? ""
+        let practice = PracticeView.Step.write.text
+        let ok = [basics, help].allSatisfy { $0.contains("click once to start writing") && $0.contains("without clicking") } && practice.contains("click once")
+            && HelpText.shortcuts.filter({ $0.1.contains("Two fingers pan") || $0.0 == "Two fingers" }).count == 1
+        CanvasView.clickToDraw = false
+        let off = HelpText.basics.first { $0.0 == "One finger" }?.1 ?? ""
+        CanvasView.clickToDraw = was
+        check(ok && off.hasPrefix("Draw"), "click to draw, the words: welcome and Help say \"click once to start writing … without clicking\", practice \"\(practice)\", the two-finger line once in Help; with it off, one finger \"\(off)\"")
+    }
     // A touch alone never inks; a click, then the same touch, does; 3 s after the last lift it's off again.
     let saved = CanvasView.clickToDraw
     defer { CanvasView.clickToDraw = saved }

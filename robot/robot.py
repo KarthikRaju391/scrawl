@@ -2240,7 +2240,7 @@ def run_scenarios(app, rep, only, hand):
         rep.check(ok, "after editing a page its thumbnail is up to date when the overview opens", f"{round((time.time() - t1) * 1000)} ms")
         app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
 
-    @scenario("click-default", "0.1.7.2: click to draw is the default. The first time draw mode starts with it, the banner says 'Touch to aim · click to write' (once); a touch alone shows a big aiming ring and never inks; a click writes.")
+    @scenario("click-default", "0.1.7.2: click to draw is the default. The first time draw mode starts with it, the banner says 'Touch to aim · click once to start writing, then just write' (once, long enough to read); a touch alone shows the usual aim ring (as in 0.1.7.1) and never inks; a click writes, and the next strokes need no click.")
     def _():
         ensure(app, "draw", False, "d")
         if app.state()["gallery"] >= 0: app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
@@ -2263,15 +2263,18 @@ def run_scenarios(app, rep, only, hand):
                 app.touch(hold, settle=0.2); ring = app.state().get("aimRingDrawn")
                 app.touch([[0.008, [[17001, pad_w * 0.4 + i * 0.3, pad_h * 0.5, 40, 0.5, 7.5, 4]]] for i in range(40)] + [[0.008, []], [0.3, []]], settle=0.3)
                 no_ink = app.state()["strokes"] == n0
-                rep.check(ring and ring.get("aiming") and ring.get("radiusPt", 0) >= 8, "a finger resting with no click: the big aiming ring", f"{ring}")
+                rep.check(ring and ring.get("aiming") and abs(ring.get("radiusPt", 0) - 5) < 1e-6, "a finger resting with no click: the usual 5 pt aim ring (as in 0.1.7.1, no bigger one)", f"{ring}")
                 rep.check(no_ink, "a touch alone never inks", f"strokes {n0} -> {app.state()['strokes']}")
                 # Press (click) and write: ink.
                 fr = [[0.008, [[17002, pad_w * 0.3 + i * 0.3, pad_h * 0.4, 130 if i < 3 else 40, 0.5, 7.5, 4]]] + (["click"] if i == 1 else []) for i in range(40)] + [[0.008, []], [0.3, []]]
                 app.touch(fr, settle=0.3)
                 rep.check(app.state()["strokes"] == n0 + 1, "a click, then the stroke: it inks", f"strokes {n0} -> {app.state()['strokes']}")
+                fr2 = [[0.008, [[17003, pad_w * 0.3 + i * 0.3, pad_h * 0.3, 40, 0.5, 7.5, 4]]] for i in range(40)] + [[0.008, []], [0.3, []]]
+                app.touch(fr2, settle=0.3)
+                rep.check(app.state()["strokes"] == n0 + 2, "the next stroke, within 3 s, needs no click (it inks)", f"strokes -> {app.state()['strokes']}")
                 rep.shot(app, "first draw mode with click to draw: the banner")
             app.press("d", until=lambda s: not s["draw"]); time.sleep(0.3)
-        rep.check("Touch to aim · click to write" in banners[0] and "Touch to aim" not in banners[1],
+        rep.check("click once to start writing, then just write" in banners[0] and "Touch to aim" not in banners[1],
                   "the banner explains click to draw the first time only", f"{banners}")
         if turned_on: switch(False)
 

@@ -14,9 +14,8 @@ pictures, and a writing mode that takes you to the next line when you reach the 
 
 ## What's new in 0.1.7.2
 
-- **Click to draw is on by default.** A touch shows where you'll write (a blue ring); press the trackpad to start
-  writing, then write on without clicking again until you stop for 3 seconds. The first time you draw, a note says
-  so. If you've already chosen (on or off, in **Settings › Click to draw**), your choice is kept; turn it off there
+- **Click to draw is on by default.** Touch to aim (a blue ring shows where), click once to start writing, then just
+  write: no more clicks until you stop for 3 seconds. The first time you draw, a note says so. If you've already chosen (on or off, in **Settings › Click to draw**), your choice is kept; turn it off there
   to draw with a touch, as before.
 - **⌘0 (Actual Size) zooms smoothly** to 100% where you are, like Back to Content; touch or pan to stop it midway.
 

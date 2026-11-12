@@ -677,7 +677,7 @@ final class CanvasView: MTKView {
         guard clickDrawOn else { return }
         clickDrawOn = false; act("clickDrawOff")
     }
-    /// Test hook: the last ring drawn (radius in view points, whether it was the aiming one).
+    /// Test hook: the last ring drawn (radius in view points, whether the finger was aiming: click to draw, not drawing).
     private(set) var aimRingDrawnForTest: (Double, Bool)?
     /// The aim mark: a blue ring around the finger.
     static let aimRingColor = SIMD4<Float>(0.10, 0.45, 0.91, 0.8)
@@ -1893,29 +1893,20 @@ final class CanvasView: MTKView {
             items.append(.init(mesh: Mesh(), verts: strokeMesh(pts, radii: radii, pxPerUnit: meshPxPerUnit), color: premul(liveColor)))
         }
         if drawMode {  // finger markers: where each finger is on the page (there is no cursor)
-            // Click to draw, aiming (no ink yet): a bigger, bolder ring with a faint fill, so it reads as "here is where a
-            // click writes" (0.1.7.2, click to draw by default: newcomers see it first). While drawing: the small ring.
+            // The same ring aiming and drawing (Karthik tried a bigger one for aiming, 0.1.7.2 drafts: keep the original).
             let aiming = Self.clickToDraw && builder == nil && !clickDrawOn
             let upp = 1 / (ptPerUnit * camera.zoom)   // page units per view point
-            let ringR = (aiming ? 9 : 5) * upp
+            let ringR = 5 * upp
             aimRingDrawnForTest = nil
             for c in contacts {
                 let p = markPoint(c)
                 let r = liveTool == .eraser && builder != nil ? liveSize / 2 : ringR
-                if aiming {
-                    var f: [SIMD2<Float>] = []
-                    for j in 0..<32 {
-                        let a0 = Double(j) / 32 * 2 * .pi, a1 = Double(j + 1) / 32 * 2 * .pi
-                        f += [SIMD2(Float(p.x), Float(p.y)), SIMD2(Float(p.x + cos(a0) * r), Float(p.y + sin(a0) * r)), SIMD2(Float(p.x + cos(a1) * r), Float(p.y + sin(a1) * r))]
-                    }
-                    items.append(.init(mesh: Mesh(), verts: f, color: premul(SIMD4(0.10, 0.45, 0.91, 0.14))))
-                }
                 aimRingDrawnForTest = (r / upp, aiming)
                 var v: [SIMD2<Float>] = []
                 let n = 32
                 for k in 0..<n {
                     let a0 = Double(k) / Double(n) * 2 * .pi, a1 = Double(k + 1) / Double(n) * 2 * .pi
-                    let w = (aiming ? 2.0 : 1.2) * upp
+                    let w = 1.2 * upp
                     func pt(_ a: Double, _ rr: Double) -> SIMD2<Float> { SIMD2(Float(p.x + cos(a) * rr), Float(p.y + sin(a) * rr)) }
                     v += [pt(a0, r - w), pt(a0, r + w), pt(a1, r + w), pt(a0, r - w), pt(a1, r + w), pt(a1, r - w)]
                 }
