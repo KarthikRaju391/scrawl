@@ -137,15 +137,21 @@ CUR_SCENARIO = [""]
 EDGE_BAND = 0.05   # Settings.defaultEdgeGuard
 
 def auto_click(frames, pad_w, pad_h):
-    out, prev = [], 0
+    """The first single-finger touch (inside the pad, not palm-sized) becomes a press: the finger held still and firm for
+    80 ms with the click in it, as a person presses (a real press holds the finger down 66 ms and more; under 50 ms the app
+    takes the click for tap-to-click and drops the stroke). Only the first: once drawing is on, a person writes on without
+    clicking (the app keeps drawing on until 3 s after the last lift)."""
+    out, prev, done = [], 0, False
     for f in frames:
         cs = f[1] if len(f) > 1 else []
         f = [f[0], [list(c) for c in cs]] + list(f[2:])
-        if len(cs) == 1 and prev == 0:
+        if not done and len(cs) == 1 and prev == 0:
             c = f[1][0]
             inside = EDGE_BAND * pad_w < c[1] < (1 - EDGE_BAND) * pad_w and EDGE_BAND * pad_h < c[2] < (1 - EDGE_BAND) * pad_h
             if inside and (len(c) < 5 or c[4] < 1.0):
-                c[3] = max(c[3], 130); f = f + ["click"]
+                press = list(c); press[3] = max(press[3], 130)
+                out += [[0.008, [press]]] + [[0.008, [press], "click"]] + [[0.008, [press]] for _ in range(8)]
+                done = True
         prev = len(cs); out.append(f)
     return out
 
@@ -212,9 +218,10 @@ class App:
         return r
 
     def touch(self, frames, settle=0.6):
-        if CLICK_MODE[0] and not CUR_SCENARIO[0].startswith("click-to-draw") and not any(len(f) > 2 for f in frames):
-            pad_w, pad_h = self.state()["padMM"]
-            frames = auto_click(frames, pad_w, pad_h)
+        if CLICK_MODE[0] and not CUR_SCENARIO[0].startswith("click-") and not any(len(f) > 2 for f in frames):
+            st = self.state()
+            if not st.get("clickDrawOn"):   # drawing already on: write on without a click, as a person does
+                frames = auto_click(frames, *st["padMM"])
         return self.cmd({"cmd": "touch", "frames": frames, "settle": settle})
 
     def shot(self, path):
