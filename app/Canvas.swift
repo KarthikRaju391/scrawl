@@ -611,8 +611,10 @@ final class CanvasView: MTKView {
     /// 0.1.7.2 (Karthik): on unless you turned it off. A missing value is on (before, off unless turned on); an explicit
     /// choice, either way, is kept.
     static func clickToDrawSetting(_ d: UserDefaults) -> Bool { d.object(forKey: "clickToDraw") as? Bool ?? true }
-    /// Checks keep their own default (off, as they were written), or on with --click-to-draw / TRACKPAD_DRAW_CLICK_TO_DRAW=1.
-    nonisolated(unsafe) static var clickToDraw = Launch.testing
+    /// Checks keep their own default (off, as they were written), or on with --click-to-draw / TRACKPAD_DRAW_CLICK_TO_DRAW=1:
+    /// the in-app test modes and any process that isn't the app (the bench, writing-verify: their own defaults domains
+    /// have no setting, which now reads as on).
+    nonisolated(unsafe) static var clickToDraw = (Launch.testing || Bundle.main.bundleIdentifier == nil)
         ? (Launch.args.contains("--click-to-draw") || ProcessInfo.processInfo.environment["TRACKPAD_DRAW_CLICK_TO_DRAW"] == "1")
         : clickToDrawSetting(.standard)
     /// 0 turns drawing off at every lift (a click per stroke).

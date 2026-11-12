@@ -14,6 +14,9 @@ func clickDefaultChecks(_ check: (Bool, String) -> Void) {
     d.set(true, forKey: "clickToDraw"); let on = CanvasView.clickToDrawSetting(d)
     check(fresh && !off && on, "click to draw: a fresh install (empty defaults) has it on (\(fresh)); an explicit off stays off (\(!off)); an explicit on stays on (\(on))")
 
+    // The bench isn't the app (no bundle): it keeps the checks' default, off, whatever its own defaults domain says
+    // (it has no setting, which reads as on: f4276b7 crashed the line-width checks that way).
+    check(Bundle.main.bundleIdentifier == nil && CanvasView.clickToDraw == false, "click to draw: a process that isn't the app (the bench) starts with it off (\(CanvasView.clickToDraw))")
     // A touch alone never inks; a click, then the same touch, does; 3 s after the last lift it's off again.
     let saved = CanvasView.clickToDraw
     defer { CanvasView.clickToDraw = saved }

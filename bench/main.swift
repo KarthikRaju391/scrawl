@@ -194,6 +194,7 @@ do {
     check(p(gpu, 0.95) < 6, String(format: "  GPU: p50 %.2f ms, p95 %.2f ms (budget 6 ms of an 8.3 ms frame)", p(gpu, 0.5), p(gpu, 0.95)))
 }
 
+clickDefaultChecks(check)   // first: it checks the default the bench starts with
 gestureChecks(check)
 smoothingTable(check)
 meshEquivalence(check, strokesPath: ProcessInfo.processInfo.environment["STROKES"])
@@ -202,7 +203,6 @@ lineWidthRuleChecks(check)
 navLimitChecks(check)
 backToContentChecks(check)
 pageTitleChecks(check)
-clickDefaultChecks(check)
 tapEdgeChecks(check)
 settingsChecks(check)
 notebookChecks(check)

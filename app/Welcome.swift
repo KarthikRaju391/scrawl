@@ -36,8 +36,8 @@ enum InputStatus: Equatable {
 enum HelpText {
     /// What one finger does: with click to draw (the default from 0.1.7.2), a touch aims and a click writes.
     static var oneFinger: (String, String) {
-        CanvasView.clickToDraw ? ("One finger", "Touch to aim (a blue ring shows where), click to write; then write on with no more clicks until you stop for 3 s. Two fingers pan; pinch to zoom")
-                               : ("One finger", "Draw. Two fingers pan; pinch to zoom")
+        CanvasView.clickToDraw ? ("One finger", "Touch to aim (a blue ring shows where), click to write; then write on with no more clicks until you stop for 3 s")
+                               : ("One finger", "Draw")
     }
     static var shortcuts: [(String, String)] { [oneFinger] + rest }
     private static let rest: [(String, String)] = [
@@ -70,7 +70,7 @@ enum HelpText {
     static var basics: [(String, String)] { [
         ("⌃⌥D  or  D", "Draw mode on / off: the pointer freezes and hides, the trackpad is the page"),
         ("Esc", "Leave draw mode (the pointer comes back)"),
-        oneFinger,
+        (oneFinger.0, oneFinger.1 + ". Two fingers pan; pinch to zoom"),
         ("2-finger double tap", "Undo (in draw mode); ⌘Z works too"),
         ("G", "All your pages; Return opens one"),
         ("⌘E", "Export every page as a PDF"),
