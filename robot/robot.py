@@ -128,6 +128,28 @@ def close_crash_dialogs():
     return found
 
 
+# --click-to-draw (0.1.7.2, click to draw by default): the app runs with it on, and every single-finger touch starts with
+# a firm press and a click, as a person presses the trackpad before writing; two-finger gestures, touches in the edge band
+# or palm-sized, and touches that carry their own clicks are left as they are; so are the click-to-draw scenarios, which
+# script their clicks themselves.
+CLICK_MODE = [False]
+CUR_SCENARIO = [""]
+EDGE_BAND = 0.05   # Settings.defaultEdgeGuard
+
+def auto_click(frames, pad_w, pad_h):
+    out, prev = [], 0
+    for f in frames:
+        cs = f[1] if len(f) > 1 else []
+        f = [f[0], [list(c) for c in cs]] + list(f[2:])
+        if len(cs) == 1 and prev == 0:
+            c = f[1][0]
+            inside = EDGE_BAND * pad_w < c[1] < (1 - EDGE_BAND) * pad_w and EDGE_BAND * pad_h < c[2] < (1 - EDGE_BAND) * pad_h
+            if inside and (len(c) < 5 or c[4] < 1.0):
+                c[3] = max(c[3], 130); f = f + ["click"]
+        prev = len(cs); out.append(f)
+    return out
+
+
 class App:
     def __init__(self, binary, out, data, input_tool, label):
         self.binary, self.out, self.data, self.input_tool, self.label = binary, out, data, input_tool, label
@@ -140,6 +162,7 @@ class App:
         os.makedirs(self.ctl)
         os.makedirs(self.data, exist_ok=True)
         env = dict(os.environ, TRACKPAD_DRAW_DATA=self.data, TRACKPAD_DRAW_DRYLOCK="1")
+        if CLICK_MODE[0]: env["TRACKPAD_DRAW_CLICK_TO_DRAW"] = "1"
         self.proc = subprocess.Popen([self.binary, "--test-robot", self.ctl, "--no-activate"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         t0 = time.time()
         while not os.path.exists(os.path.join(self.ctl, "ready")):
@@ -188,7 +211,11 @@ class App:
         time.sleep(0.25)
         return r
 
-    def touch(self, frames, settle=0.6): return self.cmd({"cmd": "touch", "frames": frames, "settle": settle})
+    def touch(self, frames, settle=0.6):
+        if CLICK_MODE[0] and not CUR_SCENARIO[0].startswith("click-to-draw") and not any(len(f) > 2 for f in frames):
+            pad_w, pad_h = self.state()["padMM"]
+            frames = auto_click(frames, pad_w, pad_h)
+        return self.cmd({"cmd": "touch", "frames": frames, "settle": settle})
 
     def shot(self, path):
         subprocess.run(["screencapture", "-x", "-o", f"-l{self.win}", path], check=False)
@@ -2206,6 +2233,41 @@ def run_scenarios(app, rep, only, hand):
         rep.check(ok, "after editing a page its thumbnail is up to date when the overview opens", f"{round((time.time() - t1) * 1000)} ms")
         app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
 
+    @scenario("click-default", "0.1.7.2: click to draw is the default. The first time draw mode starts with it, the banner says 'Touch to aim · click to write' (once); a touch alone shows a big aiming ring and never inks; a click writes.")
+    def _():
+        ensure(app, "draw", False, "d")
+        if app.state()["gallery"] >= 0: app.press("esc", until=lambda s: s["gallery"] == -2, wait=3)
+        app.press("n"); ensure(app, "writing", False, "w")
+        turned_on = not app.state().get("clickToDraw")
+        def switch(on):
+            app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.4)
+            sw = app.state().get("settingsSwitches") or []
+            ci = next((i for i, x in enumerate(sw) if x[0].lower().startswith("click to draw")), None)
+            app.cmd({"cmd": "settingsSwitch", "index": ci, "on": on}); app.cmd({"cmd": "closeSettings"})
+        if turned_on: switch(True)   # a run without --click-to-draw: turn it on as a user would (and back off after)
+        banners = []
+        for k in range(2):
+            app.press("d", until=lambda s: s["draw"]); time.sleep(0.3)
+            banners.append(app.state()["chrome"]["banner"])
+            if k == 0:
+                st = app.state(); pad_w, pad_h = st["padMM"]; n0 = st["strokes"]
+                # A finger rests (no click): the aiming ring, big; then it slides and lifts: no ink.
+                hold = [[0.008, [[17001, pad_w * 0.4, pad_h * 0.5, 40, 0.5, 7.5, 4]]] for _ in range(30)]
+                app.touch(hold, settle=0.2); ring = app.state().get("aimRingDrawn")
+                app.touch([[0.008, [[17001, pad_w * 0.4 + i * 0.3, pad_h * 0.5, 40, 0.5, 7.5, 4]]] for i in range(40)] + [[0.008, []], [0.3, []]], settle=0.3)
+                no_ink = app.state()["strokes"] == n0
+                rep.check(ring and ring.get("aiming") and ring.get("radiusPt", 0) >= 8, "a finger resting with no click: the big aiming ring", f"{ring}")
+                rep.check(no_ink, "a touch alone never inks", f"strokes {n0} -> {app.state()['strokes']}")
+                # Press (click) and write: ink.
+                fr = [[0.008, [[17002, pad_w * 0.3 + i * 0.3, pad_h * 0.4, 130 if i < 3 else 40, 0.5, 7.5, 4]]] + (["click"] if i == 1 else []) for i in range(40)] + [[0.008, []], [0.3, []]]
+                app.touch(fr, settle=0.3)
+                rep.check(app.state()["strokes"] == n0 + 1, "a click, then the stroke: it inks", f"strokes {n0} -> {app.state()['strokes']}")
+                rep.shot(app, "first draw mode with click to draw: the banner")
+            app.press("d", until=lambda s: not s["draw"]); time.sleep(0.3)
+        rep.check("Touch to aim · click to write" in banners[0] and "Touch to aim" not in banners[1],
+                  "the banner explains click to draw the first time only", f"{banners}")
+        if turned_on: switch(False)
+
     @scenario("click-to-draw", "Click to draw (Settings): a touch only aims (the blue aim mark). A click turns drawing on and starts the stroke where the finger is; let go of the click and keep drawing; lift and touch again to draw more strokes, no more clicks. 3 s (2-5 s in Settings) after the last lift with no writing it turns off and a touch only aims again; while writing it never does. A light finger the sensor briefly reports as lifting doesn't break the stroke. Two- and three-finger gestures never draw; the eraser works the same way.")
     def _():
         ensure(app, "draw", False, "d")
@@ -2214,9 +2276,9 @@ def run_scenarios(app, rep, only, hand):
         app.cmd({"cmd": "menu", "action": "showSettings"}); time.sleep(0.4)
         sw = app.state().get("settingsSwitches") or []
         ci = next((i for i, x in enumerate(sw) if x[0].lower().startswith("click to draw")), None)
-        rep.check(ci is not None, "Settings has a Click to draw switch (off by default)", str([x[0] for x in sw]))
+        rep.check(ci is not None, "Settings has a Click to draw switch", str([x[0] for x in sw]))
         if ci is None: app.cmd({"cmd": "closeSettings"}); return
-        rep.check(not sw[ci][1], "the switch starts off", str(sw[ci]))
+        rep.check(sw[ci][1] == CLICK_MODE[0], "the switch starts as the app's default for this run (checks: off; --click-to-draw: on)", str(sw[ci]))
         app.cmd({"cmd": "settingsSwitch", "index": ci, "on": True}); app.cmd({"cmd": "closeSettings"})
         ensure(app, "draw", True, "d")
         st = app.state(); pad_w, pad_h = st["padMM"]; n0 = st["strokes"]
@@ -2612,7 +2674,9 @@ def main():
     ap.add_argument("--only", default="")
     ap.add_argument("--label", default="main")
     ap.add_argument("--list", action="store_true")
+    ap.add_argument("--click-to-draw", action="store_true", help="the app with click to draw on; every touch starts with a click")
     a = ap.parse_args()
+    CLICK_MODE[0] = a.click_to_draw
     out = a.out
     shutil.rmtree(out, ignore_errors=True)
     os.makedirs(os.path.join(out, "shots"))
@@ -2630,11 +2694,13 @@ def main():
     try:
         for n in names:
             about, f = S[n]
+            CUR_SCENARIO[0] = n
             print(f"== {n}", flush=True)
             rep.begin(n, about)
             try: f()
             except Exception as e:  # a scenario that crashes the app or times out fails, the rest still run
                 rep.cur["error"] = f"{type(e).__name__}: {e}"
+                if os.environ.get("ROBOT_TRACE"): import traceback; traceback.print_exc()
                 print("  ERROR", rep.cur["error"], flush=True)
                 if app.proc.poll() is not None: app.launch()
             rep.end()

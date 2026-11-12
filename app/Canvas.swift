@@ -583,7 +583,7 @@ final class CanvasView: MTKView {
     var onTouching: ((Bool) -> Void)?
     /// Centre the view on a page point, keeping the zoom (the page map).
     func centerView(on p: CGPoint, src: String) {
-        cancelPendingMove(); finishSlide()
+        cancelPendingMove(); interruptSlide()
         changing(src) { var c = camera; c.center = p; c.clamp(); camera = c }
         needsRender = true
     }
@@ -608,7 +608,13 @@ final class CanvasView: MTKView {
     // stroke where the finger is; release the click and draw on; lift and touch again for more strokes, no more
     // clicks. `clickDrawTimeout` seconds after the last lift with no writing it turns off; never while writing.
 
-    nonisolated(unsafe) static var clickToDraw = Launch.testing ? false : UserDefaults.standard.bool(forKey: "clickToDraw")
+    /// 0.1.7.2 (Karthik): on unless you turned it off. A missing value is on (before, off unless turned on); an explicit
+    /// choice, either way, is kept.
+    static func clickToDrawSetting(_ d: UserDefaults) -> Bool { d.object(forKey: "clickToDraw") as? Bool ?? true }
+    /// Checks keep their own default (off, as they were written), or on with --click-to-draw / TRACKPAD_DRAW_CLICK_TO_DRAW=1.
+    nonisolated(unsafe) static var clickToDraw = Launch.testing
+        ? (Launch.args.contains("--click-to-draw") || ProcessInfo.processInfo.environment["TRACKPAD_DRAW_CLICK_TO_DRAW"] == "1")
+        : clickToDrawSetting(.standard)
     /// 0 turns drawing off at every lift (a click per stroke).
     nonisolated(unsafe) static var clickDrawTimeout: Double = {
         let v = UserDefaults.standard.object(forKey: "clickToDrawTimeout") as? Double ?? 3
@@ -669,6 +675,8 @@ final class CanvasView: MTKView {
         guard clickDrawOn else { return }
         clickDrawOn = false; act("clickDrawOff")
     }
+    /// Test hook: the last ring drawn (radius in view points, whether it was the aiming one).
+    private(set) var aimRingDrawnForTest: (Double, Bool)?
     /// The aim mark: a blue ring around the finger.
     static let aimRingColor = SIMD4<Float>(0.10, 0.45, 0.91, 0.8)
 
@@ -1034,6 +1042,14 @@ final class CanvasView: MTKView {
         needsRender = true
     }
 
+    /// Moves of the view alone (⌘0, Back to Content, the zoom menu): a hand move stops them where they are. Writing's own
+    /// moves (a next line, a follow) finish first: the line depends on where they end.
+    static let interruptibleSlides: Set<String> = ["zoomToPage", "backToContent", "zoomMenu"]
+    private func interruptSlide() {
+        guard let a = camAnim, Self.interruptibleSlides.contains(a.src) else { return finishSlide() }
+        stepSlide(); camAnim = nil; act("slideInterrupted", ["src": a.src, "zoom": camera.zoom])
+    }
+    var slidingForTest: String? { camAnim?.src }
     private func finishSlide() {
         if let a = camAnim { changing(a.src) { camera = a.to }; camAnim = nil }
     }
@@ -1187,7 +1203,7 @@ final class CanvasView: MTKView {
     /// to the right, ↓ what's further down). Clamped like any pan (page sides and top); never a new line or a
     /// page change: a pending writing-mode move is dropped.
     func panByArrow(dx: Int, dy: Int, screen: Bool) {
-        cancelPendingMove(); finishSlide()
+        cancelPendingMove(); interruptSlide()
         let v = camera.visible, f = screen ? 1.0 : 0.1
         changing("arrow") { camera.center.x += Double(dx) * f * v.width; camera.center.y -= Double(dy) * f * v.height; camera.clamp() }
         if writingMode { handPanX += abs(camera.center.x - (v.midX)) }   // moved by hand
@@ -1235,7 +1251,7 @@ final class CanvasView: MTKView {
         if countedContacts == 0 && !counted.isEmpty { tapEpisodeBefore = (doc, Document.State(strokes: doc.strokes, images: doc.images)) }
         if (countedContacts > 0) != !counted.isEmpty { onTouching?(!counted.isEmpty) }
         countedContacts = counted.count
-        if countedContacts > 0 { finishSlide(); cancelPendingMove() }
+        if countedContacts > 0 { interruptSlide(); cancelPendingMove() }
         // Multi-finger taps: the view at the start of each touch episode, to undo any nudge a tap gave it.
         if !counted.isEmpty && tapViewAnchor == nil { tapViewAnchor = camera }
         if let ev = taps.frame(counted, edge: tapEdgeCandidates(at: arrival), t: arrival) {
@@ -1412,7 +1428,7 @@ final class CanvasView: MTKView {
     // In draw mode the same gestures come from MultitouchSupport instead, and these are ignored.
     override func scrollWheel(with e: NSEvent) {
         guard !drawMode else { return }
-        cancelPendingMove(); finishSlide()   // moved by hand: a waiting next-line move is dropped (as for arrows and the map)
+        cancelPendingMove(); interruptSlide()   // moved by hand: a waiting next-line move is dropped (as for arrows and the map)
         let k = 1 / (ptPerUnit * camera.zoom)
         changing("scroll") { camera.center.x -= e.scrollingDeltaX * k; camera.center.y += e.scrollingDeltaY * k; camera.clamp() }
         needsRender = true
@@ -1423,7 +1439,7 @@ final class CanvasView: MTKView {
     /// A trackpad pinch outside draw mode (NSEvent magnify): zoom by 1 + `m` about view point `p`.
     func magnifyBy(_ m: Double, at p: CGPoint, ended: Bool) {
         guard !drawMode, !tools.zoomLocked else { return }
-        cancelPendingMove(); finishSlide()
+        cancelPendingMove(); interruptSlide()
         let anchor = canvasPoint(fromView: p), r = padRect
         changing("magnify") {   // the page point under the pointer stays under it
             var c = camera
@@ -1875,15 +1891,29 @@ final class CanvasView: MTKView {
             items.append(.init(mesh: Mesh(), verts: strokeMesh(pts, radii: radii, pxPerUnit: meshPxPerUnit), color: premul(liveColor)))
         }
         if drawMode {  // finger markers: where each finger is on the page (there is no cursor)
-            let ringR = 5 / (ptPerUnit * camera.zoom)
+            // Click to draw, aiming (no ink yet): a bigger, bolder ring with a faint fill, so it reads as "here is where a
+            // click writes" (0.1.7.2, click to draw by default: newcomers see it first). While drawing: the small ring.
+            let aiming = Self.clickToDraw && builder == nil && !clickDrawOn
+            let upp = 1 / (ptPerUnit * camera.zoom)   // page units per view point
+            let ringR = (aiming ? 9 : 5) * upp
+            aimRingDrawnForTest = nil
             for c in contacts {
                 let p = markPoint(c)
                 let r = liveTool == .eraser && builder != nil ? liveSize / 2 : ringR
+                if aiming {
+                    var f: [SIMD2<Float>] = []
+                    for j in 0..<32 {
+                        let a0 = Double(j) / 32 * 2 * .pi, a1 = Double(j + 1) / 32 * 2 * .pi
+                        f += [SIMD2(Float(p.x), Float(p.y)), SIMD2(Float(p.x + cos(a0) * r), Float(p.y + sin(a0) * r)), SIMD2(Float(p.x + cos(a1) * r), Float(p.y + sin(a1) * r))]
+                    }
+                    items.append(.init(mesh: Mesh(), verts: f, color: premul(SIMD4(0.10, 0.45, 0.91, 0.14))))
+                }
+                aimRingDrawnForTest = (r / upp, aiming)
                 var v: [SIMD2<Float>] = []
                 let n = 32
                 for k in 0..<n {
                     let a0 = Double(k) / Double(n) * 2 * .pi, a1 = Double(k + 1) / Double(n) * 2 * .pi
-                    let w = 1.2 / (ptPerUnit * camera.zoom)
+                    let w = (aiming ? 2.0 : 1.2) * upp
                     func pt(_ a: Double, _ rr: Double) -> SIMD2<Float> { SIMD2(Float(p.x + cos(a) * rr), Float(p.y + sin(a) * rr)) }
                     v += [pt(a0, r - w), pt(a0, r + w), pt(a1, r + w), pt(a0, r - w), pt(a1, r + w), pt(a1, r - w)]
                 }
@@ -2019,9 +2049,13 @@ final class CanvasView: MTKView {
         needsRender = true
     }
 
-    func resetZoom() {
+    /// ⌘0, Actual Size (100%): about the view's centre, animated like Back to Content (0.3 s, ease out; a hand move stops
+    /// it where it is). `animated: false` for test setups that need 100% at once.
+    func resetZoom(animated: Bool = true) {
         guard !tools.zoomLocked else { NSSound.beep(); return }  // locked means locked
-        changing("zoomToPage") { camera.zoom = 1; camera.clamp() }; needsRender = true
+        var t = camera; t.zoom = 1; t.clamp()
+        if animated { animateCamera(to: t, src: "zoomToPage", duration: 0.3) }
+        else { changing("zoomToPage") { camera = t }; needsRender = true }
     }
 
     /// Full page to PNG at `scale` px per canvas unit (CPU, same union fill as the GPU path).

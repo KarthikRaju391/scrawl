@@ -425,7 +425,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         canvas.act("backToContentPill", ["shown": want])
     }
 
+    /// Click to draw explained once (the banner, 6 s, the first time draw mode starts with it on). Tests start untaught.
+    nonisolated(unsafe) static var clickTaught = Launch.testing ? false : UserDefaults.standard.bool(forKey: "clickToDrawTaught")
     func updateBanner() {
+        if !canvas.drawMode { teachingBanner = false }
         updateBackToContent()
         updatePageArrows()
         let input = canvas.usingMT ? "" : "  ·  basic touch input (no pressure)"
@@ -436,6 +439,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         } else {
             // Short, and only for 2 s on entry or a mode change; the capsule at the bottom keeps the state.
             container.banner.stringValue = canvas.writingMode ? "Writing · W off · Esc to stop" : "Drawing · Esc to stop"
+            // Click to draw (the default from 0.1.7.2): the first time draw mode starts with it, say how it works, once.
+            if canvas.drawMode, CanvasView.clickToDraw, !Self.clickTaught {
+                Self.clickTaught = true; clickTeachShown += 1; teachingBanner = true
+                if !Launch.testing { UserDefaults.standard.set(true, forKey: "clickToDrawTaught") }
+                canvas.act("clickTaught")
+            }
+            if teachingBanner && canvas.drawMode { container.banner.stringValue = "Touch to aim · click to write · Esc to stop" }
             container.banner.fillColor = NSColor(srgbRed: 0.10, green: 0.45, blue: 0.91, alpha: 1)
         }
         let wasHidden = container.banner.isHidden
@@ -450,7 +460,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 let w = DispatchWorkItem { [weak self] in
                     NSAnimationContext.runAnimationGroup { $0.duration = 0.4; self?.container.banner.animator().alphaValue = 0 }
                 }
-                bannerFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: w)
+                bannerFade = w; DispatchQueue.main.asyncAfter(deadline: .now() + (teachingBanner ? 6 : 2), execute: w)
             }
         }
         container.hint.stringValue = previousCrash && notebookStatus.hasPrefix("loaded")
@@ -568,6 +578,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     /// Settings was opened from draw mode: closing it goes back to drawing. Only if nothing else happened since: it's dropped
     /// when you turn draw mode on or off yourself, open the overview, or switch to another app.
     var settingsResumeDraw = false
+    /// The banner says how click to draw works (until draw mode ends); how many times it has (tests).
+    var teachingBanner = false
+    var clickTeachShown = 0
     /// The update sheet, while it's open (Updater.swift).
     var updatePanel: UpdatePanel?
     var badgeFade: DispatchWorkItem?
@@ -590,7 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 if !Launch.background { NSApp.activate(ignoringOtherApps: true); window.makeKeyAndOrderFront(nil) }
                 enterDrawMode(lock: false)
                 canvas.setZoomForTest(settingsWritingZoom: true)
-                if !a.contains("--zoomed") { canvas.resetZoom() }
+                if !a.contains("--zoomed") { canvas.resetZoom(animated: false) }
                 TestStress.run(canvas: canvas, path: a[i + 1], count: n, dir: dir) {
                     try? "done".write(toFile: dir + "/ui-step.txt", atomically: true, encoding: .utf8)
                 }

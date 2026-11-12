@@ -34,15 +34,20 @@ enum InputStatus: Equatable {
 }
 
 enum HelpText {
-    static let shortcuts: [(String, String)] = [
+    /// What one finger does: with click to draw (the default from 0.1.7.2), a touch aims and a click writes.
+    static var oneFinger: (String, String) {
+        CanvasView.clickToDraw ? ("One finger", "Touch to aim (a blue ring shows where), click to write; then write on with no more clicks until you stop for 3 s. Two fingers pan; pinch to zoom")
+                               : ("One finger", "Draw. Two fingers pan; pinch to zoom")
+    }
+    static var shortcuts: [(String, String)] { [oneFinger] + rest }
+    private static let rest: [(String, String)] = [
         ("⌃⌥D  or  D", "Draw mode on / off: the pointer freezes and hides, the trackpad is the page"),
         ("Esc", "Leave draw mode (the pointer comes back)"),
-        ("One finger", "Draw"),
         ("Two fingers", "Pan; pinch to zoom"),
         ("2-finger double tap", "Undo (in draw mode)"),
         ("3-finger double tap", "Redo (in draw mode)"),
         ("2-finger double tap, hold, slide", "Scrub through undo: slide left to go back, right to come forward"),
-        ("Click (click to draw)", "With Settings › Click to draw: a touch shows the aim mark under your finger; press to click and the stroke starts at the mark, then draw on with no more clicks until you stop for 3 s"),
+        ("Click (click to draw)", "On by default (Settings › Click to draw): a touch shows the aim mark under your finger; press to click and the stroke starts at the mark, then draw on with no more clicks until you stop for 3 s. Off: a touch draws"),
         ("Scratch out", "A quick zig-zag over a word erases it (pen or marker; one undo brings it back)"),
         ("M  H  E", "Marker, highlighter, eraser; press again for the pen"),
         ("P", "Pen; on the pen, back to the last other tool"),
@@ -56,19 +61,20 @@ enum HelpText {
         ("⌘[  ⌘]", "Previous / next page"),
         ("← → ↑ ↓", "Pan the page (Shift: a whole screen); in the pages overview, choose a page"),
         ("⌘Z  ⇧⌘Z", "Undo / redo"),
-        ("⌘0", "Zoom to the whole page"),
+        ("⌘0", "Actual size (100%), where you are"),
+        ("⇧⌘0", "Back to content: all of the page's writing in view"),
         ("Green button", "Full screen (or View › Enter Full Screen)"),
         ("⌘E  ⇧⌘E", "Export all pages as PDF / this page as PNG"),
     ]
     /// The first run shows only these (the window has to fit a 13" screen); Help lists every shortcut.
-    static let basics: [(String, String)] = [
+    static var basics: [(String, String)] { [
         ("⌃⌥D  or  D", "Draw mode on / off: the pointer freezes and hides, the trackpad is the page"),
         ("Esc", "Leave draw mode (the pointer comes back)"),
-        ("One finger", "Draw. Two fingers pan; pinch to zoom"),
+        oneFinger,
         ("2-finger double tap", "Undo (in draw mode); ⌘Z works too"),
         ("G", "All your pages; Return opens one"),
         ("⌘E", "Export every page as a PDF"),
-    ]
+    ] }
     static var privacy: String {
         let logs = AppPaths.logsDir.replacingOccurrences(of: NSHomeDirectory(), with: "~")
         let counts = Analytics.shared.hasRemote
