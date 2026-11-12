@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.1.7.2 (2026-11-12, build 15)
+
+- **Click to draw is the default.** A touch aims (the blue ring, bigger while you aim) and a click starts the ink; then
+  draw on without clicks until you stop for 3 s (Settings, 2-5 s). Anyone who chose already (on or off) keeps their
+  choice; a fresh install has it on. The first draw mode says "Touch to aim · click to write" (once); the welcome, Help
+  and the practice page say so too. Settings › Click to draw turns it off (a touch draws, as before).
+- **⌘0 (Actual Size) animates** about the view's centre, with Back to Content's curve and duration (0.3 s); a touch,
+  pan, pinch, arrow key or scroll stops it where it is. With the zoom locked it still does nothing (a beep).
+
 ## 0.1.7.1 (2026-11-11, build 14)
 
 - **Back to content** (was Back to page). The pill (bottom right, outside draw mode) and View › Back to Content (⇧⌘0)
